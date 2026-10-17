@@ -131,29 +131,29 @@ that counts the exact rare-path branch entries. Findings:
   trials (~5e-5); 0 in ~100k+ unjittered trials (rate is sensitive to
   timing jitter, which the probe traps supplied artificially).
 - **The win reproduces and materializes into kernel corruption.** After
-  a rate lever (the child's leader thread arms 48 thread-CPU timers, so
+  a rate lever (the child's leader thread arms 192 thread-CPU timers, so
   `posix_cpu_timers_exit()` stretches the exact sighand-lock hold the
-  deleting parent must collide with), surviving-child trials recorded
-  the full chain twice with kernel traces (`loadtest-01.log`,
-  `ctl2-03.log`): the WARN fires as the parent's `timer_delete` frees an
-  armed, still-queued `k_itimer`, and tens of milliseconds later — after
-  the RCU grace period — a queue operation walks the freed node and
-  faults on its freelist-mangled link (mid-life in the child's own
-  `timer_delete`→`rb_erase`, and at child exit via
-  `posix_cpu_timers_exit_group`→`timerqueue_del` respectively). Five
-  wins total across sessions at a pooled ~6.5e-5 per trial;
+  deleting parent must collide with), winning trials recorded the chain
+  with kernel traces (`loadtest-01.log`, `ctl2-03.log`, `fl-15.log`): the
+  WARN fires as the parent's `timer_delete` frees an armed, still-queued
+  `k_itimer`, and tens of milliseconds later — after the RCU grace
+  period — a queue operation on the freed node faults or trips a sanity
+  check (inside the surviving child's own `timer_delete`→`rb_erase`; in
+  the reaping parent's `posix_cpu_timers_exit_group`→`timerqueue_del`;
+  and one session-wide workqueue-stall wedge). Eighteen wins total
+  across sessions at a pooled ~1e-4 per trial;
   `SLAB_FREELIST_HARDENED`, `INIT_ON_ALLOC`, `DEBUG_LIST`, `CFI_CLANG`
   and `HARDENED_USERCOPY` were all active; CFI does not stop this
   data-only corruption.
-- The reclaim mechanics are characterized for weaponization: the winning
-  trial's ~512 same-trial deletes queue RCU callbacks ahead of the
-  ghost's, burying it up to ~511 objects deep on the freeing CPU's
-  freelist — naive sprays cannot reach it, and a controlled-reclaim
-  demonstration needs a deep sweep plus a post-arm CPU burn so ticks run
-  the queue walk. That instrumentation is built and component-validated
-  (`output/quest-cpu-timer-race-20261017-v1/`, schema v4), but the win
-  did not recur during the deep-sweep sessions within budget, so the
-  attacker-chosen-content fire remains undemonstrated offline.
+- The reclaim was verified to reach the freed slot in two winning trials
+  (the ghost node arrives RB_CLEAR'd at reap time, which probe creation
+  itself produces), and a kprobe on `cpu_timer_fire` — verified to cover
+  the queue-walk firing loop's out-of-line call — counted zero across
+  every instrumented win: the aliased ghost is never treated as expired.
+  Which gate suppresses the fire is unobserved; kprobes on
+  `check_process_timers`/`collect_timerqueue` are the committed next
+  instrument. The controlled, attacker-chosen-content fire therefore
+  remains undemonstrated offline.
 - The earlier apparent set-versus-delete asymmetry was under-powered
   sampling plus a broken in-run detector, not a structural impossibility.
   Two real interference effects were measured: concurrent set+delete
