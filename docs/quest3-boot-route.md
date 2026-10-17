@@ -1,13 +1,13 @@
 # Quest 3 exact-build boot and recovery status
 
 Updated October 17, 2026. The retained stock firmware contains the CPU-timer
-code affected by CVE-2026-64560, and the race was exercised offline against
-the exact pinned source: the buggy window is observable and the exploitable
-deletion event was demonstrated once under instrumented conditions, but no
-materialized corruption or privilege escalation follows, so no working Quest
-root or custom boot result exists yet. Independent recovery and custom kernel
-acceptance remain unverified; see
-[device installation requirements](device-installation.md).
+code affected by CVE-2026-64560; raced offline against the exact pinned
+source, the exploitable deletion event was demonstrated, rate-levered to
+practical levels, and materialized into kernel memory corruption (a
+trace-verified crash in the surviving child). No controlled write or
+privilege escalation exists yet, so no working Quest root or custom boot
+result follows. Independent recovery and custom kernel acceptance remain
+unverified; see [device installation requirements](device-installation.md).
 
 ## Firmware identity and source coverage
 
@@ -130,26 +130,39 @@ that counts the exact rare-path branch entries. Findings:
   free, so no corruption followed. Measured rate: 1 win in ~19k jittered
   trials (~5e-5); 0 in ~100k+ unjittered trials (rate is sensitive to
   timing jitter, which the probe traps supplied artificially).
+- **The win reproduces and materializes into kernel corruption.** After
+  a rate lever (the child's leader thread arms 48 thread-CPU timers, so
+  `posix_cpu_timers_exit()` stretches the exact sighand-lock hold the
+  deleting parent must collide with), a surviving-child trial recorded
+  the full chain (session `loadtest-01.log`): the WARN fired at 172.499s
+  (parent's `timer_delete` freeing an armed, still-queued `k_itimer`),
+  and 57ms later — after the RCU grace period and same-cache reclaim —
+  the winning trial's child died in `rb_erase` via its own
+  `timer_delete`, dereferencing the reused node's corrupted link at the
+  freelist-hardened pointer offset predicted from the struct layouts.
+  `SLAB_FREELIST_HARDENED`, `INIT_ON_ALLOC`, `DEBUG_LIST`, `CFI_CLANG`
+  and `HARDENED_USERCOPY` were all active; CFI does not stop this
+  data-only corruption. Pooled win rates: ~1.4e-5 per trial unloaded,
+  ~7.7e-5 leader-loaded.
 - The earlier apparent set-versus-delete asymmetry was under-powered
   sampling plus a broken in-run detector, not a structural impossibility.
   Two real interference effects were measured: concurrent set+delete
   streams suppress the window for both, and mass timer churn under a hot
   kretprobe starves the RCU grace-period kthread.
-- What remains unproven: materialized corruption after a win (~10k
-  surviving-child trials since the win produced no new win to materialize;
-  the post-win chain — same-cache reclaim after the RCU free, queue churn,
-  aliasing — is designed but undemonstrated) and the entire escalation
-  chain (arbitrary R/W against `DEBUG_LIST`/freelist hardening/
-  `INIT_ON_ALLOC`, KASLR leak, data-only credential patching since
-  `STATIC_USERMODEHELPER` has an empty path).
+- What remains unproven is weaponization, not the bug: the demonstrated
+  corruption is an uncontrolled crash (freelist-mangled content read as a
+  pointer). A reliable-root chain needs controlled reclaim with chosen
+  content, a stable read/write primitive, a KASLR leak, and data-only
+  credential patching (`STATIC_USERMODEHELPER` has an empty path on
+  stock). None of that is built.
 
 Escalation-relevant facts were captured for any future work (exact-config
 `k_itimer`/`cpu_timer`/`cred`/`task_struct` layouts, `posix_timers_cache`
 accounting, the freelist-pointer offset landing inside the timerqueue node,
 and the stock-only `STATIC_USERMODEHELPER` empty-path constraint). On this
-evidence the route is alive but not a reliable-root result: the primitive
-is demonstrated at a low, jitter-sensitive rate in QEMU; the on-device rate
-is unknown. Priority for firmware access remains the fresh exact-build
+evidence the CPU-timer route is a demonstrated, practically reachable
+corruption primitive on this firmware family — but not a reliable-root
+result. Priority for firmware access remains the fresh exact-build
 inventory and the documented temporary-access gates below.
 
 ## Firmware archive and recovery implications
