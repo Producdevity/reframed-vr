@@ -1,9 +1,12 @@
 # Quest 3 exact-build boot and recovery status
 
-Updated October 16, 2026. The retained stock firmware contains the CPU-timer
-code affected by CVE-2026-64560. No working Quest privilege-escalation or custom
-boot result follows from that static finding. Independent recovery and custom
-kernel acceptance remain unverified; see [device installation requirements](device-installation.md).
+Updated October 17, 2026. The retained stock firmware contains the CPU-timer
+code affected by CVE-2026-64560, and the race was now exercised offline
+against the exact pinned source: the buggy interleaving is reachable, but
+the exploitable deletion event never materialized, so no working Quest
+privilege-escalation or custom boot result follows. Independent recovery and
+custom kernel acceptance remain unverified; see
+[device installation requirements](device-installation.md).
 
 ## Firmware identity and source coverage
 
@@ -96,6 +99,42 @@ authentication bindings, embedded configuration, source hashes, disassembly,
 review notes and the rejected initial clock-table assumption. The kernel SHA256
 is `db61c073962bf1df38cbb09cbb01f03e5595822754ffea1dc75166555f7d545e`.
 The byte-preserving ELF reconstruction is an analysis artifact, not a boot image.
+
+## CPU-timer race: exercised offline, exploitable event not observed
+
+On October 17 the race itself was tested offline
+(`output/quest-cpu-timer-race-20261017-v1/`, probe
+`tests/quest-cpu-timer/race.c`, runner `tools/test-cpu-timer-race.py`)
+against the QEMU kernel built from the same pinned `dbc2bc83` source with a
+stock-equivalent configuration. Findings:
+
+- A same-process deleter thread cannot lose the race at all: `de_thread()`
+  waits in `sig->notify_count` for every sibling thread to exit before it
+  clears the old leader's sighand. The winnable arrangement is cross-process
+  — a timer owned by a parent process but targeting the child's process-CPU
+  clock, which `pid_for_clock()` permits for same-uid pairs.
+- With dedicated CPUs and full-density syscall tiling under QEMU `hvf`, the
+  buggy interleaving is real: hammering `timer_settime` through the exec
+  observed its NULL-sighand/lookup window (`-ESRCH`) 11 times in ~50M calls
+  (~4.6e-8 per call), with the window ~20–43us after the racing `execve()`.
+- The exploitable event — `timer_delete()` freeing an armed, still-queued
+  `k_itimer` (the `WARN_ON_ONCE` in `posix_cpu_timer_del`) — never occurred:
+  zero warnings in ~40k aligned single-delete trials, ~10M delete attempts
+  across ~730s of continuous delete tiling, and ~3,000 surviving-child churn
+  trials designed to materialize silent `!p`-path wins after the RCU free.
+  No kernel oops and no queue-corruption anomaly appeared.
+- The set-versus-delete observation asymmetry is unexplained and is the
+  first question any revisit must answer; QEMU timing is not headset
+  timing, so this is strong negative evidence, not an impossibility proof.
+
+Escalation-relevant facts were captured for any future work (exact-config
+`k_itimer`/`cpu_timer`/`cred`/`task_struct` layouts, `posix_timers_cache`
+accounting, the freelist-pointer offset landing inside the timerqueue node,
+and the stock-only `STATIC_USERMODEHELPER` empty-path constraint). On this
+evidence the CPU-timer route is not a practical reliable-root route for
+this firmware; the published Pixel 10 Pro demonstration does not transfer.
+Priority for firmware access remains the fresh exact-build inventory and
+the documented temporary-access gates below.
 
 ## Firmware archive and recovery implications
 
