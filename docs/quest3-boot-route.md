@@ -131,9 +131,8 @@ that counts the exact rare-path branch entries. Findings:
   trials (~5e-5); 0 in ~100k+ unjittered trials (rate is sensitive to
   timing jitter, which the probe traps supplied artificially).
 - **The win reproduces and materializes into kernel corruption.** After
-  a rate lever (the child's leader thread arms 192 thread-CPU timers, so
-  `posix_cpu_timers_exit()` stretches the exact sighand-lock hold the
-  deleting parent must collide with), winning trials recorded the chain
+  a rate lever that widens the exec-side critical section (mechanism
+  detailed in the evidence directory), winning trials recorded the chain
   with kernel traces (`loadtest-01.log`, `ctl2-03.log`, `fl-15.log`): the
   WARN fires as the parent's `timer_delete` frees an armed, still-queued
   `k_itimer`, and tens of milliseconds later — after the RCU grace
@@ -166,14 +165,16 @@ that counts the exact rare-path branch entries. Findings:
   credential patching (`STATIC_USERMODEHELPER` has an empty path on
   stock). None of that is built.
 
-Escalation-relevant facts were captured for any future work (exact-config
-`k_itimer`/`cpu_timer`/`cred`/`task_struct` layouts, `posix_timers_cache`
-accounting, the freelist-pointer offset landing inside the timerqueue node,
-and the stock-only `STATIC_USERMODEHELPER` empty-path constraint). On this
-evidence the CPU-timer route is a demonstrated, practically reachable
-corruption primitive on this firmware family — but not a reliable-root
-result. Priority for firmware access remains the fresh exact-build
-inventory and the documented temporary-access gates below.
+Escalation-relevant facts were captured for any future work in the
+private evidence directory (exact-config structure layouts, cache
+accounting and the stock-only `STATIC_USERMODEHELPER` empty-path
+constraint). On this evidence the CPU-timer route is a demonstrated
+corruption primitive in the offline QEMU rebuild of the pinned source,
+under instrumentation-supplied timing jitter and a documented rate lever
+— with zero observed wins in unjittered runs and nothing yet measured on
+headset hardware. It is not a reliable-root result. Priority for firmware
+access remains the fresh exact-build inventory and the documented
+temporary-access gates below.
 
 ## Firmware archive and recovery implications
 

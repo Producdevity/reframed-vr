@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
 import subprocess
 import time
 
@@ -50,8 +51,9 @@ def check_kernel(kernel):
 def build_probe(engine, image, output):
     binary = output / "race-init"
     log = output / "build.log"
+    source = shlex.quote(str(RACE_SOURCE))
     script = (f"gcc -static -O2 -pthread -Wall -Wextra -Werror "
-              f"-o /out/race-init {RACE_SOURCE} && test -s /out/race-init")
+              f"-o /out/race-init {source} && test -s /out/race-init")
     command = [engine, "run", "--rm", "--platform", "linux/arm64",
                "-v", f"{RACE_SOURCE.parent}:{RACE_SOURCE.parent}:ro",
                "-v", f"{output}:/out", "--entrypoint", "bash", image, "-c", script]
@@ -98,9 +100,34 @@ def build_initramfs(binary, output):
     return path
 
 
+def boot_markers(text):
+    lines = text.splitlines()
+    return {
+        "race_init": text.count("RACE_INIT"),
+        "sweep_end": text.count("SWEEP_END"),
+        "hammer_complete": "SWEEP_END label=hammer " in text,
+        "dhammer_complete": "SWEEP_END label=dhammer " in text,
+        "race_result": text.count("RACE_RESULT"),
+        "warn_first": [line for line in lines if "WARN_FIRST" in line],
+        "watch": [line for line in lines if line.startswith("WATCH")],
+        "oops_first": [line for line in lines if "OOPS_FIRST" in line],
+        "watchdog": text.count("WATCHDOG"),
+        "phase2_anomalies": sum(1 for line in lines
+                                if "PHASE2" in line and "anomalies=0" not in line),
+        "phase2_total": text.count("PHASE2"),
+        "warn_splat": [line for line in lines
+                       if "posix_cpu_timer_del" in line and "WARNING:" in line],
+        "oops_splat": [line for line in lines
+                       if any(marker in line for marker in
+                              ("Unable to handle kernel", "Internal error:", "BUG:"))],
+        "power_down": "reboot: Power down" in text,
+    }
+
+
 def run_boot(qemu, accel, kernel, initramfs, output, name, timeout):
     directory = output / name
     directory.mkdir()
+    log_path = directory / "boot.log"
     command = [qemu, "-name", f"quest-cpu-timer-race-{name}", "-machine", "virt",
                "-accel", accel, "-cpu", "host" if accel in ("hvf", "kvm") else "max",
                "-smp", "4", "-m", "1024", "-nodefaults", "-nographic",
@@ -111,38 +138,41 @@ def run_boot(qemu, accel, kernel, initramfs, output, name, timeout):
               "status": "started"}
     started = time.monotonic()
     try:
-        with (directory / "boot.log").open("wb") as log:
+        with log_path.open("wb") as log:
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT)
             try:
                 report["returncode"] = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
+                report.update(status="failed", timed_out=True,
+                              error=f"Race VM {name} did not finish before the deadline")
                 process.terminate()
                 try:
-                    process.wait(timeout=5)
+                    report["returncode"] = process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    process.wait(timeout=5)
-                raise TimeoutError(f"Race VM {name} did not finish before the deadline")
-        text = (directory / "boot.log").read_text(errors="replace")
-        report["markers"] = {
-            "race_init": text.count("RACE_INIT"),
-            "sweep_end": text.count("SWEEP_END"),
-            "warn_first": [line for line in text.splitlines() if "WARN_FIRST" in line],
-            "watch": [line for line in text.splitlines() if line.startswith("WATCH")],
-            "oops_first": [line for line in text.splitlines() if "OOPS_FIRST" in line],
-            "watchdog": text.count("WATCHDOG"),
-            "phase2_anomalies": sum(1 for line in text.splitlines()
-                                    if "PHASE2" in line and "anomalies=0" not in line),
-            "phase2_total": text.count("PHASE2"),
-            "warn_splat": [line for line in text.splitlines() if "posix_cpu_timer_del" in line and "WARNING" in line],
-            "power_down": "reboot: Power down" in text,
-        }
-        report["status"] = "passed" if report["markers"]["power_down"] else "completed"
-    except (OSError, TimeoutError) as error:
+                    report["returncode"] = process.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as error:
         report.update(status="failed", error=str(error))
-        raise
     finally:
+        text = log_path.read_text(errors="replace") if log_path.exists() else ""
+        markers = report["markers"] = boot_markers(text)
+        report["warn_observed"] = bool(markers["warn_first"] or markers["warn_splat"])
+        report["oops_observed"] = bool(markers["oops_first"] or markers["oops_splat"])
+        if report["status"] != "failed":
+            missing = [name for name, seen in (
+                ("RACE_INIT", markers["race_init"]),
+                ("SWEEP_END label=hammer", markers["hammer_complete"]),
+                ("SWEEP_END label=dhammer", markers["dhammer_complete"]),
+                ("RACE_RESULT", markers["race_result"]),
+                ("reboot: Power down", markers["power_down"]),
+            ) if not seen]
+            if report["returncode"] != 0:
+                report.update(status="failed", error=f"QEMU exited with code {report['returncode']}")
+            elif missing:
+                report.update(status="failed", error="Missing guest markers: " + ", ".join(missing))
+            else:
+                report["status"] = "guest_completed"
         report["elapsed_seconds"] = round(time.monotonic() - started, 1)
         (directory / "result.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
@@ -162,6 +192,8 @@ def main():
     parser.add_argument("--boots", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=430)
     args = parser.parse_args()
+    if args.boots < 1:
+        parser.error("--boots must be at least 1")
 
     if args.output.exists():
         raise SystemExit("Output directory exists; choose a new one")
@@ -185,30 +217,33 @@ def main():
     }
     (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
 
-    binary = build_probe(args.engine, args.image, args.output)
-    result["probe_sha256"] = digest(binary)
-    initramfs = build_initramfs(binary, args.output)
-    result["initramfs_sha256"] = digest(initramfs)
-    (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
-
     try:
+        binary = build_probe(args.engine, args.image, args.output)
+        result["probe_sha256"] = digest(binary)
+        initramfs = build_initramfs(binary, args.output)
+        result["initramfs_sha256"] = digest(initramfs)
+        (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+
         for index in range(args.boots):
             report = run_boot(args.qemu, args.accel, args.kernel.resolve(),
                               initramfs, args.output, f"boot{index + 1}", args.timeout)
             result["boots"].append(report)
             print(f"boot{index + 1}: {report['status']} "
-                  f"warn={bool(report['markers']['warn_first'])} "
-                  f"oops={bool(report['markers']['oops_first'])}", flush=True)
-        result["status"] = "completed"
-        result["warn_observed"] = any(b["markers"]["warn_first"] for b in result["boots"])
-        result["oops_observed"] = any(b["markers"]["oops_first"] for b in result["boots"])
-    except (OSError, TimeoutError, RuntimeError) as error:
+                  f"warn={report['warn_observed']} "
+                  f"oops={report['oops_observed']}", flush=True)
+        result["status"] = ("completed" if result["boots"] and
+                            all(b["status"] == "guest_completed" for b in result["boots"]) else "failed")
+    except (OSError, TimeoutError, RuntimeError,
+            subprocess.CalledProcessError) as error:
         result.update(status="failed", error=str(error))
         raise
     finally:
+        result["warn_observed"] = any(b["warn_observed"] for b in result["boots"])
+        result["oops_observed"] = any(b["oops_observed"] for b in result["boots"])
         (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(args.output / "result.json")
+    return 0 if result["status"] == "completed" else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
