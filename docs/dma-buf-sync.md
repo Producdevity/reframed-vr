@@ -9,8 +9,16 @@ fences in `msm_atomic_prepare_fb()` and `complete_commit()`.
 `patches/kernel/linux-userspace/0002-dma-buf-sync-file.patch` backports the
 [Linux 6.0 ioctl ABI](https://github.com/torvalds/linux/blob/v6.0/include/uapi/linux/dma-buf.h)
 and [ioctl handling](https://github.com/torvalds/linux/blob/v6.0/drivers/dma-buf/dma-buf.c)
-to the vendor reservation API. The existing kernel builder includes it in both
-Linux userspace configurations; the unmodified vendor configuration is separate.
+to the Quest vendor reservation API. The kernel builder selects it for the
+Quest Linux userspace configurations; Neo3 uses a separate patch set.
+
+The October 18 Neo3 `linux-native-panel-20261018-v2` kernel (Image SHA-256
+`fa99caa82c272832013354abb14bd4677ac26515ed9c5ddc1417a26eed97e583`)
+does not contain this backport. Its build receipt selects
+`patches/kernel/pico-neo3-linux/0001` through `0008`, and its corresponding
+cached source has neither ioctl definitions nor handlers. Porting and testing
+the API against Neo3's 4.19 reservation API remains necessary for that display
+path. The Quest results below do not establish Neo3 support.
 
 Read exports wait on writers; write exports wait on readers and writers.
 Imported writers preserve earlier independent writers, while readers remain

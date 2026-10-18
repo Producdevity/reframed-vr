@@ -93,7 +93,10 @@ The vendor SDE DRM driver declares render-node support, but actual node identity
 permissions and synchronization capabilities still require target validation.
 
 The [DMA-buffer sync-file backport](dma-buf-sync.md) supplies the kernel API
-Mesa uses to attach completion fences before presentation. KGSL now rejects
+Mesa uses to attach completion fences before presentation on the documented
+Quest builds. The October 18 Neo3 native-panel v2 kernel does not include that
+backport; its 4.19 patch set needs a separate implementation and verification.
+KGSL now rejects
 allocation/import requests for its unsupported implicit-sync fallback instead
 of silently accepting that flag. This does not prove GPU completion, modifier
 compatibility or scanout. Complete v10 kernel/module/device-tree exports now
