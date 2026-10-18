@@ -338,6 +338,25 @@ This verifies the observed missing-root test's return; it does not establish
 recovery from a hung kernel or every service-failure path. Persistent root
 installation still needs those applicable startup/recovery checks.
 
+A separate native systemd 257 service-failure test deliberately executed
+`false` with `FailureAction=reboot-force` and `RebootArgument=bootloader`.
+These settings are described in the
+[systemd 257 unit documentation](https://www.freedesktop.org/software/systemd/man/257/systemd.unit.html#RebootArgument=).
+The host observed fastboot again after 22.11 seconds, including the test's
+eight-second startup delay. Its receipt is
+`native-service-failure-recovery.json`. The generic service-failure test does
+not establish that every hardware-specific startup failure follows that path.
+
+A subsequent RAM-only missing-root probe with additional QRTR/PD-mapper
+failure actions entered Qualcomm crash mode (`05c6:900e`) instead of returning
+to fastboot. The cause is unresolved; those additional unit settings have not
+been incorporated. Its receipt is `recovery-probe-v4-session.json`. A bounded
+Sahara-only reset could not read the device descriptor and timed out. Stock
+`boot` was not changed by either probe. This failure means autonomous recovery
+is not yet reliable enough for unattended persistent installation.
+The owner subsequently returned the device to fastboot with the hardware
+buttons, and the unchanged `live-root-v7` native Linux RAM image booted again.
+
 It configures the kernel's existing `gser` USB function, waits for the primary
 `a600000.dwc3` UDC, and verifies its device-tree compatible, register extent and
 USB core ID before binding. Stock firmware selects this controller for the
