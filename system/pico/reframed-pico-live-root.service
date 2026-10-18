@@ -1,0 +1,16 @@
+[Unit]
+Description=Receive and verify the Pico development root in RAM
+DefaultDependencies=no
+ConditionKernelCommandLine=reframed.live=usb
+ConditionPathExists=/etc/initrd-release
+After=systemd-udevd.service
+Before=dracut-initqueue.service initrd-root-device.target
+FailureAction=reboot-force
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/reframed-pico-live-root
+TimeoutStartSec=2400
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console

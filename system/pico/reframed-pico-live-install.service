@@ -1,0 +1,13 @@
+[Unit]
+Description=Install the development console into the volatile Pico root
+DefaultDependencies=no
+ConditionKernelCommandLine=reframed.live=usb
+After=systemd-volatile-root.service
+Requires=systemd-volatile-root.service
+Before=initrd-switch-root.service
+FailureAction=reboot-force
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/reframed-pico-live-install
+TimeoutStartSec=10

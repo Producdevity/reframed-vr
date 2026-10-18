@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+[[ $EUID == 0 && " $(< /proc/cmdline) " == *' reframed.live=usb '* ]] || exit 1
+source /etc/reframed-vr/pico-live-root.conf
+[[ " $(< /proc/cmdline) " == *" androidboot.serialno=$BOOT_SERIAL "* ]] || exit 1
+[[ -c /dev/ttyGS0 && -d /run/initramfs/pico-live-root/squash ]] || exit 1
+stty -F /dev/ttyGS0 raw -echo -ixon -ixoff
+exec 0<>/dev/ttyGS0 1>&0 2>&0
+printf 'REFRAMED_LIVE_CONSOLE serial=%s\n' "$BOOT_SERIAL"
+export PS1='reframed# '
+exec /usr/bin/timeout --signal=TERM --kill-after=5 1800 /usr/bin/bash --noprofile --norc -i

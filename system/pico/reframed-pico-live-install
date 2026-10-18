@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+exec 3>/dev/ttyGS0
+trap 'status=$?; printf "REFRAMED_LIVE_INSTALL_ERROR line=%s status=%s\n" "$LINENO" "$status" >&3' ERR
+printf 'REFRAMED_LIVE_INSTALL filesystem=%s\n' "$(stat -f -c %T /sysroot)" >&3
+[[ $(stat -f -c %T /sysroot) == overlayfs ]] || exit 1
+mkdir -p /sysroot/usr/libexec /sysroot/etc/reframed-vr /sysroot/etc/systemd/system/multi-user.target.wants
+install -m 0755 /usr/libexec/reframed-pico-live-console /sysroot/usr/libexec/reframed-pico-live-console
+install -m 0600 /etc/reframed-vr/pico-live-root.conf /sysroot/etc/reframed-vr/pico-live-root.conf
+install -m 0644 /usr/lib/systemd/system/reframed-pico-live-console.service /sysroot/etc/systemd/system/reframed-pico-live-console.service
+ln -s ../reframed-pico-live-console.service /sysroot/etc/systemd/system/multi-user.target.wants/reframed-pico-live-console.service
+printf 'REFRAMED_LIVE_INSTALLED\n' >&3

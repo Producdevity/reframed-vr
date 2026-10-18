@@ -1,0 +1,95 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+[[ $EUID == 0 && -f /etc/initrd-release ]] || exit 1
+[[ " $(< /proc/cmdline) " == *' reframed.live=usb '* ]] || exit 1
+source /etc/reframed-vr/pico-live-root.conf
+[[ " $(< /proc/cmdline) " == *" androidboot.serialno=$BOOT_SERIAL "* ]] || exit 1
+mapfile -d '' -t compatible < /sys/firmware/devicetree/base/compatible
+[[ ${#compatible[@]} == 3 && ${compatible[0]} == qcom,kona-iot-mtp &&
+   ${compatible[1]} == qcom,kona-iot && ${compatible[2]} == qcom,mtp ]] || exit 1
+
+base=/run/initramfs/pico-live-root
+mkdir -m 0700 "$base"
+read -r _ memory _ < /proc/meminfo
+((PAYLOAD_BYTES > 0 && PAYLOAD_BYTES <= 3 * 1024**3)) || exit 1
+budget=$((16 * 1024**2))
+if [[ -z ${USERDATA_RELATIVE:-} ]]; then
+    ((memory * 1024 >= PAYLOAD_BYTES + 3 * 1024**3)) || exit 1
+    budget=$((budget + PAYLOAD_BYTES))
+fi
+mount -t tmpfs -o "size=$budget,nr_inodes=128,mode=0700" tmpfs "$base"
+mkdir "$base/squash"
+
+mountpoint -q /sys/kernel/config || mount -t configfs configfs /sys/kernel/config
+g=/sys/kernel/config/usb_gadget/reframed_live
+mkdir "$g"
+mkdir "$g/strings/0x409" "$g/configs/c.1" "$g/configs/c.1/strings/0x409" "$g/functions/gser.usb0"
+printf 0x1d6b > "$g/idVendor"
+printf 0x0104 > "$g/idProduct"
+printf 0x0001 > "$g/bcdDevice"
+printf 0x0200 > "$g/bcdUSB"
+printf '%s' "$BOOT_SERIAL" > "$g/strings/0x409/serialnumber"
+printf 'Reframed VR' > "$g/strings/0x409/manufacturer"
+printf 'Reframed VR Pico diagnostic' > "$g/strings/0x409/product"
+printf 'Boot diagnostics' > "$g/configs/c.1/strings/0x409/configuration"
+printf 0x80 > "$g/configs/c.1/bmAttributes"
+printf 250 > "$g/configs/c.1/MaxPower"
+ln -s "$g/functions/gser.usb0" "$g/configs/c.1/gser.usb0"
+deadline=$((SECONDS + 15))
+until [[ -e /sys/class/udc/a600000.dwc3 ]]; do
+    ((SECONDS < deadline)) || exit 1
+    sleep 0.1
+done
+[[ $(tr -d '\0' < /sys/class/udc/a600000.dwc3/device/of_node/compatible) == snps,dwc3 ]]
+[[ $(od -An -tx1 /sys/class/udc/a600000.dwc3/device/of_node/reg | tr -d ' \n') == 0a6000000000d93c ]]
+[[ $(od -An -tx1 /sys/class/udc/a600000.dwc3/device/of_node/usb-core-id | tr -d ' \n') == 00000000 ]]
+printf a600000.dwc3 > "$g/UDC"
+deadline=$((SECONDS + 90))
+until [[ $(< /sys/class/udc/a600000.dwc3/state) == configured && -c /dev/ttyGS0 ]]; do
+    ((SECONDS < deadline)) || exit 1
+    sleep 0.1
+done
+stty -F /dev/ttyGS0 raw -echo -ixon -ixoff clocal -hupcl
+exec 3<>/dev/ttyGS0
+trap 'status=$?; printf "REFRAMED_LIVE_ERROR serial=%s line=%s status=%s\n" "$BOOT_SERIAL" "$LINENO" "$status" >&3' ERR
+payload=$base/root.squashfs
+if [[ -n ${USERDATA_RELATIVE:-} ]]; then
+    printf 'REFRAMED_LIVE_FILE serial=%s\n' "$BOOT_SERIAL" >&3
+    partitions=()
+    for entry in /sys/class/block/*/uevent; do
+        while IFS= read -r value; do
+            [[ $value != PARTNAME=userdata ]] || partitions+=("${entry%/uevent}")
+        done < "$entry"
+    done
+    [[ ${#partitions[@]} == 1 ]]
+    node=${partitions[0]}
+    [[ $(< "$node/start") == "$USERDATA_START" && $(< "$node/size") == "$USERDATA_SECTORS" ]]
+    device=/dev/${node##*/}
+    [[ -b $device && $(blockdev --getsize64 "$device") == "$((USERDATA_SECTORS * 512))" ]]
+    blockdev --setro "$device"
+    [[ $(< "$node/ro") == 1 ]]
+    mkdir "$base/userdata"
+    mount -t f2fs -o ro,norecovery,nodev,nosuid "$device" "$base/userdata"
+    payload=$base/userdata/$USERDATA_RELATIVE
+    [[ -f $payload && ! -L $payload && $(readlink -f "$payload") == "$payload" ]]
+else
+    printf 'REFRAMED_LIVE_READY serial=%s bytes=%s sha256=%s\n' "$BOOT_SERIAL" "$PAYLOAD_BYTES" "$PAYLOAD_SHA256" >&3
+    head -c "$PAYLOAD_BYTES" <&3 > "$payload"
+fi
+[[ $(stat -c %s "$payload") == "$PAYLOAD_BYTES" ]]
+printf '%s  %s\n' "$PAYLOAD_SHA256" "$payload" | sha256sum -c -
+outer=$(losetup --find --show --read-only "$payload")
+mount -t squashfs -o ro,nodev,nosuid "$outer" "$base/squash"
+[[ $(stat -c %s "$base/squash/rootfs.ext4") == "$ROOT_BYTES" ]]
+inner=$(losetup --find --show --read-only "$base/squash/rootfs.ext4")
+[[ $(blkid -s LABEL -o value "$inner") == "$ROOT_LABEL" ]]
+printf '%s\n' "$outer" "$inner" > "$base/loops"
+udevadm trigger --action=add "/sys/class/block/${inner##*/}"
+deadline=$((SECONDS + 30))
+until [[ $(readlink -f "/dev/disk/by-label/$ROOT_LABEL") == "$inner" ]]; do
+    ((SECONDS < deadline)) || exit 1
+    sleep 0.1
+done
+printf 'REFRAMED_LIVE_ROOT_READY serial=%s loop=%s\n' "$BOOT_SERIAL" "$inner" > /dev/ttyGS0

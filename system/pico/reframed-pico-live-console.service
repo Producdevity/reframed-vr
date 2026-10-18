@@ -1,0 +1,13 @@
+[Unit]
+Description=Pico physical development USB root console
+ConditionKernelCommandLine=reframed.live=usb
+FailureAction=reboot-force
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/reframed-pico-live-console
+ExecStopPost=/usr/bin/systemctl --force --force reboot
+TimeoutStopSec=10
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
