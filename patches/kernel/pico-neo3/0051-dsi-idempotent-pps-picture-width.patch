@@ -1,0 +1,21 @@
+Subject: [PATCH] drm/msm/dsi: derive PPS width from the current mode
+
+DSC picture width is retained in mode-private state. On Neo3, the driver
+generated a 3840-wide PPS while the DSC hardware and panel use a
+1920-wide picture. Multiplying the stored width compounds the value
+across repeated enables.
+
+Derive the full picture width from the current per-controller mode each
+time so repeated modesets cannot double it again.
+
+--- a/techpack/display/msm/dsi/dsi_display.c
++++ b/techpack/display/msm/dsi/dsi_display.c
+@@ -7603,6 +7603,7 @@ int dsi_display_enable(struct dsi_display *display)
+ 	if ((mode->priv_info->dsc_enabled) &&
+ 			!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS_FPS)) {
+-		mode->priv_info->dsc.pic_width *= display->ctrl_count;
++		mode->priv_info->dsc.pic_width =
++			mode->timing.h_active * display->ctrl_count;
+ 		rc = dsi_panel_update_pps(display->panel);
+ 		if (rc) {
+ 			DSI_ERR("[%s] panel pps cmd update failed, rc=%d\n",

@@ -57,7 +57,7 @@ all five VXR7200 control pins as input-low. Patch `0025-native-panel-mux.patch` 
 checks every pin before initializing input-low pins as output-low; it refuses
 high or unknown states and retains the strict output-low power-on check.
 The rebuilt native kernel subsequently owns all five pins as outputs and
-registers the intended DSI panel. Optical output has not been inspected.
+registers the intended DSI panel. Optical output was not inspected at that stage.
 
 The file-backed `live-root-v5` assembly subsequently reached the full Linux
 root: `systemd-detect-virt` returned `none`, the root console ran as UID 0,
@@ -119,6 +119,55 @@ per capture. The failure is therefore beyond those producer pixels; its exact
 display/DSC/link cause remains unresolved. See `owner-panel-noise-verification.json`
 and `live-root-v8-native.log`. Successful modesets, vblanks and screen captures
 must not be reported as a usable physical graphical session.
+
+The owner subsequently confirmed that the stock Android interface looks clean.
+Separate native request-selection and lane-selector experiments changed their
+intended controller bits but did not remove the visible noise. Combined link,
+EOT and spread-spectrum clock experiments have no owner-confirmed optical result.
+The stock/native comparison covers 300 compression registers, which match, and
+84 routing registers, whose differences are the expected 72/120 Hz periods.
+Those register checks do not inspect the panel's generated DSC parameter packet.
+
+A bounded, read-only diagnostic module built and signed for the running kernel
+then snapshots that packet under the display and panel locks. After Xorg enables
+the display, the current mode has 960 pixels per controller and two controllers,
+but the generated PPS describes a **3840-pixel-wide** picture. The encoder and
+stock E6 panel parameters use 1920 pixels. See `native-pps-width-mismatch-v1.json`
+and `dsi-pps-snapshot-v2/` in the evidence directory. This is a driver-buffer
+snapshot, not an electrical capture of the transmitted packet.
+
+Patch `0051-dsi-idempotent-pps-picture-width.patch` derives the full PPS width from
+the current per-controller mode instead of multiplying retained mode state.
+Tests of the extracted driver function reproduce the original 3840/7680 width
+growth and keep the patched width at 1920 across repeated enables. They also
+cover the splash/FPS guards, backend errors and single-controller case under
+ASan/UBSan. See `pps-width-regression-v1/result.json`.
+
+The corrected kernel (`8667da5440b600ba1535f88ea434133bfaa6f6af5a82b04682e67954402c5f40`)
+and its 38 matching modules subsequently boot in the native RAM root. Driver
+snapshots keep the PPS width at 1920 after the full KMS color-test cycle, Xorg/
+Steam startup, and stopping/recreating the graphical session. The three packets
+are identical and differ from the original captured packet only in the two width
+bytes. Xorg, Openbox and Steam are active after the final cycle. See
+`pps-width-v1-first-packet-verification.json`,
+`pps-width-v1-xorg-packet-verification.json` and
+`pps-width-v1-restart-packet-verification.json`. The owner is away, so clean
+physical output, stereo and optical calibration remain unverified. This packet
+fix does not establish a usable physical graphical session by itself.
+
+The SSC isolation test also installs a narrowly changed DTBO carrier with
+SHA-256 `a784b74fc998e91b3080068ab1c00c40543e5670584d80ae1ed7c3baffb69c2b`.
+A fresh full readback first verified the retained previous carrier; the new
+24 MiB carrier then passed independent full readback. Its two removed overlay
+SSC-enable properties leave the installed stock boot's merged tree identical,
+because the stock base already supplies those properties. The native RAM base
+removes them too, and both live PLLs report SSC disabled. The unchanged installed
+stock boot subsequently reaches boot-complete with both display engines active,
+Wi-Fi off and the updater disabled. See `ssc-off-v1/report.json`,
+`dtbo-after-ssc-independent-verification.json` and
+`ssc-neutral-dtbo-stock-return-verification.json`. Optical output after this
+change has not been inspected; the original and previous DTBO carriers remain
+retained for recovery.
 
 Binary DRM synchronization and GPU semaphore/buffer sharing across processes do
 pass on this boot, separately from panel output. See
