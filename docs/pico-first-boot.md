@@ -2,8 +2,8 @@
 
 The inventoried Neo3 Pro Eye now boots a full native Linux root with systemd
 PID 1 and an authorized USB root console, and returns to stock without physical
-handling. Native GPU execution and initial panel modesets work; desktop and
-tracking bring-up remain ahead. This is not yet an
+handling. Native GPU execution, initial panel modesets and the native Steam
+welcome UI work; desktop integration and tracking bring-up remain ahead. This is not yet an
 installation procedure. The intended installation replaces Android; stock
 Android is temporarily retained for recovery and staging.
 
@@ -96,6 +96,19 @@ and subsequent PLL failures. Those failed attempts are retained in
 The corrected test and physical log are `tests/pico-kms-smoke.c` and
 `live-root-v7-first-mode.log`. Vblank events do not establish optical quality,
 stereo mapping, or a usable Steam UI.
+
+The subsequent Xorg test exposed two generic modesetting-driver incompatibilities:
+an unexposed vendor property had no atom table, and mode conversion dropped the
+kernel-supplied refresh field. The source-matched patches and build recipe are
+documented in [Pico Xorg compatibility](../patches/xorg/README.md). With both
+patches, Xorg and Openbox stayed active and the kernel accepted the 120 Hz mode.
+The native ARM64 Steam client and web helper then rendered the gamepad welcome
+screen; the owner-approved framebuffer capture is `pico-steam-desktop.png`,
+bound by `native-steam-first-ui-verification.json` in the same evidence directory.
+This test uses CPU rendering and fills the raw portrait display. It establishes
+neither calibrated stereo output nor native desktop GPU acceleration. No Wi-Fi
+interface is registered in this boot, and Android has not yet been replaced on
+persistent storage.
 
 Generic `v4l_id` probing also blocked native boot by opening vendor codec and
 camera control nodes. The observed codec stack waited for `venus.mdt` firmware.

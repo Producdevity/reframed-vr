@@ -1,0 +1,9 @@
+FROM localhost/reframed-vr:mesa-tools
+RUN dnf -y --setopt=install_weak_deps=False install \
+    xorg-x11-server-devel-21.1.24-1.fc44 \
+    libepoxy-devel pixman-devel libXfont2-devel libxcvt-devel libxkbfile-devel \
+    libXdmcp-devel libXau-devel libpciaccess-devel systemd-devel libtirpc-devel \
+    xorg-x11-xtrans-devel libXdamage-devel libXfixes-devel nettle-devel \
+    'pkgconfig(fontutil)' 'pkgconfig(xshmfence)' \
+    && dnf clean all
+ENTRYPOINT ["bash"]

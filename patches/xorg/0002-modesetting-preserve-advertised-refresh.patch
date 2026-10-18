@@ -1,0 +1,34 @@
+--- a/hw/xfree86/drivers/modesetting/drmmode_display.c
++++ b/hw/xfree86/drivers/modesetting/drmmode_display.c
+@@ -1434,2 +1434,31 @@
+     kmode->name[DRM_DISPLAY_MODE_LEN - 1] = 0;
++
++    /* Vendor DSI modes can carry a refresh independent of their pixel clock. */
++    xf86CrtcConfigPtr config = XF86_CRTC_CONFIG_PTR(scrn);
++    for (int i = 0; i < config->num_output; i++) {
++        drmmode_output_private_ptr output = config->output[i]->driver_private;
++        drmModeConnectorPtr connector = output->mode_output;
++
++        if (!connector)
++            continue;
++        for (int j = 0; j < connector->count_modes; j++) {
++            const drmModeModeInfo *original = &connector->modes[j];
++
++            if (kmode->clock == original->clock &&
++                kmode->hdisplay == original->hdisplay &&
++                kmode->hsync_start == original->hsync_start &&
++                kmode->hsync_end == original->hsync_end &&
++                kmode->htotal == original->htotal &&
++                kmode->hskew == original->hskew &&
++                kmode->vdisplay == original->vdisplay &&
++                kmode->vsync_start == original->vsync_start &&
++                kmode->vsync_end == original->vsync_end &&
++                kmode->vtotal == original->vtotal &&
++                kmode->vscan == original->vscan &&
++                kmode->flags == original->flags) {
++                kmode->vrefresh = original->vrefresh;
++                return;
++            }
++        }
++    }
+ 
