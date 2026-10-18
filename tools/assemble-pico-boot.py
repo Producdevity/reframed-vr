@@ -16,6 +16,51 @@ assembly = diagnostic.assembly
 container = diagnostic.container
 digest = diagnostic.digest
 regular = diagnostic.regular
+RECOVERY_SOURCES = ('reframed-pico-recover', '20-pico-recovery.sh')
+RECOVERY_AUGMENT = r'''
+set -euo pipefail
+mkdir /tmp/rd
+cd /tmp/rd
+lsinitrd --unpack /baseline/initramfs.img
+test -x usr/bin/bash && test -x usr/bin/systemctl
+mkdir -p usr/libexec usr/lib/dracut/hooks/shutdown-emergency etc/reframed-vr
+install -m 0755 /source/reframed-pico-recover usr/libexec/reframed-pico-recover
+install -m 0755 /source/20-pico-recovery.sh usr/lib/dracut/hooks/shutdown-emergency/20-pico-recovery.sh
+install -m 0600 /output/pico-boot-serial etc/reframed-vr/pico-boot-serial
+find . -print0 | LC_ALL=C sort -z | cpio --null -o -H newc --reproducible --owner=0:0 | gzip -n -9 > /output/initramfs-recovery.img
+find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > /output/initramfs-recovery-contents.sha256
+'''
+
+
+def recovery_arguments(cmdline, serial, probe=False):
+    diagnostic.diagnostic.serial(serial)
+    if 'reframed.pico=qrtr' not in cmdline.split() or 'reframed.pico.recovery=' in cmdline:
+        raise ValueError('Recovery requires an unmodified Pico runtime command line')
+    if probe:
+        tokens = cmdline.split()
+        roots = [i for i, token in enumerate(tokens) if token.startswith('root=')]
+        if len(roots) != 1 or tokens[roots[0]] == 'root=LABEL=reframed-missing':
+            raise ValueError('Recovery probe requires a distinct known root')
+        tokens[roots[0]] = 'root=LABEL=reframed-missing'
+        cmdline = ' '.join(tokens) + ' msm_drm.modeset=0'
+    return cmdline + ' reframed.pico.recovery=fastboot'
+
+
+def augment_recovery(initrd, output, image, serial, engine):
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+        raise ValueError('Recovery augmentation requires an immutable ARM64 image ID')
+    metadata = json.loads(subprocess.check_output([engine, 'image', 'inspect', image], text=True, timeout=30))[0]
+    if metadata.get('Architecture') != 'arm64':
+        raise ValueError('Recovery augmentation requires an ARM64 image')
+    (output / 'pico-boot-serial').write_text(serial + '\n')
+    (output / 'pico-boot-serial').chmod(0o600)
+    command = [engine, 'run', '--rm', '--network', 'none', '--memory', '1g', '--cpus', '2',
+               '-v', f'{initrd}:/baseline:ro', '-v', f'{output}:/output',
+               '-v', f'{ROOT / "system/pico"}:/source:ro', '--entrypoint', 'bash', image,
+               '-c', RECOVERY_AUGMENT]
+    with (output / 'recovery-augment.log').open('xb') as log:
+        subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, timeout=180)
+    return command
 
 
 def receipt(directory, name, required, limit):
@@ -99,11 +144,19 @@ def run(args):
         p.absolute() for p in (args.reference, args.kernel, args.initramfs, args.root, args.mkbootimg, args.output))
     if output.exists() or output.is_symlink():
         raise ValueError('Choose a new output directory')
+    serial = getattr(args, 'recovery_boot_serial', None)
+    probe = getattr(args, 'recovery_probe', False)
+    image = getattr(args, 'initramfs_image', None)
+    if (probe and not serial) or bool(serial) != bool(image):
+        raise ValueError('Recovery probe requires a serial and immutable initramfs image')
     stock = container.reference_input(reference, args.reference_sha256)
     profile = assembly.checked_tools(tools)
     inputs = runtime_inputs(kernel, initrd, root, args.root_manifest_sha256)
     arm64 = assembly.checked_kernel_image(kernel / 'Image', inputs['kernel_inputs']['Image'])
     cmdline = assembly.root_arguments(inputs['root_label'], pico_services=True) + ' selinux=1 enforcing=1'
+    sources = {n: digest(ROOT / 'system/pico' / n) for n in RECOVERY_SOURCES} if serial else {}
+    if serial:
+        cmdline = recovery_arguments(cmdline, serial, probe) + ' panic=10'
     report = dict(inputs, status='started', scope='unsigned offline Pico runtime assembly',
                   flash_ready=False, physical_boot_verified=False, recovery_verified=False,
                   dtb_compatibility_verified=False, root_transport_verified=False, rootfs_included=False,
@@ -113,11 +166,23 @@ def run(args):
                   aosp_profile=profile, commands=[])
     output.mkdir(parents=True)
     try:
-        container.assemble(reference, stock, kernel / 'Image', initrd / 'initramfs.img',
-                           {'kernel': arm64['sha256'], 'ramdisk': inputs['initramfs_sha256']},
-                           cmdline, tools, output, 'boot-linux-unsigned.img', report)
+        ramdisk = initrd / 'initramfs.img'
+        name = 'boot-linux-unsigned.img'
+        if serial:
+            report['commands'].append(augment_recovery(initrd, output, image, serial, args.engine))
+            ramdisk = output / 'initramfs-recovery.img'
+            report.update(recovery_to='fastboot', recovery_probe=probe, recovery_boot_serial=serial,
+                          recovery_sources_sha256=sources, initramfs_image=image,
+                          derived_initramfs_sha256=digest(ramdisk))
+            if probe:
+                name = 'boot-recovery-probe.img'
+                report['scope'] = 'RAM-only missing-root recovery probe; never flash this image'
+        container.assemble(reference, stock, kernel / 'Image', ramdisk,
+                           {'kernel': arm64['sha256'], 'ramdisk': digest(ramdisk)},
+                           cmdline, tools, output, name, report)
         if (digest(reference) != stock['sha256'] or assembly.checked_tools(tools) != profile or
-                runtime_inputs(kernel, initrd, root, args.root_manifest_sha256) != inputs):
+                runtime_inputs(kernel, initrd, root, args.root_manifest_sha256) != inputs or
+                (serial and {n: digest(ROOT / 'system/pico' / n) for n in RECOVERY_SOURCES} != sources)):
             raise ValueError('Inputs changed during assembly')
         report.update(status='assembled-and-roundtrip-verified', source_inputs_unchanged=True)
     except Exception as error:
@@ -136,6 +201,10 @@ if __name__ == '__main__':
     parser.add_argument('--root-manifest-sha256', required=True, help='manifest hash retained from offline root verification')
     parser.add_argument('--mkbootimg', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--recovery-boot-serial', help='Opt in to guarded emergency return to fastboot')
+    parser.add_argument('--recovery-probe', action='store_true', help='RAM-only missing-root test; never flash this image')
+    parser.add_argument('--initramfs-image', help='Immutable ARM64 builder image ID for recovery augmentation')
+    parser.add_argument('--engine', default='docker')
     args = parser.parse_args()
     try:
         run(args)

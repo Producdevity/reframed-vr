@@ -1,0 +1,39 @@
+#!/bin/bash
+set -euo pipefail
+
+pico_recovery_identity() {
+    local serial_file=$1 cmdline_file=$2 compatible_file=$3 token
+    local serial_count=0 pico_count=0 recovery_count=0
+    local -a serial=() lines=() args=() compatible=()
+    [[ -r $serial_file && -r $cmdline_file && -r $compatible_file ]] || return 1
+    while IFS= read -r token || [[ -n $token ]]; do serial+=("$token"); done < "$serial_file"
+    [[ ${#serial[@]} == 1 && ${serial[0]} =~ ^[A-Za-z0-9_.-]{1,64}$ &&
+       ${serial[0]} != qemu ]] || return 1
+    while IFS= read -r token || [[ -n $token ]]; do lines+=("$token"); done < "$cmdline_file"
+    [[ ${#lines[@]} == 1 ]] || return 1
+    read -r -a args <<< "${lines[0]}"
+    for token in "${args[@]}"; do
+        case "$token" in
+            androidboot.serialno=*)
+                [[ $token == "androidboot.serialno=${serial[0]}" ]] || return 1
+                serial_count=$((serial_count + 1)) ;;
+            reframed.pico=*)
+                [[ $token == reframed.pico=qrtr ]] || return 1
+                pico_count=$((pico_count + 1)) ;;
+            reframed.pico.recovery=*)
+                [[ $token == reframed.pico.recovery=fastboot ]] || return 1
+                recovery_count=$((recovery_count + 1)) ;;
+        esac
+    done
+    [[ $serial_count == 1 && $pico_count == 1 && $recovery_count == 1 ]] || return 1
+    while IFS= read -r -d '' token || [[ -n $token ]]; do compatible+=("$token"); done < "$compatible_file"
+    [[ ${#compatible[@]} == 3 && ${compatible[0]} == qcom,kona-iot-mtp &&
+       ${compatible[1]} == qcom,kona-iot && ${compatible[2]} == qcom,mtp ]]
+}
+
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
+[[ $EUID == 0 ]] || exit 1
+pico_recovery_identity /etc/reframed-vr/pico-boot-serial /proc/cmdline \
+    /sys/firmware/devicetree/base/compatible || exit 1
+printf '<6>REFRAMED_PICO_RECOVERY verified_identity=1 target=bootloader\n' > /dev/kmsg || true
+exec /usr/bin/systemctl --force --force --reboot-argument=bootloader reboot

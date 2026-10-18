@@ -320,6 +320,24 @@ New Pico runtime command lines use `rd.emergency=reboot` so a root-mount
 failure requests a return to the retained stock boot. That specific failure
 path still requires physical verification; kernel hangs can prevent reboot.
 
+The optional `--recovery-boot-serial BOOT_SERIAL --initramfs-image IMAGE_ID`
+adds a guarded emergency hook that instead requests fastboot. It requires the
+exact Neo3 compatible list, one matching boot serial and explicit Pico/recovery
+tokens. The builder derives a new initramfs and records both source hashes and
+its own payload hash; the baseline root and initramfs stay unchanged.
+Add `--recovery-probe` only for a RAM-boot test: its distinctly named
+`boot-recovery-probe.img` deliberately requests a missing root label and disables
+KMS. **Never flash this probe.**
+
+The October 18 `recovery-probe-v3` RAM boot returned to fastboot autonomously in
+40.36 seconds, followed by another successful `live-root-v7` native RAM-root
+boot. No partitions were written. See `recovery-probe-v3-session.json` and
+`recovery-probe-v3-verification.json`. The subsequent boot exposed no pstore
+records, so the hook's kernel-log marker was not independently recovered.
+This verifies the observed missing-root test's return; it does not establish
+recovery from a hung kernel or every service-failure path. Persistent root
+installation still needs those applicable startup/recovery checks.
+
 It configures the kernel's existing `gser` USB function, waits for the primary
 `a600000.dwc3` UDC, and verifies its device-tree compatible, register extent and
 USB core ID before binding. Stock firmware selects this controller for the
