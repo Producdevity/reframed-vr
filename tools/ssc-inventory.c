@@ -43,7 +43,7 @@ static gboolean expired(gpointer data)
     return G_SOURCE_REMOVE;
 }
 
-static GBytes *exchange(SSCClient *client, guint64 high, guint64 low, guint request,
+static GBytes *exchange(SSCClient *client, const char *stage, guint64 high, guint64 low, guint request,
                         guint response, const ProtobufCMessage *message)
 {
     struct exchange x = {.client = client, .cancel = g_cancellable_new(),
@@ -60,7 +60,8 @@ static GBytes *exchange(SSCClient *client, guint64 high, guint64 low, guint requ
     g_signal_handler_disconnect(client, handler);
     if (!x.expired) g_source_remove(timeout);
     if (x.error || x.expired) {
-        g_printerr("SSC metadata request failed: %s\n", x.error ? x.error->message : "report timeout");
+        g_printerr("SSC %s metadata request failed: %s\n", stage,
+                   x.error ? x.error->message : "report timeout");
         g_clear_pointer(&x.payload, g_bytes_unref);
     }
     g_clear_error(&x.error);
@@ -158,10 +159,11 @@ static SscSuidResponse *discover(SSCClient *client, const char *type)
     request.data_type = (char *)type;
     request.has_enable_updates = request.has_only_default_values = TRUE;
     request.enable_updates = request.only_default_values = FALSE;
-    GBytes *payload = exchange(client, SSC_SENSOR_UID_SUID_HIGH, SSC_SENSOR_UID_SUID_LOW,
+    GBytes *payload = exchange(client, type, SSC_SENSOR_UID_SUID_HIGH, SSC_SENSOR_UID_SUID_LOW,
                                SSC_MSG_REQUEST_SUID, SSC_MSG_RESPONSE_SUID, &request.base);
     if (!payload) return NULL;
     SscSuidResponse *reply = identities(payload, type);
+    if (!reply) g_printerr("SSC %s discovery returned invalid identities\n", type);
     g_bytes_unref(payload);
     return reply;
 }
@@ -226,11 +228,15 @@ int main(int argc, char **argv)
     while (!connection.acknowledged) g_main_context_iteration(NULL, TRUE);
     if (!connection.expired) g_source_remove(timeout);
     gboolean valid = connection.client && !connection.expired && !connection.error;
+    if (!valid)
+        g_printerr("SSC client initialization failed: %s\n", connection.error ? connection.error->message :
+                   connection.expired ? "connection timeout" : "no QMI client");
     GString *out = g_string_new("{\"schema\":1,\"data_type\":");
     json_string(out, argv[2]);
     g_string_append(out, ",\"sensors\":[");
     SscSuidResponse *registry = valid ? discover(connection.client, "registry") : NULL;
-    valid &= registry && registry->n_uid > 0;
+    if (registry && !registry->n_uid) g_printerr("SSC registry discovery returned no sensors\n");
+    valid &= registry != NULL;
     if (registry) ssc_suid_response__free_unpacked(registry, NULL);
     SscSuidResponse *sensors = valid ? discover(connection.client, argv[2]) : NULL;
     valid &= sensors != NULL;
@@ -239,11 +245,13 @@ int main(int argc, char **argv)
         SscAttrRequest request = SSC_ATTR_REQUEST__INIT;
         request.has_enable_updates = TRUE;
         request.enable_updates = FALSE;
-        GBytes *payload = exchange(connection.client, uid->high, uid->low,
+        GBytes *payload = exchange(connection.client, argv[2], uid->high, uid->low,
                                    SSC_MSG_REQUEST_GET_ATTRIBUTES, SSC_MSG_RESPONSE_GET_ATTRIBUTES, &request.base);
         if (i) g_string_append_c(out, ',');
         g_string_append_printf(out, "{\"suid_high\":\"%016" G_GINT64_MODIFIER "x\",\"suid_low\":\"%016" G_GINT64_MODIFIER "x\",\"attributes\":", uid->high, uid->low);
         valid = payload && attributes(out, payload);
+        if (payload && !valid)
+            g_printerr("SSC %s returned invalid attributes for sensor index %zu\n", argv[2], i);
         g_string_append_c(out, '}');
         if (payload) g_bytes_unref(payload);
     }

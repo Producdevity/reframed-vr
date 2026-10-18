@@ -67,7 +67,7 @@ try:
                         if line.startswith('SSC_INVENTORY_REQUEST ')]
             assert all(r['id'] in (512, 1) for r in requests)
             for run in runs:
-                success = case in ('normal', 'empty', 'late-ack')
+                success = case in ('normal', 'empty', 'registry-empty', 'late-ack')
                 assert run['code'] == (0 if success else 1), run
                 if not success:
                     assert run['stdout'] == '', run
@@ -87,7 +87,7 @@ try:
                                      999: [{'fixed64': str(2**64 - 1)}]}
             if case == 'normal':
                 assert [r['id'] for r in requests] == [512, 512, 1, 1] * 6
-            if case == 'late-ack':
+            if case in ('registry-empty', 'late-ack'):
                 assert [r['id'] for r in requests] == [512, 512, 1, 1]
             print('SSC_CASE', case, 'exit 0', flush=True)
     assert Path('/proc/sys/kernel/tainted').read_text() == taint

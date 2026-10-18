@@ -66,6 +66,14 @@ for both raw/calibration pairs. Unit files captured from Android do not by
 themselves prove active native SUIDs, coordinate conventions or optical
 calibration. No physical calibration file is distributed with the project.
 
+The metadata-only `ssc-inventory --collect TYPE` collector reports connection,
+discovery and attribute failures on stderr. A valid empty `registry` response
+does not prevent querying the requested type. Successful collection can return
+an empty `sensors` array; it establishes neither sensor readiness nor tracking.
+It sends only discovery and attribute requests, and does not enable streams or
+select a configuration. The HMD's sensor and calibration requirements above
+still apply.
+
 ## Offline coverage
 
 Tests use the pinned Monado helpers and synthetic optical data. Native sanitizer
