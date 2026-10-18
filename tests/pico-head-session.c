@@ -49,6 +49,10 @@ int main(int argc,char **argv)
         struct ssc_imu_session_config bad=sensors;bad.bias.rigid_body[1]=1;
         g_assert_false(pico_head_session_create(&bad,&tracking,&session));
         g_assert_null(session);
+        bad=sensors;bad.bias.mode[SSC_IMU_GYROSCOPE]=SSC_CALIBRATION_SSC_REPORTED;
+        bad.bias.suid_high[1]=bad.bias.suid_low[1]=0;
+        g_assert_false(pico_head_session_create(&bad,&tracking,&session));
+        g_assert_null(session);
         g_assert_true(pico_head_session_create(&sensors,&tracking,&session));
         struct xrt_space_relation relation;int64_t capture;
         g_assert_false(pico_head_session_get(session,g_get_monotonic_time()*1000,&relation,&capture));

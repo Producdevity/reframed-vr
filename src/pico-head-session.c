@@ -60,6 +60,7 @@ bool pico_head_session_create(const struct ssc_imu_session_config *sensors,
 {
     if (!session || *session || !sensors || !sensors->calibrate ||
         sensors->report || sensors->invalidate || sensors->bias.report ||
+        sensors->bias.mode[SSC_IMU_GYROSCOPE] != SSC_CALIBRATION_RUNTIME_BIAS ||
         sensors->bias.rigid_body[0] != 0 || sensors->bias.rigid_body[1] != 0) return false;
     struct pico_head_session *s = calloc(1, sizeof(*s));
     if (!s) return false;

@@ -7,6 +7,7 @@ struct ssc_imu_session;
 
 struct ssc_imu_session_bias_config {
     uint64_t suid_high[2], suid_low[2];
+    enum ssc_calibration_mode mode[2];
     int rigid_body[2];
     int64_t max_age_ns;
     void (*report)(void *data, const struct ssc_bias_sample *sample);
@@ -26,6 +27,7 @@ struct ssc_imu_session_config {
 struct ssc_imu_session_status {
     uint64_t accepted[2], rejected[2];
     uint64_t calibration_accepted[2], calibration_rejected[2], corrected[2];
+    uint64_t ssc_reported[2];
     bool streaming, stopping, finished, failed;
     char error[192];
 };
@@ -37,11 +39,15 @@ struct ssc_imu_session_status {
  * Callbacks run on that worker; data must remain alive until destroy succeeds.
  * report receives a borrowed event only while both streams are open. invalidate
  * runs once when stopping, including failed startup. No retries or pose output.
- * A non-NULL bias.report opts into two additional calibration subscriptions.
- * All four exact SUIDs and each pair's expected rigid body must match before
- * enabling any sensor. Raw callbacks then wait for all four subscriptions;
+ * A non-NULL bias.report opts into explicit per-sensor calibration modes.
+ * RUNTIME_BIAS (default) requires an exact paired calibration SUID; SSC_REPORTED
+ * requires a zero calibration SUID and preserves the SSC vector/status without
+ * inventing a calibration event. Each enabled pair's expected rigid body and
+ * every raw sensor's body must match before enabling any sensor.
+ * Raw callbacks wait for all requested subscriptions;
  * corrected callbacks additionally require a reliable, timely bias. Losing
- * corrected output for report_timeout_ns invalidates the whole session.
+ * usable output for report_timeout_ns invalidates the whole session. Status
+ * distinguishes bias-subtracted from SSC-reported outputs.
  * A single initial on-change calibration report is retained during startup.
  * The initial output must be NULL; configuration is copied. */
 bool ssc_imu_session_create(const struct ssc_imu_session_config *config,

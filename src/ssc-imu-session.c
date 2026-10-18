@@ -131,7 +131,8 @@ static void received(GObject *client, guint id, guint64 high, guint64 low,
             ssc_calibration_correct(&s->calibration, &event, now, &corrected)) {
             s->last_corrected_ns[index] = now;
             g_mutex_lock(&s->lock);
-            s->status.corrected[index]++;
+            if (corrected.mode == SSC_CALIBRATION_SSC_REPORTED) s->status.ssc_reported[index]++;
+            else s->status.corrected[index]++;
             g_mutex_unlock(&s->lock);
             s->config.bias.report(s->config.data, &corrected);
         }
@@ -228,6 +229,7 @@ static void discovered(GObject *object, GAsyncResult *result, gpointer data)
         for (unsigned i = 0; i < 2; i++) {
             bias.suid_high[i] = s->config.bias.suid_high[i];
             bias.suid_low[i] = s->config.bias.suid_low[i];
+            bias.mode[i] = s->config.bias.mode[i];
         }
         if (!ssc_calibration_begin(&s->calibration, &bias, s->stream.generation)) {
             stop_worker(s, "Invalid IMU bias configuration");
@@ -258,7 +260,9 @@ static gboolean watchdog(gpointer data)
             for (unsigned i = 0; i < 2; i++)
                 if (now < s->last_corrected_ns[i] ||
                     now - s->last_corrected_ns[i] >= s->config.report_timeout_ns)
-                    stop_worker(s, i == 0 ? "Accelerometer calibration unavailable" : "Gyroscope calibration unavailable");
+                    stop_worker(s, s->config.bias.mode[i] == SSC_CALIBRATION_SSC_REPORTED ?
+                                (i == 0 ? "Accelerometer SSC quality unavailable" : "Gyroscope SSC quality unavailable") :
+                                (i == 0 ? "Accelerometer calibration unavailable" : "Gyroscope calibration unavailable"));
     }
     return G_SOURCE_CONTINUE;
 }
@@ -293,12 +297,13 @@ static gpointer worker(gpointer data)
         const char *types[] = {"accel", "gyro", "accel_cal", "gyro_cal"};
         for (unsigned i = 0; i < s->channel_count; i++) s->channels[i].pending = true;
         for (unsigned i = 0; i < s->channel_count; i++) {
-            guint64 high = i < 2 ? s->config.suid_high[i] : s->config.bias.suid_high[i - 2];
-            guint64 low = i < 2 ? s->config.suid_low[i] : s->config.bias.suid_low[i - 2];
+            unsigned index = s->channels[i].index;
+            guint64 high = index < 2 ? s->config.suid_high[index] : s->config.bias.suid_high[index - 2];
+            guint64 low = index < 2 ? s->config.suid_low[index] : s->config.bias.suid_low[index - 2];
             g_async_initable_new_async(SSC_TYPE_SENSOR, G_PRIORITY_DEFAULT, s->cancel,
-                discovered, &s->channels[i], SSC_SENSOR_DATA_TYPE, types[i],
+                discovered, &s->channels[i], SSC_SENSOR_DATA_TYPE, types[index],
                 "requested-uid-high", high, "requested-uid-low", low,
-                "requested-sample-rate", i < 2 ? (double)s->config.sample_rate[i] : 0.0, NULL);
+                "requested-sample-rate", index < 2 ? (double)s->config.sample_rate[index] : 0.0, NULL);
         }
     }
     for (;;) {
@@ -345,18 +350,27 @@ bool ssc_imu_session_create(const struct ssc_imu_session_config *config, struct 
         uint64_t high[] = {config->suid_high[0], config->suid_high[1], config->bias.suid_high[0], config->bias.suid_high[1]};
         uint64_t low[] = {config->suid_low[0], config->suid_low[1], config->bias.suid_low[0], config->bias.suid_low[1]};
         for (unsigned i = 0; i < 4; i++) {
-            if ((!high[i] && !low[i]) || config->bias.rigid_body[i % 2] < 0 || config->bias.rigid_body[i % 2] > 2) return false;
+            unsigned sensor = i % 2;
+            if (config->bias.rigid_body[sensor] < 0 || config->bias.rigid_body[sensor] > 2 ||
+                (config->bias.mode[sensor] != SSC_CALIBRATION_RUNTIME_BIAS &&
+                 config->bias.mode[sensor] != SSC_CALIBRATION_SSC_REPORTED)) return false;
+            if (i >= 2 && config->bias.mode[sensor] == SSC_CALIBRATION_SSC_REPORTED) {
+                if (high[i] || low[i]) return false;
+                continue;
+            }
+            if (!high[i] && !low[i]) return false;
             for (unsigned j = 0; j < i; j++)
                 if (high[i] == high[j] && low[i] == low[j]) return false;
         }
     }
     struct ssc_imu_session *s = g_new0(struct ssc_imu_session, 1);
     s->config = *config;
-    s->channel_count = config->bias.report ? 4 : 2;
     g_mutex_init(&s->lock);
     s->context = g_main_context_new();
     s->cancel = g_cancellable_new();
-    for (unsigned i = 0; i < s->channel_count; i++) s->channels[i] = (struct channel){.session = s, .index = i};
+    for (unsigned i = 0; i < (config->bias.report ? 4u : 2u); i++)
+        if (i < 2 || config->bias.mode[i - 2] == SSC_CALIBRATION_RUNTIME_BIAS)
+            s->channels[s->channel_count++] = (struct channel){.session = s, .index = i};
     s->thread = g_thread_try_new("ssc-imu", worker, s, NULL);
     if (!s->thread) {
         ssc_imu_session_destroy(&s);

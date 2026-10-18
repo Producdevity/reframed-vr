@@ -5,6 +5,8 @@
 
 #define SSC_CALIBRATION_HISTORY 32
 
+enum ssc_calibration_mode { SSC_CALIBRATION_RUNTIME_BIAS, SSC_CALIBRATION_SSC_REPORTED };
+
 struct ssc_calibration_value {
     float bias[3], scale[3], matrix[9];
     unsigned accuracy;
@@ -20,6 +22,7 @@ struct ssc_calibration_entry {
 struct ssc_calibration_config {
     struct ssc_clock clock;
     uint64_t suid_high[2], suid_low[2];
+    enum ssc_calibration_mode mode[2];
     int64_t max_report_age_ns, max_bias_age_ns;
 };
 
@@ -37,6 +40,7 @@ struct ssc_bias_sample {
     struct ssc_calibration_entry calibration;
     float corrected[3];
     unsigned accuracy;
+    enum ssc_calibration_mode mode;
 };
 
 /* sns_cal_event: three finite biases, optional 3-vector scale/9-value matrix,
@@ -46,7 +50,9 @@ bool ssc_calibration_decode(const void *payload, size_t length,
                             struct ssc_calibration_value *value);
 
 /* Zero-initialize once; use one thread. Pair calibration SUIDs with their
- * physical IMUs before calling. Use the IMU generation and clock; restarting
+ * physical IMUs before calling. SSC_REPORTED explicitly selects pass-through
+ * without a calibration channel: its SUID must be zero, and no bias is invented.
+ * Use the IMU generation and clock; restarting
  * requires a strictly newer generation and clears both histories. */
 bool ssc_calibration_begin(struct ssc_calibration *calibration,
                            const struct ssc_calibration_config *config, uint64_t generation);
@@ -59,6 +65,8 @@ bool ssc_calibration_report(struct ssc_calibration *calibration, uint64_t genera
  * Use only for uncorrected samples paired to this calibration stream. Select
  * the newest update at/before the sample; never use a future or stale bias,
  * skip an unreliable update, or substitute zero for a missing calibration.
+ * SSC_REPORTED instead preserves a reliable SSC vector and its actual accuracy;
+ * output.mode distinguishes it from subtraction and calibration metadata is empty.
  * Raw sample and calibration metadata are retained. No state changes here. */
 bool ssc_calibration_correct(const struct ssc_calibration *calibration,
                              const struct ssc_imu_event *sample, int64_t now_ns,

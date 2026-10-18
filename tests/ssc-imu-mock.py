@@ -21,18 +21,25 @@ assert fault in (None, 'gyro-silent', 'gyro-malformed', 'gyro-stall', 'gyro-unav
                  'bias-normal', 'bias-single', 'bias-wrong-body', 'bias-missing-body',
                  'bias-malformed', 'bias-gyro-malformed', 'bias-unreliable', 'bias-silent', 'bias-stall',
                  'multi', 'bias-multi', 'duplicate-uid', 'bias-duplicate-uid', 'empty-uid', 'bias-empty-uid',
-                 'rates', 'bias-rates', 'rate-missing', 'rate-malformed', 'bias-rate-malformed')
+                 'rates', 'bias-rates', 'rate-missing', 'rate-malformed', 'bias-rate-malformed',
+                 'reported-accel', 'reported-accel-unreliable', 'reported-gyro-unreliable',
+                 'reported-gyro-wrong-body', 'reported-accel-wrong-body', 'reported-gyro-silent')
 hmd_runtime = os.environ.get('SSC_TEST_HMD_RUNTIME') == '1'
 if hmd_runtime:
     assert fault == 'bias-normal'
     clock = ctypes.CDLL('/ssc-test-clock.so')
     clock.ssc_test_ticks.restype = ctypes.c_uint64
 calibration = fault == 'calibration'
-paired = fault is not None and fault.startswith('bias-')
+reported = fault is not None and fault.startswith('reported-')
+paired = reported or (fault is not None and fault.startswith('bias-'))
 data = [item for item in ssc._read_data() if item['sensor']['data_type'] not in ('accel', 'gyro')]
 uids = {}
 names = ('accel', 'gyro', 'accel_cal', 'gyro_cal') if paired else ('accel_cal', 'gyro_cal') if calibration else ('accel', 'gyro')
+if reported:
+    names = ('accel', 'gyro', 'gyro_cal')
 for index, name in enumerate(names):
+    if reported:
+        index = ('accel', 'gyro', 'accel_cal', 'gyro_cal').index(name)
     high, low = 0xACC10001 + index, 0xACC20001 + index
     uids[(high, low)] = index
     is_calibration = calibration or index >= 2
@@ -40,7 +47,7 @@ for index, name in enumerate(names):
                  'attributes': {'name': {'id': 0, 'value': name}, 'vendor': {'id': 1, 'value': 'fixture'},
                                 'available': {'id': 3, 'value': not (index == 1 and fault == 'gyro-unavailable')},
                                 'sample_rate': {'id': 6, 'value': 0.0 if is_calibration else 100.0 if hmd_runtime else 1000.0},
-                                'rigid_body': {'id': 19, 'value': 1 if index == 3 and fault == 'bias-wrong-body' else 0},
+                                'rigid_body': {'id': 19, 'value': 1 if index == 3 and fault == 'bias-wrong-body' else 1 if ((index == 3 and fault == 'reported-gyro-wrong-body') or (index == 0 and fault == 'reported-accel-wrong-body')) else 0},
                                 'stream_type': {'id': 16, 'value': 1 if is_calibration else 0}}, 'measurements': []})
     if index == 3 and fault == 'bias-missing-body':
         del data[-1]['attributes']['rigid_body']
@@ -144,6 +151,13 @@ def measurement(high, low, index):
                 event.msg = b'\x0a\x0c' + struct.pack('<3f', *values) + b'\x20\x00'
             if fault == 'bias-stall' or (fault == 'bias-silent' and index > 0):
                 event.msg_id = 1234
+    if sensor == 0 and fault == 'reported-accel-unreliable':
+        event.msg = b'\x0a\x0c' + struct.pack('<3f', *values) + b'\x10\x00'
+        event.msg_id = 1025
+    if sensor == 3 and fault == 'reported-gyro-unreliable':
+        event.msg = b'\x0a\x0c' + struct.pack('<3f', *values) + b'\x20\x00'
+    if sensor == 3 and fault == 'reported-gyro-silent' and index > 0:
+        event.msg_id = 1234
     if sensor == 1:
         if fault == 'gyro-stall':
             event.msg_id = 1234

@@ -201,10 +201,75 @@ static void corpus(const char *path)
     printf("SSC_CALIBRATION_CORPUS_PASS %u\n", cases);
 }
 
+static void reported_acceleration_tests(void)
+{
+    struct ssc_calibration_config cfg = {.suid_high = {0, 2}, .suid_low = {0, 4},
+        .mode = {SSC_CALIBRATION_SSC_REPORTED, SSC_CALIBRATION_RUNTIME_BIAS},
+        .max_report_age_ns = 1000000, .max_bias_age_ns = 1000};
+    assert(ssc_clock_init(&cfg.clock, 0, 19200000, 100, 100, 0));
+    struct ssc_calibration c = {0};
+    assert(ssc_calibration_begin(&c, &cfg, 1));
+    struct ssc_imu_event sample = {.generation = 1, .sensor = SSC_IMU_ACCELERATION,
+        .ticks = 100, .vector = {.values = {4, 5, 6}, .accuracy = 3}};
+    assert(ssc_clock_map(&cfg.clock, sample.ticks, 1000000, 1000000, &sample.time));
+    struct ssc_bias_sample output;
+    memset(&output, 0xa5, sizeof(output));
+    assert(ssc_calibration_correct(&c, &sample, 1000000, &output));
+    assert(output.mode == SSC_CALIBRATION_SSC_REPORTED && output.accuracy == 3);
+    assert(!memcmp(output.corrected, sample.vector.values, sizeof(output.corrected)));
+    assert(!memcmp(&output.raw, &sample, sizeof(sample)));
+    struct ssc_calibration_entry empty = {0};
+    assert(!memcmp(&output.calibration, &empty, sizeof(empty)) && c.count[0] == 0);
+    assert(!report(&c, 0, 100, 3));
+    for (unsigned accuracy = 0; accuracy <= 4; accuracy++) {
+        sample.vector.accuracy = accuracy;
+        assert(ssc_calibration_correct(&c, &sample, 1000000, &output) == (accuracy > 0 && accuracy < 4));
+        if (accuracy > 0 && accuracy < 4) assert(output.accuracy == accuracy);
+    }
+    sample.vector.accuracy = 3;
+    sample.sensor = SSC_IMU_GYROSCOPE;
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    assert(report(&c, 1, 90, 3));
+    assert(ssc_calibration_correct(&c, &sample, 1000000, &output));
+    assert(output.mode == SSC_CALIBRATION_RUNTIME_BIAS && output.calibration.ticks == 90);
+    assert(output.corrected[0] == 3 && output.corrected[1] == 7 && output.corrected[2] == 2.5f);
+    assert(report(&c, 1, 100, 0));
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    sample.sensor = SSC_IMU_ACCELERATION;
+    assert(ssc_calibration_correct(&c, &sample, 1000000, &output));
+    struct ssc_bias_sample saved = output;
+    sample.vector.values[0] = NAN;
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    sample.vector.values[0] = 4;
+    assert(!ssc_calibration_correct(&c, &sample, 2000000, &output));
+    sample.time.timestamp_ns++;
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    sample.time.timestamp_ns--; sample.generation++;
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    assert(!memcmp(&output, &saved, sizeof(saved)));
+    for (unsigned invalid = 0; invalid < 4; invalid++) {
+        struct ssc_calibration_config bad = cfg;
+        if (invalid == 0) bad.suid_high[0] = 1;
+        if (invalid == 1) bad.mode[0] = SSC_CALIBRATION_RUNTIME_BIAS;
+        if (invalid == 2) bad.mode[0] = 42;
+        if (invalid == 3) bad.mode[1] = SSC_CALIBRATION_SSC_REPORTED;
+        struct ssc_calibration before = c;
+        assert(!ssc_calibration_begin(&c, &bad, 2));
+        assert(!memcmp(&c, &before, sizeof(c)));
+    }
+    ssc_calibration_invalidate(&c); sample.generation=1;
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    assert(ssc_calibration_begin(&c, &cfg, 2));
+    sample.sensor=SSC_IMU_GYROSCOPE;sample.generation=2;
+    assert(!ssc_calibration_correct(&c, &sample, 1000000, &output));
+    sample.sensor=SSC_IMU_ACCELERATION;
+    assert(ssc_calibration_correct(&c, &sample, 1000000, &output));
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 1 || argc == 2);
-    wire_tests(); history_tests();
+    wire_tests(); history_tests(); reported_acceleration_tests();
     if (argc == 2) corpus(argv[1]);
     printf("SSC_CALIBRATION_UNIT_PASS %u\n", checks);
     return 0;

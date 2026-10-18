@@ -21,7 +21,9 @@ cases = ['normal', 'immediate', 'no-service', 'clock-failure', 'wrong-uid', 'wro
          'bias-malformed', 'bias-unreliable', 'bias-silent', 'bias-stall', 'bias-server-loss',
          'bias-callback-stop', 'bias-immediate', 'bias-clock-failure', 'bias-no-service',
          'multi', 'bias-multi', 'duplicate-uid', 'bias-duplicate-uid', 'empty-uid', 'bias-empty-uid',
-         'rates', 'bias-rates', 'rate-missing', 'rate-malformed', 'bias-rate-malformed']
+         'rates', 'bias-rates', 'rate-missing', 'rate-malformed', 'bias-rate-malformed',
+         'reported-accel', 'reported-accel-unreliable', 'reported-gyro-unreliable',
+         'reported-gyro-wrong-body', 'reported-accel-wrong-body', 'reported-gyro-silent']
 taint = Path('/proc/sys/kernel/tainted').read_text()
 os.environ['LD_LIBRARY_PATH'] = '/opt/reframed-vr/ssc/lib64:' + os.environ.get('LD_LIBRARY_PATH', '')
 assert subprocess.check_output(['/opt/reframed-vr/ssc/bin/ssccli', '--version'], text=True).strip() == 'libssc version 0.4.4'
@@ -39,6 +41,8 @@ try:
                     command = ['/usr/bin/python3', '-u', '/imu-mock.py', '/output/build']
                     if name in ('gyro-silent', 'gyro-malformed', 'gyro-stall', 'gyro-unavailable',
                                 'multi', 'duplicate-uid', 'empty-uid', 'rates', 'rate-missing', 'rate-malformed'):
+                        command.append(name)
+                    if name.startswith('reported-'):
                         command.append(name)
                     if name.startswith('bias-'):
                         faults = ('bias-single', 'bias-wrong-body', 'bias-missing-body',
@@ -94,7 +98,7 @@ try:
             assert code == 0
     assert Path('/proc/sys/kernel/tainted').read_text() == taint
     print('SSC_IMU_SESSION_TAINT_UNCHANGED', taint.strip(), flush=True)
-    print('SSC_VM_TESTS_PASS suites=37', flush=True)
+    print(f'SSC_VM_TESTS_PASS suites={len(cases)}', flush=True)
 finally:
     nameserver.terminate()
     nameserver.wait(timeout=3)

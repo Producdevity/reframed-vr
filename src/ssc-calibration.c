@@ -81,9 +81,15 @@ bool ssc_calibration_begin(struct ssc_calibration *calibration,
 {
     if (!calibration || !config || generation <= calibration->generation ||
         !config->clock.initialized || !config->clock.counter_hz || config->clock.host_ns < 0 ||
-        config->clock.uncertainty_ns < 2 || config->max_report_age_ns < 0 || config->max_bias_age_ns <= 0 ||
-        (!config->suid_high[0] && !config->suid_low[0]) || (!config->suid_high[1] && !config->suid_low[1]) ||
-        (config->suid_high[0] == config->suid_high[1] && config->suid_low[0] == config->suid_low[1])) return false;
+        config->clock.uncertainty_ns < 2 || config->max_report_age_ns < 0 || config->max_bias_age_ns <= 0) return false;
+    for (unsigned i = 0; i < 2; i++) {
+        bool identified = config->suid_high[i] || config->suid_low[i];
+        if ((config->mode[i] == SSC_CALIBRATION_RUNTIME_BIAS && !identified) ||
+            (config->mode[i] == SSC_CALIBRATION_SSC_REPORTED && identified) ||
+            (config->mode[i] != SSC_CALIBRATION_RUNTIME_BIAS && config->mode[i] != SSC_CALIBRATION_SSC_REPORTED)) return false;
+    }
+    if (config->mode[0] == SSC_CALIBRATION_RUNTIME_BIAS && config->mode[1] == SSC_CALIBRATION_RUNTIME_BIAS &&
+        config->suid_high[0] == config->suid_high[1] && config->suid_low[0] == config->suid_low[1]) return false;
     *calibration = (struct ssc_calibration){.config = *config, .generation = generation, .active = true};
     return true;
 }
@@ -101,7 +107,8 @@ bool ssc_calibration_report(struct ssc_calibration *calibration, uint64_t genera
         id != 1022 || now_ns < calibration->last_received_ns) return false;
     unsigned sensor;
     for (sensor = 0; sensor < 2; sensor++)
-        if (high == calibration->config.suid_high[sensor] && low == calibration->config.suid_low[sensor]) break;
+        if (calibration->config.mode[sensor] == SSC_CALIBRATION_RUNTIME_BIAS &&
+            high == calibration->config.suid_high[sensor] && low == calibration->config.suid_low[sensor]) break;
     if (sensor == 2) return false;
     unsigned count = calibration->count[sensor];
     struct ssc_calibration_entry entry = {.ticks = ticks};
@@ -132,6 +139,15 @@ bool ssc_calibration_correct(const struct ssc_calibration *calibration,
                       calibration->config.max_report_age_ns, &time) ||
         time.timestamp_ns != sample->time.timestamp_ns ||
         time.uncertainty_ns != sample->time.uncertainty_ns) return false;
+    for (unsigned i = 0; i < 3; i++)
+        if (!isfinite(sample->vector.values[i])) return false;
+    if (calibration->config.mode[sample->sensor] == SSC_CALIBRATION_SSC_REPORTED) {
+        struct ssc_bias_sample reported = {.raw = *sample, .accuracy = sample->vector.accuracy,
+            .mode = SSC_CALIBRATION_SSC_REPORTED};
+        memcpy(reported.corrected, sample->vector.values, sizeof(reported.corrected));
+        *output = reported;
+        return true;
+    }
     const struct ssc_calibration_entry *entry = NULL;
     for (unsigned i = 0; i < calibration->count[sample->sensor]; i++) {
         if (calibration->entries[sample->sensor][i].ticks > sample->ticks) break;

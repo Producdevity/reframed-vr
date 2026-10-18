@@ -382,6 +382,15 @@ and a private RAM copy of the saved registry, then stopped SLPI before listener
 teardown. Receipts and the wire captures remain in the ignored
 `output/pico-recovery-bringup-20261018-v1/` directory.
 
+A subsequent 40-second test accepted 8,168 reports per sensor. Acceleration
+reported accuracy zero for its first four samples and accuracy three for the
+remaining 8,164; gyro reported zero for eight and three for 8,160. Measured
+capture rate was approximately 204.8 Hz, rather than the requested 102.4 Hz.
+The independent `gyro_cal` subscription delivered one valid accuracy-three
+event. Two delayed `accel_cal` discoveries remained empty. These observations
+resolve the initial quality-zero concern as startup behavior in this test;
+they do not prove calibration quality under motion or sustained operation.
+
 The receiver requires two distinct, explicitly discovered SUIDs and a current
 SSC clock calibration. It validates message type, subscription generation,
 freshness and timestamp order independently for acceleration and gyroscope.
@@ -509,6 +518,26 @@ Scale and matrix fields are preserved without application; no axes, units or
 factory-calibration policy are inferred. This component is not automatically
 started or installed into the runtime. Physical calibration pairing must be
 established before enabling correction.
+
+The native session now supports an explicit per-sensor `SSC_REPORTED` mode for
+the verified stock accelerometer fallback. Its calibration SUID must be zero;
+the mode selects omission of that subscription, rather than discovery of a
+synthetic sensor. It forwards reliable SSC vectors and their actual accuracy
+without host bias subtraction. Output provenance identifies this mode and
+contains no calibration entry. The default `RUNTIME_BIAS` mode still requires
+the paired stream and a fresh reliable bias. Head sessions continue to require
+runtime gyro calibration. Wrong identities/bodies, unreliable data, stale bias
+and output loss retain their refusal/invalidation behavior; policy cannot
+change within a session generation.
+
+A ten-second native test of this explicit three-stream configuration produced
+2,024 SSC-reported acceleration outputs and 2,020 bias-subtracted gyro outputs,
+all with reported accuracy three, then cleanly joined and stopped SLPI.
+This validates the session policy on the physical unit, not units, axes, head
+pose or optical rendering. HMD JSON schema versions 1 and 2 still require all
+four SUIDs: exposing the new explicit policy in a private headset profile is
+a separate integration step. Sensor/optics verification remains required
+before activating that profile.
 
 The optional `tests/ssc-calibration-stock.py` comparison extracts checksum-pinned
 descriptors from a private b1977 `libssc.so`. It checks 8,475 cases against
