@@ -362,11 +362,25 @@ field 1 and required accuracy field 2 (0–3); its message ID is `1025`.
 This establishes a standard wire format, not the identity or configuration of
 the headset's physical sensors.
 
-[`ssc-imu`](../src/ssc-imu.h) decodes exactly three finite floats and preserves
-the reported accuracy. It accepts packed, unpacked and mixed encoding, skips
+[`ssc-imu`](../src/ssc-imu.h) accepts three or four finite floats, returns the
+first three components and preserves the reported accuracy. Native Neo3 b1977
+reports contain four components; the regular stock HAL also reads only the
+first three. The fourth component's meaning is unverified. The decoder accepts
+packed, unpacked and mixed encoding, skips
 unknown scalar fields and rejects malformed lengths, groups and oversized
 payloads. It retains neither the input buffer nor Android-specific auxiliary
 fields. Accuracy zero remains visible and does not imply calibrated input.
+
+On 2026-10-18, a bounded native Linux test on this Pro Eye accepted 2,026
+reports from each physical `icm4x6xx` sensor, with mapped arrival ages of
+4.7–6.8 ms. Requested rate was 102.4 Hz; those counts do not establish that
+delivery matched the request. The 19.2 MHz clock calibration had 107 ns bracket
+uncertainty. Minimum reported accuracy was zero for both sensors. This proves
+raw transport and decoder compatibility, not calibrated tracking, axis/unit
+validation or pose. The listener test used exact stock sensor configuration
+and a private RAM copy of the saved registry, then stopped SLPI before listener
+teardown. Receipts and the wire captures remain in the ignored
+`output/pico-recovery-bringup-20261018-v1/` directory.
 
 The receiver requires two distinct, explicitly discovered SUIDs and a current
 SSC clock calibration. It validates message type, subscription generation,
@@ -457,8 +471,9 @@ Logs, including the failed ASan VM startup, are retained under
 
 The b1977 vendor sensor HAL (`sensors.ssc.so`, SHA-256
 `bf3acf3704b06b4218c8b24cd72744646b63b94bd74f0cc7a7b8bfd2ddb8038e`)
-subscribes to separate `accel_cal` and `gyro_cal` sensors using on-change
-configuration 514. Their `sns_cal_event` reports use message 1022, with bias
+contains conditional support for separate `accel_cal` and `gyro_cal` sensors,
+subscribing with on-change configuration 514 when pairing succeeds. Their
+`sns_cal_event` reports use message 1022, with bias
 field 1, optional scale field 2, optional compensation matrix field 3, required
 accuracy field 4 and optional fixed32 calibration ID field 5.
 
@@ -471,8 +486,15 @@ it does not establish which factory corrections the DSP already performs or the
 separate FastRPC direct-channel implementation.
 
 The HAL pairs calibration sensors by their `rigid_body` attribute, ID 19.
-A matching datatype alone is insufficient. Physical SUIDs, pairing and the
-native sensor clock still require validation on this unit.
+A matching datatype alone is insufficient. With no paired `accel_cal`, its
+regular accelerometer path passes through the SSC vector and its actual
+accuracy; it does not require an invented zero-bias calibration event. Native
+discovery on this unit currently finds body-0 accel, gyro and `gyro_cal`, but
+no `accel_cal`. Delayed registration and missing optional provisioning remain
+unresolved. That does not establish permanent algorithm absence, or justify
+relaxing the native HMD's calibration and accuracy gates. Raw-SUID message
+1022 is ignored by the stock regular handlers and must not automatically be
+used for runtime bias subtraction.
 
 [`ssc-calibration`](../src/ssc-calibration.h) decodes these reports and keeps
 32 timestamped updates per sensor. It requires explicit paired calibration SUIDs,

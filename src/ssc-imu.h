@@ -31,9 +31,11 @@ struct ssc_imu_stream {
     bool active, seen[2];
 };
 
-/* Decode only the sns_std_sensor_event payload: exactly three finite floats
- * and required accuracy 0..3. Packed/unpacked floats may be mixed. Unknown
- * scalar fields are skipped; groups and payloads over 4096 bytes are refused.
+/* Decode only the sns_std_sensor_event payload: three or four finite floats,
+ * returning the first three and the required accuracy 0..3. Neo3 b1977 also
+ * sends a fourth component; its meaning is not inferred. Packed/unpacked
+ * floats may be mixed. Unknown scalar fields are skipped; groups and payloads
+ * over 4096 bytes are refused.
  * Output is unchanged on failure. No units, axes or calibration are inferred. */
 bool ssc_imu_decode(const void *payload, size_t length, struct ssc_imu_vector *vector);
 

@@ -42,8 +42,8 @@ def run(args):
     def add(payload):
         nonlocal accepted, refused
         parsed = message.FromString(payload)
-        valid = parsed.IsInitialized() and len(parsed.data) == 3 and all(math.isfinite(x) for x in parsed.data)
-        expected = struct.pack("<3fI", *parsed.data, parsed.status) if valid else bytes(16)
+        valid = parsed.IsInitialized() and len(parsed.data) in (3, 4) and all(math.isfinite(x) for x in parsed.data)
+        expected = struct.pack("<3fI", *parsed.data[:3], parsed.status) if valid else bytes(16)
         corpus.extend(struct.pack("<II", len(payload), valid) + expected + payload)
         accepted += bool(valid)
         refused += not valid
@@ -67,6 +67,7 @@ def run(args):
     add(message(data=[1, 2, 3]).SerializePartialToString())
     for value in (float("nan"), float("inf"), -float("inf"), -0.0, 0.0, 2 ** -149):
         add(message(data=[value, 1, -1], status=0).SerializeToString())
+        add(message(data=[1, 2, 3, value], status=0).SerializeToString())
     path = args.output / "corpus.bin"
     path.write_bytes(corpus)
     result = subprocess.run([str(args.test_binary.resolve()), str(path.resolve())],

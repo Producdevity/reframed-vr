@@ -54,15 +54,18 @@ bool ssc_imu_decode(const void *payload, size_t length, struct ssc_imu_vector *v
         if (size > length - position)
             return false;
         if (field == 1) {
-            if ((wire != 2 && wire != 5) || size % 4 || size / 4 > 3 - count)
+            if ((wire != 2 && wire != 5) || size % 4 || size / 4 > 4 - count)
                 return false;
             for (size_t offset = 0; offset < size; offset += 4) {
                 const uint8_t *p = data + position + offset;
                 uint32_t bits = (uint32_t)p[0] | (uint32_t)p[1] << 8 |
                                 (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-                memcpy(&decoded.values[count], &bits, sizeof(bits));
-                if (!isfinite(decoded.values[count]))
+                float component;
+                memcpy(&component, &bits, sizeof(bits));
+                if (!isfinite(component))
                     return false;
+                if (count < 3)
+                    decoded.values[count] = component;
                 count++;
             }
         } else if (field == 2) {
@@ -73,7 +76,7 @@ bool ssc_imu_decode(const void *payload, size_t length, struct ssc_imu_vector *v
         }
         position += size;
     }
-    if (count != 3 || !has_accuracy)
+    if ((count != 3 && count != 4) || !has_accuracy)
         return false;
     *vector = decoded;
     return true;

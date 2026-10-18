@@ -92,9 +92,9 @@ static void payload_tests(void)
         {0}, {0xff, 0xff, 0xff, 0xff, 0x1f}, {0x98, 6, 0x80},
         {0x98, 6, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 2},
         {0x9b, 6}, {0x9c, 6}, {0x99, 6}, {0x9a, 6, 10, 1}, {0x9d, 6, 1},
-        {0x0d, 0, 0, 0, 0}, {0x10, 4},
+        {0x0d, 0, 0, 0, 0, 0x0d, 0, 0, 0, 0}, {0x10, 4},
     };
-    const unsigned sizes[] = {1, 5, 3, 12, 2, 2, 2, 4, 3, 5, 2};
+    const unsigned sizes[] = {1, 5, 3, 12, 2, 2, 2, 4, 3, 10, 2};
     for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
         memcpy(payload, packed, 16); memcpy(payload + 16, suffixes[i], sizes[i]);
         assert(!decode(payload, 16 + sizes[i], &vector));
@@ -115,6 +115,44 @@ static void payload_tests(void)
         }
         (void)decode(payload, length, &vector);
     }
+}
+
+static void neo3_payload_tests(void)
+{
+    const unsigned char live[][20] = {
+        {0x0a, 0x10, 0x0e, 0x44, 0x06, 0x41, 0xa1, 0x10, 0x8a, 0x3c,
+         0x57, 0x49, 0x9b, 0x3e, 0x00, 0x00, 0xc8, 0x41, 0x10, 0x00},
+        {0x0a, 0x10, 0x87, 0x0a, 0xb8, 0x3a, 0x2a, 0xa9, 0x47, 0x3b,
+         0x1c, 0xcc, 0xac, 0x3b, 0x5f, 0x5f, 0xe7, 0x41, 0x10, 0x00},
+    };
+    struct ssc_imu_vector vector = {0};
+    for (unsigned i = 0; i < 2; i++) {
+        assert(decode(live[i], sizeof(live[i]), &vector));
+        assert(vector.accuracy == 0);
+        for (unsigned axis = 0; axis < 3; axis++) {
+            uint32_t expected = le32(live[i] + 2 + axis * 4);
+            assert(!memcmp(&expected, &vector.values[axis], 4));
+        }
+    }
+    unsigned char payload[30];
+    memcpy(payload, live[0], 20);
+    const unsigned char extra[] = {0x0d, 0, 0, 0, 0};
+    memcpy(payload + 20, extra, sizeof(extra));
+    assert(!decode(payload, 25, &vector));
+    for (unsigned axis = 0; axis < 4; axis++) {
+        memcpy(payload, live[0], 20);
+        const uint32_t invalid[] = {0x7f800000, 0xff800000, 0x7fc00000};
+        for (unsigned i = 0; i < 3; i++) {
+            for (unsigned j = 0; j < 4; j++) payload[2 + axis * 4 + j] = (unsigned char)(invalid[i] >> (8 * j));
+            assert(!decode(payload, 20, &vector));
+        }
+    }
+    memcpy(payload, packed, 16);
+    memcpy(payload + 16, extra, sizeof(extra));
+    assert(decode(payload, 21, &vector) && vector.accuracy == 3);
+    assert(vector.values[0] == 1 && vector.values[1] == -2 && vector.values[2] == 3.5f);
+    memcpy(payload + 21, extra, sizeof(extra));
+    assert(!decode(payload, 26, &vector));
 }
 
 static bool receive(struct ssc_imu_stream *stream, uint64_t generation, unsigned sensor,
@@ -214,7 +252,7 @@ static void corpus(const char *name)
 int main(int argc, char **argv)
 {
     assert(argc == 1 || argc == 2);
-    payload_tests(); stream_tests();
+    payload_tests(); neo3_payload_tests(); stream_tests();
     if (argc == 2) corpus(argv[1]);
     printf("SSC_IMU_UNIT_PASS %u checks\n", checks);
     return 0;
