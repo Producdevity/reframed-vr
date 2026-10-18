@@ -138,9 +138,14 @@ that counts the exact rare-path branch entries. Findings:
   `k_itimer`, and tens of milliseconds later — after the RCU grace
   period — a queue operation on the freed node faults or trips a sanity
   check (inside the surviving child's own `timer_delete`→`rb_erase`; in
-  the reaping parent's `posix_cpu_timers_exit_group`→`timerqueue_del`;
-  and one session-wide workqueue-stall wedge). Eighteen wins total
-  across sessions at a pooled ~1e-4 per trial;
+  the reaping parent's `posix_cpu_timers_exit_group`→`timerqueue_del`).
+  Twelve wins total, each verified by the timer WARN at
+  `posix-cpu-timers.c:437` (recounted by WARN identity, not WARN-block
+  counts: several sessions show the win WARN paired with the reap-time
+  `timerqueue.c:65` RB_EMPTY WARN, which is itself systematic evidence
+  that the freed slot was reclaimed). One winning session additionally
+  ended in a workqueue stall whose trace does not link it to the freed
+  node, so it is not counted as a materialization.
   `SLAB_FREELIST_HARDENED`, `INIT_ON_ALLOC`, `DEBUG_LIST`, `CFI_CLANG`
   and `HARDENED_USERCOPY` were all active; CFI does not stop this
   data-only corruption.
@@ -168,8 +173,9 @@ that counts the exact rare-path branch entries. Findings:
 Escalation-relevant facts were captured for any future work in the
 private evidence directory (exact-config structure layouts, cache
 accounting and the stock-only `STATIC_USERMODEHELPER` empty-path
-constraint). On this evidence the CPU-timer route is a demonstrated
-corruption primitive in the offline QEMU rebuild of the pinned source,
+constraint). On this evidence the CPU-timer route has demonstrated
+uncontrolled kernel corruption in the offline QEMU rebuild of the pinned
+source,
 under instrumentation-supplied timing jitter and a documented rate lever
 — with zero observed wins in unjittered runs and nothing yet measured on
 headset hardware. It is not a reliable-root result. Priority for firmware

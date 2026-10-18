@@ -167,8 +167,10 @@ def run_boot(qemu, accel, kernel, initramfs, output, name, timeout):
                 ("RACE_RESULT", markers["race_result"]),
                 ("reboot: Power down", markers["power_down"]),
             ) if not seen]
-            if report["returncode"] != 0:
-                report.update(status="failed", error=f"QEMU exited with code {report['returncode']}")
+            returncode = report.get("returncode")
+            if returncode != 0:
+                report.update(status="failed",
+                              error=f"QEMU exited with code {returncode}")
             elif missing:
                 report.update(status="failed", error="Missing guest markers: " + ", ".join(missing))
             else:
