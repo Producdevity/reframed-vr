@@ -103,12 +103,28 @@ kernel-supplied refresh field. The source-matched patches and build recipe are
 documented in [Pico Xorg compatibility](../patches/xorg/README.md). With both
 patches, Xorg and Openbox stayed active and the kernel accepted the 120 Hz mode.
 The native ARM64 Steam client and web helper then rendered the gamepad welcome
-screen; the owner-approved framebuffer capture is `pico-steam-desktop.png`,
+screen; the owner-approved screen capture is `pico-steam-desktop.png`,
 bound by `native-steam-first-ui-verification.json` in the same evidence directory.
-This test uses CPU rendering and fills the raw portrait display. It establishes
-neither calibrated stereo output nor native desktop GPU acceleration. No Wi-Fi
+This test uses CPU rendering and captures the raw portrait desktop. It establishes
+neither correct physical panel output, calibrated stereo output nor native desktop GPU acceleration. No Wi-Fi
 interface is registered in this boot, and Android has not yet been replaced on
 persistent storage.
+
+The subsequent `live-root-v8` RAM boot confirms this distinction. Xorg's captured
+Steam welcome screen is correct, but the owner reports grey output through the
+lenses. A direct KMS checkerboard and slow solid-colour test produce visible
+noise, corroborated by `owner-panel-noise-20261018.jpg`. The active linear XR24
+framebuffer reads back as uniform red and then green at all 400 sampled positions
+per capture. The failure is therefore beyond those producer pixels; its exact
+display/DSC/link cause remains unresolved. See `owner-panel-noise-verification.json`
+and `live-root-v8-native.log`. Successful modesets, vblanks and screen captures
+must not be reported as a usable physical graphical session.
+
+Binary DRM synchronization and GPU semaphore/buffer sharing across processes do
+pass on this boot, separately from panel output. See
+[Turnip's physical binary-sync evidence](turnip.md) and
+`native-v8-binary-sync-verification.json`. This does not supply the still-missing
+Neo3 DMA-buffer fence ioctls or establish a VR compositor session.
 
 Generic `v4l_id` probing also blocked native boot by opening vendor codec and
 camera control nodes. The observed codec stack waited for `venus.mdt` firmware.

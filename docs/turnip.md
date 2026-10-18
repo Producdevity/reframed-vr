@@ -21,13 +21,36 @@ refused. Build and test logs, source identities and artifact hashes are retained
 The Turnip patches fix fence ownership and wait-any behavior, implement
 an opt-in KGSL-to-DRM synchronization bridge, enable that bridge in the
 KGSL-only build, connect an explicitly selected DRM display to KGSL WSI, and
-use the modern KGSL GPU-object allocation interfaces. Submission still uses KGSL. The DRM device supplies binary and
-timeline synchronization objects; it does not replace the KGSL GPU driver.
+use the modern KGSL GPU-object allocation interfaces. Submission still uses KGSL.
+The DRM device supplies synchronization objects; it does not replace the KGSL GPU driver.
 
 The bridge requires `-Dfreedreno-kgsl-drm-sync=true` at build time and
 `TU_KGSL_DRM_SYNC` pointing to a suitable DRM device at runtime. The device must
 support the required synchronization features. Its actual path and capabilities
 must be checked on the target; a numbered render node is not a device identity.
+
+Binary-only DRM providers are supported. Point-zero fence import/export uses
+the binary ioctls directly, without requiring timeline transfer ioctls. Local
+Vulkan timelines use Mesa's emulation on these providers; this does not advertise
+external timeline semaphore sharing.
+
+On October 18, the Neo3 `live-root-v8` RAM boot physically verified binary DRM
+object lifetime, sync-file import/export, reset, CPU signaling and a cross-process
+wait for submission. The new SDE kernel flag advertises binary objects only;
+the timeline capability query remains unsupported. Turnip also passed both
+exportable and import-only receiver cases of `vulkan-external-sync --binary-only`,
+with GPU-written 4 MiB buffer readbacks across separate processes. The fixture
+notifies each binary peer after signal submission and transfers buffer ownership
+through `VK_QUEUE_FAMILY_EXTERNAL`. Its earlier unsequenced binary waits violated
+the submission-order requirement and are not evidence of a GPU failure.
+The receipts are `native-v8-binary-sync-verification.json` and its bounded log
+excerpts in `output/pico-recovery-bringup-20261018-v1/`.
+
+These checks do not establish presentation. The same boot renders a Steam welcome
+screen in Xorg, but the owner sees grey or corrupted colour bands through the
+lenses. Direct KMS colour tests also look corrupted despite correct framebuffer
+readbacks. Panel output remains a separate failed acceptance check, in addition
+to the missing Neo3 DMA-buffer fence API described below.
 
 ## Correction to earlier build evidence
 
@@ -50,8 +73,8 @@ foreign-architecture and inconsistent bundles, and records loading the corrected
 library in the pinned userspace. Vulkan reaches the library and reports no GPU
 when no KGSL device is exposed.
 
-The earlier QEMU test of real DRM/software fences remains valid for its exact
-helper header, which is unchanged. It covers cross-process opaque descriptors,
+The earlier QEMU test of real DRM/software fences applies to its retained
+helper header. It covers cross-process opaque descriptors,
 future timeline points, merged dependencies and cleanup. The submission-wrapper
 suite models KGSL calls. Neither test demonstrates actual GPU completion.
 

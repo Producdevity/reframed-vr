@@ -21,7 +21,7 @@
                    struct vk_sync_wait *waits, uint32_t wait_count,
                    struct vk_sync_signal *signals, uint32_t signal_count,
                    struct tu_u_trace_submission_data *u_trace_submission_data)
-@@ -1643,10 +1648,157 @@
+@@ -1643,10 +1648,161 @@
     return result;
  }
  
@@ -134,18 +134,22 @@
 +   }
 +   device->syncobj_type = vk_drm_syncobj_get_type_from_provider(provider);
 +   provider->finalize(provider);
-+   const unsigned required = VK_SYNC_FEATURE_BINARY | VK_SYNC_FEATURE_TIMELINE |
++   const unsigned required = VK_SYNC_FEATURE_BINARY | VK_SYNC_FEATURE_CPU_RESET |
 +                             VK_SYNC_FEATURE_CPU_WAIT | VK_SYNC_FEATURE_CPU_SIGNAL |
 +                             VK_SYNC_FEATURE_WAIT_PENDING;
 +   if ((device->syncobj_type.features & required) != required) {
 +      close(fd);
 +      return vk_errorf(device->instance, VK_ERROR_INITIALIZATION_FAILED,
-+                       "TU_KGSL_DRM_SYNC requires DRM timeline sync objects");
++                       "TU_KGSL_DRM_SYNC requires DRM binary sync objects");
 +   }
 +   device->kgsl_sync_fd = fd;
 +   device->has_kgsl_drm_sync = true;
 +   device->sync_types[0] = &device->syncobj_type;
 +   device->sync_types[1] = NULL;
++   if (!(device->syncobj_type.features & VK_SYNC_FEATURE_TIMELINE)) {
++      device->timeline_type = vk_sync_timeline_get_type(&device->syncobj_type);
++      device->sync_types[1] = &device->timeline_type.sync;
++   }
 +   return VK_SUCCESS;
 +}
 +#endif
@@ -257,7 +261,7 @@
     d->base = (struct util_sync_provider) {
 --- /dev/null
 +++ b/src/freedreno/vulkan/tu_kgsl_drm_sync.h
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,51 @@
 +/* SPDX-License-Identifier: MIT */
 +#ifndef TU_KGSL_DRM_SYNC_H
 +#define TU_KGSL_DRM_SYNC_H
@@ -271,6 +275,8 @@
 +{
 +   uint32_t temporary = 0;
 +   *fd = -1;
++   if (point == 0)
++      return drmSyncobjExportSyncFile(drm_fd, handle, fd);
 +   int ret = drmSyncobjCreate(drm_fd, 0, &temporary);
 +   if (ret)
 +      return ret;
@@ -286,6 +292,11 @@
 +static inline int
 +tu_kgsl_drm_import_signal(int drm_fd, uint32_t handle, uint64_t point, int fd)
 +{
++   if (point == 0) {
++      if (fd == -1)
++         return drmSyncobjSignal(drm_fd, &handle, 1);
++      return drmSyncobjImportSyncFile(drm_fd, handle, fd);
++   }
 +   uint32_t temporary = 0;
 +   int ret = drmSyncobjCreate(drm_fd, fd == -1 ? DRM_SYNCOBJ_CREATE_SIGNALED : 0,
 +                              &temporary);

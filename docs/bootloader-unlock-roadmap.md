@@ -93,9 +93,13 @@ DTBO passed an independent complete 24 MiB readback and a stock return test.
 Native Turnip GPU execution and initial/repeated KMS enable/disable tests now
 pass; the KMS test must preserve the inherited 120 Hz mode for the first frame.
 These are bounded hardware milestones, not a usable desktop or verified optical
-stereo output. Desktop startup, sensor acceptance and persistent Linux
-installation remain outstanding. The first-boot document names the associated
-receipts and physical logs.
+stereo output. The subsequent `live-root-v8` boots native Linux, renders Steam
+inside Xorg and passes binary GPU synchronization tests, but the owner sees
+grey/noisy panel output even during direct KMS colour tests. Physical graphical
+acceptance remains failed. Raw IMU delivery has separate physical evidence;
+head-frame/optical calibration, tracked VR and persistent Linux installation
+remain outstanding. The first-boot document names the associated receipts and
+physical logs.
 
 ## Quest 3 — temporary root obtained; bootloader remains locked
 

@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,7 @@ struct context {
     VkDeviceMemory memory;
     uint32_t *mapped;
     VkSemaphore forward, back;
+    uint32_t family;
     VkBool32 timeline;
     VkBool32 import_only;
 };
@@ -53,6 +55,7 @@ static void init(struct context *c)
     uint32_t family = 0;
     while (family < family_count && !(families[family].queueFlags & VK_QUEUE_GRAPHICS_BIT)) ++family;
     REQUIRE(family < family_count);
+    c->family = family;
     free(families);
     float priority = 1;
     VkDeviceQueueCreateInfo queue = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -129,7 +132,8 @@ static void buffer(struct context *c, struct allocation *allocation, int import_
 }
 
 static void submit(struct context *c, VkSemaphore wait, uint64_t wait_value,
-                   VkSemaphore signal, uint64_t signal_value, uint32_t pattern)
+                   VkSemaphore signal, uint64_t signal_value, uint32_t pattern,
+                   int notify_fd)
 {
     VkCommandBuffer command;
     VkCommandBufferAllocateInfo alloc = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -137,11 +141,26 @@ static void submit(struct context *c, VkSemaphore wait, uint64_t wait_value,
     CHECK(vkAllocateCommandBuffers(c->device, &alloc, &command));
     VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     CHECK(vkBeginCommandBuffer(command, &begin));
+    VkBufferMemoryBarrier ownership = {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL, .dstQueueFamilyIndex = c->family,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT,
+        .buffer = c->buffer, .size = VK_WHOLE_SIZE};
+    if (wait) vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT,
+        0, 0, NULL, 1, &ownership, 0, NULL);
     if (pattern) vkCmdFillBuffer(command, c->buffer, 0, BUFFER_SIZE, pattern);
     VkMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
         0, 1, &barrier, 0, NULL, 0, NULL);
+    if (signal) {
+        ownership.srcQueueFamilyIndex = c->family;
+        ownership.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+        ownership.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        ownership.dstAccessMask = 0;
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 1, &ownership, 0, NULL);
+    }
     CHECK(vkEndCommandBuffer(command));
     VkTimelineSemaphoreSubmitInfo timeline = {.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
         .waitSemaphoreValueCount = wait ? 1 : 0, .pWaitSemaphoreValues = &wait_value,
@@ -155,6 +174,7 @@ static void submit(struct context *c, VkSemaphore wait, uint64_t wait_value,
     VkFence fence;
     CHECK(vkCreateFence(c->device, &fence_info, NULL, &fence));
     CHECK(vkQueueSubmit(c->queue, 1, &submit, fence));
+    if (notify_fd >= 0) REQUIRE(send(notify_fd, "s", 1, MSG_NOSIGNAL) == 1);
     CHECK(vkWaitForFences(c->device, 1, &fence, VK_TRUE, WAIT_NS));
     vkDestroyFence(c->device, fence, NULL);
     vkFreeCommandBuffers(c->device, c->pool, 1, &command);
@@ -208,22 +228,27 @@ int main(int argc, char **argv)
             .import_only = !strcmp(argv[3], "import-only")};
         struct allocation allocation = {0};
         int fds[3];
-        transfer(atoi(argv[1]), &allocation, fds, 0);
-        close(atoi(argv[1]));
+        int peer = atoi(argv[1]);
+        transfer(peer, &allocation, fds, 0);
         init(&c);
         buffer(&c, &allocation, fds[2]);
         c.forward = semaphore(&c, fds[0]);
         if (c.timeline) { c.back = c.forward; close(fds[1]); }
         else c.back = semaphore(&c, fds[1]);
-        submit(&c, c.forward, 5, VK_NULL_HANDLE, 0, 0);
+        char ready;
+        if (!c.timeline) REQUIRE(recv(peer, &ready, 1, 0) == 1 && ready == 's');
+        submit(&c, c.forward, 5, VK_NULL_HANDLE, 0, 0, -1);
         verify(&c, 0x11223344);
-        submit(&c, VK_NULL_HANDLE, 0, c.back, 9, 0xa5b6c7d8);
+        submit(&c, VK_NULL_HANDLE, 0, c.back, 9, 0xa5b6c7d8, c.timeline ? -1 : peer);
+        close(peer);
         finish(&c);
         return 0;
     }
-    REQUIRE(argc == 1);
+    bool binary_only = argc == 2 && !strcmp(argv[1], "--binary-only");
+    REQUIRE(argc == 1 || binary_only);
     for (unsigned mode_index = 0; mode_index < 4; ++mode_index) {
         unsigned timeline = mode_index & 1, import_only = mode_index >> 1;
+        if (binary_only && timeline) continue;
         struct context c = {.timeline = timeline, .import_only = import_only};
         struct allocation allocation = {0};
         init(&c);
@@ -257,10 +282,14 @@ int main(int argc, char **argv)
         }
         close(sockets[1]);
         transfer(sockets[0], &allocation, fds, 1);
-        close(sockets[0]);
         for (unsigned i = 0; i < 3; ++i) close(fds[i]);
-        submit(&c, VK_NULL_HANDLE, 0, c.forward, 5, 0x11223344);
-        submit(&c, c.back, 9, VK_NULL_HANDLE, 0, 0);
+        submit(&c, VK_NULL_HANDLE, 0, c.forward, 5, 0x11223344,
+               timeline ? -1 : sockets[0]);
+        /* Binary waits require the peer's signal operation to be submitted first. */
+        char ready;
+        if (!timeline) REQUIRE(recv(sockets[0], &ready, 1, 0) == 1 && ready == 's');
+        submit(&c, c.back, 9, VK_NULL_HANDLE, 0, 0, -1);
+        close(sockets[0]);
         verify(&c, 0xa5b6c7d8);
         int status;
         REQUIRE(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
