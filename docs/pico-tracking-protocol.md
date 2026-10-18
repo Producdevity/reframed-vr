@@ -535,9 +535,9 @@ A ten-second native test of this explicit three-stream configuration produced
 all with reported accuracy three, then cleanly joined and stopped SLPI.
 This validates the session policy on the physical unit, not units, axes, head
 pose or optical rendering. HMD JSON schema versions 1 and 2 still require all
-four SUIDs: exposing the new explicit policy in a private headset profile is
-a separate integration step. Sensor/optics verification remains required
-before activating that profile.
+four SUIDs. Version 3 exposes the explicit modes and a null accel-cal entry;
+gyro bias remains mandatory. Sensor/optics verification remains required
+before activating a physical profile.
 
 The optional `tests/ssc-calibration-stock.py` comparison extracts checksum-pinned
 descriptors from a private b1977 `libssc.so`. It checks 8,475 cases against

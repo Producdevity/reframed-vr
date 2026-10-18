@@ -49,7 +49,7 @@ static void save(const char *path,cJSON *json)
     char *data=cJSON_PrintUnformatted(json);assert(data);
     FILE *f=fopen(path,"wb");assert(f);assert(fwrite(data,1,strlen(data),f)==strlen(data));assert(!fclose(f));free(data);
 }
-static void analytic_config_tests(const char *path)
+static cJSON *analytic_fixture(void)
 {
     cJSON *json=fixture();cJSON_ReplaceItemInObjectCaseSensitive(json,"schema_version",cJSON_CreateNumber(2));
     for(unsigned eye=0;eye<2;eye++) {
@@ -58,6 +58,12 @@ static void analytic_config_tests(const char *path)
         cJSON *radial=cJSON_Parse("{\"type\":\"pico-radial-2\",\"tangent_scale\":[2,-2],\"tangent_offset\":[-1,1],\"radial_coefficients\":[1,0.1,0,0,0,0,0,0,0,0,0],\"chromatic_coefficients\":[0.01,0,0.02,0,0,0]}");
         assert(radial);cJSON_AddItemToObject(v,"analytic_distortion",radial);
     }
+    return json;
+}
+
+static void analytic_config_tests(const char *path)
+{
+    cJSON *json=analytic_fixture();
     save(path,json);struct pico_hmd_config *config=NULL;assert(pico_hmd_config_load(path,&config));
     assert(config->views[0].radial_enabled&&!config->views[0].distortion&&!config->views[0].grid_width);
     assert(config->views[1].radial.tangent_scale[1]==-2&&config->views[1].radial.radial[1]==.1f);
@@ -79,6 +85,45 @@ static void analytic_config_tests(const char *path)
     cJSON_ReplaceItemInObjectCaseSensitive(json,"schema_version",cJSON_CreateNumber(1));save(path,json);
     assert(!pico_hmd_config_load(path,&config));cJSON_Delete(json);
     printf("PICO_HMD_ANALYTIC_CONFIG_PASS refusals=%u\n",refused+1);
+}
+
+
+static void calibration_mode_tests(const char *path)
+{
+    cJSON *json=analytic_fixture();
+    cJSON_ReplaceItemInObjectCaseSensitive(json,"schema_version",cJSON_CreateNumber(3));
+    struct pico_hmd_config *config=NULL;
+    save(path,json);assert(!pico_hmd_config_load(path,&config));
+    cJSON *imu=cJSON_GetObjectItemCaseSensitive(json,"imu");
+    cJSON_AddItemToObject(imu,"calibration_modes",cJSON_Parse("[\"runtime-bias\",\"runtime-bias\"]"));
+    save(path,json);assert(pico_hmd_config_load(path,&config));
+    assert(config->sensors.bias.mode[0]==SSC_CALIBRATION_RUNTIME_BIAS);
+    pico_hmd_config_destroy(&config);
+    cJSON_ReplaceItemInObjectCaseSensitive(imu,"calibration_modes",cJSON_Parse("[\"ssc-reported\",\"runtime-bias\"]"));
+    save(path,json);assert(!pico_hmd_config_load(path,&config));
+    cJSON_ReplaceItemInArray(cJSON_GetObjectItemCaseSensitive(imu,"suids"),2,cJSON_CreateNull());
+    save(path,json);assert(pico_hmd_config_load(path,&config));
+    assert(config->sensors.bias.mode[0]==SSC_CALIBRATION_SSC_REPORTED);
+    assert(config->sensors.bias.mode[1]==SSC_CALIBRATION_RUNTIME_BIAS);
+    assert(!config->sensors.bias.suid_high[0]&&!config->sensors.bias.suid_low[0]);
+    assert(config->sensors.bias.suid_high[1]==3&&config->tracking.minimum_accuracy==2);
+    pico_hmd_config_destroy(&config);
+    const char *invalid[]={"null","[]","[\"ssc-reported\"]","[\"ssc-reported\",\"ssc-reported\"]",
+        "[\"runtime-bias\",\"runtime-bias\"]","[\"unknown\",\"runtime-bias\"]","[0,\"runtime-bias\"]"};
+    for(unsigned i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++) {
+        cJSON *bad=cJSON_Duplicate(json,true),*bimu=cJSON_GetObjectItemCaseSensitive(bad,"imu");
+        cJSON_ReplaceItemInObjectCaseSensitive(bimu,"calibration_modes",cJSON_Parse(invalid[i]));
+        save(path,bad);assert(!pico_hmd_config_load(path,&config));cJSON_Delete(bad);
+    }
+    cJSON *bad=cJSON_Duplicate(json,true),*bimu=cJSON_GetObjectItemCaseSensitive(bad,"imu");
+    cJSON_ReplaceItemInArray(cJSON_GetObjectItemCaseSensitive(bimu,"suids"),3,cJSON_CreateNull());
+    save(path,bad);assert(!pico_hmd_config_load(path,&config));cJSON_Delete(bad);
+    bad=cJSON_Duplicate(json,true);bimu=cJSON_GetObjectItemCaseSensitive(bad,"imu");
+    cJSON_AddItemToObject(bimu,"calibration_modes",cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(bimu,"calibration_modes"),true));
+    save(path,bad);assert(!pico_hmd_config_load(path,&config));cJSON_Delete(bad);
+    cJSON_ReplaceItemInObjectCaseSensitive(json,"schema_version",cJSON_CreateNumber(2));
+    save(path,json);assert(!pico_hmd_config_load(path,&config));cJSON_Delete(json);
+    puts("PICO_HMD_CALIBRATION_MODES_PASS");
 }
 
 int main(void)
@@ -116,6 +161,7 @@ int main(void)
     assert(!pico_hmd_config_load(path,&config));
     save(path,json);
     analytic_config_tests(path);
+    calibration_mode_tests(path);
     save(path,json);cJSON_Delete(json);
     char link[128];snprintf(link,sizeof(link),"%s-link",path);assert(!symlink(path,link));
     assert(!pico_hmd_config_load(link,&config));unlink(link);

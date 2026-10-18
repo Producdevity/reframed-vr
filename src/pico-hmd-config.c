@@ -67,7 +67,7 @@ static bool parse(const cJSON *json, struct pico_hmd_config *c)
 {
     int64_t n, version;
     const cJSON *serial = field(json, "serial"), *model = field(json, "device");
-    if (!integer(field(json, "schema_version"), 1, 2, &version) ||
+    if (!integer(field(json, "schema_version"), 1, 3, &version) ||
         !cJSON_IsString(model) || strcmp(model->valuestring, "PICOA7H10") ||
         !cJSON_IsString(serial) || !*serial->valuestring || strlen(serial->valuestring) >= XRT_DEVICE_NAME_LEN) return false;
     c->serial = strdup(serial->valuestring);
@@ -101,7 +101,7 @@ static bool parse(const cJSON *json, struct pico_hmd_config *c)
             !floats(field(item,"fov"),4,f) || !floats(field(item,"eye_pose"),7,p)) return false;
         v->fov = (struct xrt_fov){.angle_left=f[0],.angle_right=f[1],.angle_up=f[2],.angle_down=f[3]};
         v->eye_pose = (struct xrt_pose){.orientation={p[0],p[1],p[2],p[3]},.position={p[4],p[5],p[6]}};
-        if (version == 2) {
+        if (version >= 2) {
             if (cJSON_GetObjectItemCaseSensitive(item,"grid_width") || cJSON_GetObjectItemCaseSensitive(item,"grid_height") ||
                 cJSON_GetObjectItemCaseSensitive(item,"distortion")) return false;
             const cJSON *radial = field(item,"analytic_distortion"), *type = field(radial,"type");
@@ -131,9 +131,24 @@ static bool parse(const cJSON *json, struct pico_hmd_config *c)
         }
     }
     const cJSON *imu = field(json,"imu"), *suids = field(imu,"suids");
+    const cJSON *modes = field(imu,"calibration_modes");
+    if (version == 3) {
+        if (!cJSON_IsArray(modes) || cJSON_GetArraySize(modes) != 2) return false;
+        for (unsigned i=0;i<2;i++) {
+            const cJSON *mode = cJSON_GetArrayItem(modes,(int)i);
+            if (!cJSON_IsString(mode)) return false;
+            if (!strcmp(mode->valuestring,"runtime-bias")) c->sensors.bias.mode[i]=SSC_CALIBRATION_RUNTIME_BIAS;
+            else if (i == 0 && !strcmp(mode->valuestring,"ssc-reported")) c->sensors.bias.mode[i]=SSC_CALIBRATION_SSC_REPORTED;
+            else return false;
+        }
+    } else if (cJSON_GetObjectItemCaseSensitive(imu,"calibration_modes")) return false;
     if (!cJSON_IsArray(suids) || cJSON_GetArraySize(suids) != 4) return false;
     for (unsigned i=0;i<4;i++) {
         const cJSON *pair = cJSON_GetArrayItem(suids,(int)i);
+        if (i == 2 && c->sensors.bias.mode[0] == SSC_CALIBRATION_SSC_REPORTED) {
+            if (!cJSON_IsNull(pair)) return false;
+            continue;
+        }
         uint64_t high, low;
         if (!cJSON_IsArray(pair) || cJSON_GetArraySize(pair)!=2 ||
             !hex64(cJSON_GetArrayItem(pair,0),&high) || !hex64(cJSON_GetArrayItem(pair,1),&low) || (!high && !low)) return false;

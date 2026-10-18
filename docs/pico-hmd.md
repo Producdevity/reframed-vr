@@ -1,7 +1,7 @@
 # Pico HMD integration
 
-The native Monado Pico driver can expose an HMD backed by the four-subscription
-SSC head session. This automatic-prober path reports orientation and angular
+The native Monado Pico driver can expose an HMD backed by the explicitly
+configured SSC head session. This automatic-prober path reports orientation and angular
 velocity. An explicit capture owner can instead supply the
 [visual-inertial pose provider](pico-slam.md#hmd-pose-output), including position;
 that integration is verified offline but still requires physical camera and
@@ -27,8 +27,9 @@ This bounds extrapolation; it does not establish physical tracking accuracy.
 
 ## Calibration file
 
-Version 1 uses RGB grids. Version 2 uses the analytic lens model described below.
-Both versions require the common fields below. There are no physical defaults. The file
+Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
+below. Version 3 additionally requires explicit per-sensor calibration modes.
+All versions require the common fields below. There are no physical defaults. The file
 must be a regular file, at most 2 MiB; final symlinks, embedded NULs, trailing
 JSON, duplicate required fields and malformed numbers are refused. Units and
 coordinates must describe the active sensor and optical configuration, including
@@ -36,10 +37,11 @@ the current IPD. This format does not authenticate the measurements.
 
 | Field | Contents |
 | --- | --- |
-| `schema_version`, `device`, `serial` | `1` or `2`, `PICOA7H10`, the unit identifier |
+| `schema_version`, `device`, `serial` | `1`, `2` or `3`, `PICOA7H10`, the unit identifier |
 | `screen` | `width`, `height` in native panel pixels; `frame_interval_ns` |
 | `views` | Two objects, left eye then right eye, as described below |
-| `imu.suids` | Four `[high, low]` pairs: accel, gyro, accel calibration, gyro calibration; each half is a 16-digit lowercase hexadecimal string |
+| `imu.suids` | Four positions: accel, gyro, accel calibration, gyro calibration; each pair contains 16-digit lowercase hexadecimal halves. Version 3 uses `null` for accel calibration only when its explicit mode is `ssc-reported` |
+| `imu.calibration_modes` | Version 3 only: `["runtime-bias", "runtime-bias"]` or `["ssc-reported", "runtime-bias"]`; gyro bias remains required |
 | `imu.sample_rates` | Two advertised rates in Hz, accel then gyro |
 | `imu.sensor_to_head` | Row-major 3×3 proper rotation into Monado head coordinates |
 | `imu.acceleration_scale`, `imu.angular_velocity_scale` | Positive multipliers converting bias-corrected samples to m/s² and rad/s |
@@ -61,8 +63,13 @@ normalized per-eye screen position. The driver interpolates each color channel
 bilinearly. It copies the grids before the configuration is released. It does
 not substitute an undistorted mesh or infer lens parameters from resolution.
 
-The sensor session requires four distinct SUIDs and display rigid-body metadata
-for both raw/calibration pairs. Unit files captured from Android do not by
+The default sensor session requires four distinct SUIDs and display rigid-body
+metadata for both raw/calibration pairs. The explicit version-3 acceleration
+fallback omits its bias subscription and preserves SSC values/status without
+claiming a host bias correction. It still checks display-body metadata for
+both raw sensors and the paired gyro calibration sensor. Legacy profiles reject
+the new policy field; missing calibration never silently changes the mode.
+Unit files captured from Android do not by
 themselves prove active native SUIDs, coordinate conventions or optical
 calibration. No physical calibration file is distributed with the project.
 
