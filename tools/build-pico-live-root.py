@@ -107,6 +107,8 @@ def build(args):
         cmdline = runtime.assembly.root_arguments(inputs['root_label'], pico_services=True)
         cmdline = cmdline.replace('rd.retry=15 rd.timeout=30', 'rd.retry=2340 rd.timeout=2400')
         cmdline += ' reframed.live=usb selinux=1 enforcing=1 panic=10'
+        if args.disable_panic_download:
+            cmdline += ' msm_poweroff.download_mode=0'
         if not args.enable_display:
             cmdline += ' msm_drm.modeset=0'
         runtime.container.assemble(reference, stock, kernel / 'Image', output / 'initramfs-live.img',
@@ -140,6 +142,8 @@ if __name__ == '__main__':
     parser.add_argument('--root-manifest-sha256', required=True)
     parser.add_argument('--mkbootimg', type=Path, required=True)
     parser.add_argument('--boot-serial', required=True)
+    parser.add_argument('--disable-panic-download', action='store_true',
+                        help='Disable the BSP panic download-mode switch for this RAM boot; recovery remains unverified')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--pack-image', required=True)
     parser.add_argument('--initramfs-image', required=True)

@@ -373,6 +373,15 @@ is not yet reliable enough for unattended persistent installation.
 The owner subsequently returned the device to fastboot with the hardware
 buttons, and the unchanged `live-root-v7` native Linux RAM image booted again.
 
+`build-pico-live-root.py --disable-panic-download` opts a RAM image into the
+vendor kernel's `msm_poweroff.download_mode=0` command-line setting. The v8
+boot read back `0` from the module parameter and `10` from the panic timeout;
+a controlled native reboot returned to the identified fastboot session.
+See `native-v8-binary-sync-verification.json` and
+`native-v8-controlled-fastboot-return.json`. Panic-triggered recovery has not
+been exercised with this option, so it does not resolve the v4 recovery failure
+or satisfy unattended persistent-installation acceptance.
+
 It configures the kernel's existing `gser` USB function, waits for the primary
 `a600000.dwc3` UDC, and verifies its device-tree compatible, register extent and
 USB core ID before binding. Stock firmware selects this controller for the
