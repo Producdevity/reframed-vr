@@ -1,8 +1,8 @@
 Subject: drm/msm: own and verify the Pico standalone panel mux
 
 Bind the optional native-panel route to the panel lifecycle. Acquire all
-bridge control GPIOs without toggling them, reject active or unknown bridge
-state, and recheck the native route before panel power-on.
+bridge control GPIOs, reject active or unknown bridge state, initialize
+quiescent input-low pins as output-low, and recheck before panel power-on.
 
 ---
 diff --git a/techpack/display/msm/Makefile b/techpack/display/msm/Makefile
@@ -85,7 +85,7 @@ diff --git a/techpack/display/msm/dsi/pico_panel_mux.c b/techpack/display/msm/ds
 new file mode 100644
 --- /dev/null
 +++ b/techpack/display/msm/dsi/pico_panel_mux.c
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,149 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#include <linux/err.h>
 +#include <linux/gpio.h>
@@ -134,6 +134,38 @@ new file mode 100644
 +			return -EBUSY;
 +	}
 +	return 0;
++}
++
++static int pico_panel_mux_initialize(struct pico_panel_mux *mux)
++{
++	bool input[ARRAY_SIZE(mux_properties)];
++	unsigned int i;
++	int state;
++
++	/* Cold boot leaves these bridge controls as pulled-down inputs.
++	 * Validate every pin before driving any of them; never activate the bridge.
++	 */
++	for (i = 0; i < mux->owned; i++) {
++		state = gpiod_get_direction(gpio_to_desc(mux->gpios[i]));
++		if (state < 0)
++			return state;
++		if (state > 1)
++			return -EBUSY;
++		input[i] = state == 1;
++		state = gpio_get_value_cansleep(mux->gpios[i]);
++		if (state < 0)
++			return state;
++		if (state != 0)
++			return -EBUSY;
++	}
++	for (i = 0; i < mux->owned; i++) {
++		if (!input[i])
++			continue;
++		state = gpio_direction_output(mux->gpios[i], 0);
++		if (state)
++			return state;
++	}
++	return pico_panel_mux_prepare(mux);
 +}
 +
 +void pico_panel_mux_put(struct pico_panel_mux *mux)
@@ -192,7 +224,7 @@ new file mode 100644
 +			goto release;
 +		mux->owned++;
 +	}
-+	error = pico_panel_mux_prepare(mux);
++	error = pico_panel_mux_initialize(mux);
 +	if (error)
 +		goto release;
 +	of_node_put(bridge);

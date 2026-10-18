@@ -14,6 +14,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 VOLATILE_ROOT = ROOT / "system/systemd/volatile-root.conf"
 PICO_INPUTS = ["system/pico/reframed-pico-qrtr", "system/pico/reframed-pico-qrtr.service",
+               "system/pico/60-persistent-v4l.rules",
                "system/pico/reframed-pico-pd-mapper", "system/pico/reframed-pico-pd-mapper.service",
                "tools/pico-services.py",
                "system/pico/module-setup.sh", "profiles/qcom-services.json",
@@ -205,6 +206,7 @@ if sys.argv[4]=='yes':
 pico_files=[]
 if sys.argv[5]=='yes':
     pairs=[('/pico/reframed-pico-qrtr','usr/libexec/reframed-pico-qrtr'),
+           ('/pico/60-persistent-v4l.rules','etc/udev/rules.d/60-persistent-v4l.rules'),
            ('/pico/reframed-pico-qrtr.service','usr/lib/systemd/system/reframed-pico-qrtr.service'),
            ('/usr/bin/qrtr-ns','usr/bin/qrtr-ns'),('/usr/bin/qrtr-lookup','usr/bin/qrtr-lookup')]
     if Path('/tmp/pico-service-maps.sha256').is_file():

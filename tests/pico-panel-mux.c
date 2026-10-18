@@ -18,6 +18,8 @@ static struct device_node node;
 static bool present, malformed, compatible, available, fail_alloc;
 static int values[5], directions[5], gpios[5], flags[5], references;
 static int requested[5], request_count, free_count, allocations, fail_request;
+static int output_count, fail_output, ignored_output;
+static unsigned direction_reads, value_reads;
 static unsigned checks;
 
 static void *kzalloc(size_t size, int allocation_flags)
@@ -73,8 +75,28 @@ static void gpio_free(int gpio)
     requested[gpio] = 0; ++free_count;
 }
 static int gpio_to_desc(int gpio) { assert(gpio_is_valid(gpio) && requested[gpio]); return gpio; }
-static int gpiod_get_direction(int gpio) { return directions[gpio]; }
-static int gpio_get_value_cansleep(int gpio) { assert(requested[gpio]); return values[gpio]; }
+static int gpiod_get_direction(int gpio)
+{
+    direction_reads |= 1u << gpio;
+    return directions[gpio];
+}
+static int gpio_get_value_cansleep(int gpio)
+{
+    assert(requested[gpio]);
+    value_reads |= 1u << gpio;
+    return values[gpio];
+}
+static int gpio_direction_output(int gpio, int value)
+{
+    assert(requested[gpio] && value == 0);
+    assert(direction_reads == 31 && value_reads == 31);
+    ++output_count;
+    if (gpio == fail_output)
+        return -EIO;
+    if (gpio != ignored_output)
+        directions[gpio] = 0;
+    return 0;
+}
 
 #include "driver.inc"
 
@@ -86,6 +108,8 @@ static void reset(void)
     }
     present = compatible = available = true;
     malformed = fail_alloc = false; fail_request = -1;
+    output_count = 0; fail_output = ignored_output = -1;
+    direction_reads = value_reads = 0;
 }
 static void rejected(int error)
 {
@@ -107,13 +131,37 @@ int main(void)
         reset(); gpios[i] = 5; rejected(-EINVAL);
         reset(); flags[i] = 1; rejected(-EINVAL);
         reset(); fail_request = i; rejected(-EBUSY);
-        reset(); directions[i] = 1; rejected(-EBUSY);
+        reset(); directions[i] = 2; rejected(-EBUSY);
         reset(); directions[i] = -EIO; rejected(-EIO);
         reset(); values[i] = 1; rejected(-EBUSY);
         reset(); values[i] = -EIO; rejected(-EIO);
+        reset();
+        for (unsigned j = 0; j < 5; ++j)
+            directions[j] = 1;
+        values[i] = 1; rejected(-EBUSY); assert(!output_count);
+        reset();
+        for (unsigned j = 0; j < 5; ++j)
+            directions[j] = 1;
+        fail_output = i; rejected(-EIO); assert(output_count == (int)i + 1);
+        reset(); directions[i] = 1; ignored_output = i;
+        rejected(-EBUSY); assert(output_count == 1);
         for (unsigned j = 0; j < i; ++j) {
             reset(); gpios[i] = gpios[j]; rejected(-EINVAL);
         }
+    }
+    for (unsigned mask = 0; mask < 32; ++mask) {
+        reset();
+        unsigned inputs = 0;
+        for (unsigned i = 0; i < 5; ++i) {
+            directions[i] = (mask >> i) & 1;
+            inputs += directions[i];
+        }
+        struct pico_panel_mux *mux = pico_panel_mux_get(&node);
+        assert(mux && !IS_ERR(mux) && output_count == (int)inputs);
+        assert(!pico_panel_mux_prepare(mux));
+        assert(output_count == (int)inputs);
+        pico_panel_mux_put(mux);
+        ++checks;
     }
     for (unsigned iteration = 0; iteration < 128; ++iteration) {
         reset(); struct pico_panel_mux *mux = pico_panel_mux_get(&node);

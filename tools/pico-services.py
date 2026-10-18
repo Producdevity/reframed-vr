@@ -101,6 +101,7 @@ def install(source, root, firmware=None):
     checksums = service_maps(firmware)
     files = source_files(source, mapper=checksums is not None)
     files.update({
+        "etc/udev/rules.d/60-persistent-v4l.rules": ROOT / "system/pico/60-persistent-v4l.rules",
         "usr/libexec/reframed-pico-qrtr": ROOT / "system/pico/reframed-pico-qrtr",
         "usr/lib/systemd/system/reframed-pico-qrtr.service": ROOT / "system/pico/reframed-pico-qrtr-root.service",
     })

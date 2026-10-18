@@ -13,6 +13,7 @@ depends() {
 }
 
 install() {
+    inst_simple "$moddir/60-persistent-v4l.rules" /etc/udev/rules.d/60-persistent-v4l.rules
     inst_multiple qrtr-ns qrtr-lookup systemd-notify sleep
     inst_script "$moddir/reframed-pico-qrtr" /usr/libexec/reframed-pico-qrtr
     inst_simple "$moddir/reframed-pico-qrtr.service" "$systemdsystemunitdir/reframed-pico-qrtr.service"

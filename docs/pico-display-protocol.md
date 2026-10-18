@@ -113,14 +113,17 @@ the existing DSI panel lifecycle. An explicit panel property,
 `pico,native-mipi-mux = <&bridge_node>`, references an available `qcom,vxr7200`
 node containing the five control GPIO properties above. No candidate GPIO
 numbers or selected panel path are compiled into the driver. The published
-Pico source omits its vendor device trees, and the live tree selection remains
-unverified, so no retained stock DTB is changed automatically.
+Pico source omits its vendor device trees. October 18 live evidence confirms
+base index 3, overlay index 0 and the Sharp493120 panel on the inventoried Pro
+Eye. No retained stock DTB is changed automatically.
 
-With that property present, panel initialization acquires all five GPIOs without
-requesting a new direction or value. It accepts only the observed stock native
-state: reset asserted, bridge rails off, mux selecting Qualcomm, with every
-line configured as an output. Missing pins, nonzero binding flags, duplicate
-GPIOs, conflicting owners, inputs, high outputs and failed reads are rejected.
+With that property present, panel initialization acquires all five GPIOs and
+checks every direction and level before writing any of them. The native cold
+boot leaves all five as pulled-down inputs, so input-low pins are initialized
+as output-low. Existing output-low pins are preserved. The resulting route
+holds reset asserted, bridge rails off and the mux selecting Qualcomm.
+Missing pins, nonzero binding flags, duplicate GPIOs, conflicting owners,
+high levels, unknown directions and failed operations are rejected.
 Deferred-probe errors are preserved. Partial acquisition releases every owned
 GPIO, and panel initialization failures or removal release the mux ownership.
 
@@ -130,7 +133,7 @@ The stock panel's mode, reset, backlight and regulator code remains responsible
 for panel operation. The mux helper does not use the stock bridge's global
 panel pointer, sysfs writes or timer callbacks.
 
-This first kernel integration preserves an established standalone route. It
+This kernel integration establishes the quiescent standalone route. It
 deliberately returns an error for an external or unknown route; switching a live
 panel requires a complete DRM modeset transaction, bridge reset/rail sequencing,
 EDID/video detection and error recovery. Physical mux state, the selected panel

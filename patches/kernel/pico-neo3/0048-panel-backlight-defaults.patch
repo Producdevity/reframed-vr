@@ -1,0 +1,27 @@
+Subject: drm/msm: accept optional backlight defaults on Pico
+
+The stock Sharp GPIO panel omits the optional DCS subtype. Do not return
+that property lookup error after installing its documented default. Keep
+PWM parsing and GPIO probe-defer errors on their existing error paths.
+
+---
+--- a/techpack/display/msm/dsi/dsi_panel.c
++++ b/techpack/display/msm/dsi/dsi_panel.c
+@@ -2847,16 +2847,17 @@
+ 		} else {
+ 			DSI_DEBUG("[%s] failed to get bklt gpio, rc=%d\n",
+ 					 panel->name, rc);
+ 			rc = 0;
+ 			goto error;
+ 		}
+ 	}
+ 
++	return 0;
+ error:
+ 	return rc;
+ }
+ 
+ void dsi_dsc_pclk_param_calc(struct msm_display_dsc_info *dsc, int intf_width)
+ {
+ 	int slice_per_pkt, slice_per_intf;
+ 	int bytes_in_slice, total_bytes_per_intf;

@@ -38,6 +38,8 @@ class PicoServicesTests(unittest.TestCase):
         pico.verify(self.root, result)
         self.assertFalse(result["dsp_startup"])
         self.assertEqual(result["required_cmdline"], "reframed.pico=qrtr")
+        self.assertEqual((self.root / "etc/udev/rules.d/60-persistent-v4l.rules").read_bytes(),
+                         (pico.ROOT / "system/pico/60-persistent-v4l.rules").read_bytes())
         self.assertIn("ConditionPathExists=!/etc/initrd-release", (self.root / "usr/lib/systemd/system/reframed-pico-qrtr.service").read_text())
         with self.assertRaisesRegex(ValueError, "already exists"):
             pico.install(self.source, self.root)
