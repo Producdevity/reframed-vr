@@ -1,38 +1,133 @@
 # Pico first boot
 
-The immediate target is a bounded Linux diagnostic boot on the inventoried
-Neo3 Pro Eye, followed by a demonstrated return to stock. Display and tracking
-bring-up follow that milestone. This is not yet an installation procedure.
+The inventoried Neo3 Pro Eye now boots a full native Linux root with systemd
+PID 1 and an authorized USB root console, and returns to stock without physical
+handling. Native GPU execution and initial panel modesets work; desktop and
+tracking bring-up remain ahead. This is not yet an
+installation procedure. The intended installation replaces Android; stock
+Android is temporarily retained for recovery and staging.
+
+## October 18 device status
+
+The owner-authorized session completed normal-cable software EDL, engineering
+ABL/devinfo installation, fastboot token authorization, ordinary and critical
+unlock, and a consented factory reset. The retained post-reset report records
+build `smartcm.1696861506` (5.8.4.0 b1977), orange Verified Boot,
+`ro.boot.flash.locked=0`, `test-keys` and Permissive SELinux. Unlock is persistent;
+the owner reports offline setup and updater re-disabling were completed.
+Evidence and original/readback manifests are in
+`output/pico-edl-reads-20261018-v1/`. These are saved session results, not a new
+device check performed for this documentation update.
+
+The engineering ABL readback matches the earlier preserved-tail candidate, and
+a pre-unlock `misc` original is now available. The unlock transition and wipe
+are completed steps. They do not need to be repeated for a Linux boot test.
+The subsequent bring-up session established stock RAM boot, a complete stock
+boot restoration/readback, autonomous stock return, and unsigned custom-kernel
+startup. The owner also entered fastboot with Power + Volume Down + headset
+Home under the engineering ABL. `pico-boot-v4` remains a later runtime with a
+separate external root. See the
+[updated roadmap](bootloader-unlock-roadmap.md).
+
+Fresh evidence is in `output/pico-recovery-bringup-20261018-v1/`. Only the boot
+partition was restored: all 96 MiB read back with stock SHA-256
+`bf42eb997b58a335ae4c59c034dd3b0adfc83855c7f5f5887635f0a468b533b7`.
+No early boot firmware, GPT or device-state partition was changed by that
+restoration. The corrected diagnostic RAM images in `diagnostic-board-v2-boot`
+and `diagnostic-board-v3-boot` exposed `Reframed VR Pico diagnostic`, serial
+`c980c8d4`, on the physical USB bus and subsequently returned to boot-completed
+stock Android. This proves custom kernel/init execution through the guarded
+USB bind. After the owner approved the accessory on macOS, the same v3 image
+transferred its complete 74,891-byte report and returned to boot-completed
+stock Android. The log identifies the custom 4.19.81-perf kernel and explicit
+DTB index 3 / DTBO index 0. See `diagnostic-usb-approved-verification.json` and
+`diagnostic-approved-v1-live.log` for hashes and observations. Earlier attempts
+were unregistered/unconfigured under **Ask for new accessories**; approval
+resolved that observed transport gate.
+
+A bounded read of 114 live stock device-tree properties additionally confirms
+`androidboot.dtb_idx=3`, `androidboot.dtbo_idx=0`, and the command-line Sharp
+493 panel override. The acquired primary-display, Sharp-panel, VXR7200 and
+GPIO-controller properties agree with the prepared display tree except for
+its three intended binding edits. Kernel-synthesized `name` properties were
+checked separately. See `live-display-binding-verification.json` in the same
+evidence directory. This verifies selection and property correspondence;
+that comparison alone does not verify scanout. A subsequent native boot read
+all five VXR7200 control pins as input-low. Patch `0025-native-panel-mux.patch` now
+checks every pin before initializing input-low pins as output-low; it refuses
+high or unknown states and retains the strict output-low power-on check.
+The rebuilt native kernel subsequently owns all five pins as outputs and
+registers the intended DSI panel. Optical output has not been inspected.
+
+The file-backed `live-root-v5` assembly subsequently reached the full Linux
+root: `systemd-detect-virt` returned `none`, the root console ran as UID 0,
+nine matching audio/DSP modules loaded, and QRTR/PD-mapper services were active.
+The verified ext4 image was mounted through read-only SquashFS and F2FS backing
+with a writable RAM overlay. This staging arrangement still uses a file on
+the old userdata filesystem; it is not the final Linux storage installation.
+See `live-root-v5-reconnect.log`, `userdata-root-install-v2.json` and
+`live-root-v5-stock-return-final.json` for physical observations and the
+independent payload readback. The owner confirmed that Android user data does
+not need preserving; firmware, calibration and recovery originals remain required.
+
+The first native logs expose a separate panel parsing failure: the stock Sharp
+GPIO panel omits the optional DCS backlight subtype. The public driver installs
+its default but returns the stale lookup error when the enable GPIO is valid.
+Patch `0048-panel-backlight-defaults.patch` returns success on that completed
+path while preserving PWM and GPIO probe-defer errors. Source-matched sanitizer
+tests reproduce the original failure and pass with the patch. Compilation and
+these tests do not establish physical panel operation.
+
+The matching `live-root-v7` image subsequently booted from a hash-verified
+USB-delivered RAM payload. Its full kernel and root receipts are separate from
+the earlier `pico-boot-v4` assembly. The installed display DTBO passed an
+independent complete 24 MiB readback, and stock recovery still booted with that
+DTBO. The live tree confirms the expected panel/mux phandles. See
+`dtbo-native-display-readback-verification.json` and
+`native-dtbo-stock-return-verification.json`.
+
+Native Turnip on the Adreno 650 passes sixteen GPU buffer fills and complete
+4 MiB host readbacks. The KMS test also completes its initial modeset, five
+vblanks, output disable and a subsequent enable/disable cycle when it uses the
+inherited 120 Hz mode. The vendor driver refuses a different refresh rate on
+the first continuous-splash frame; requesting 72 Hz first caused DMS errors
+and subsequent PLL failures. Those failed attempts are retained in
+`native-v7-kernel-after-kms.log`; they do not prove a standalone PLL defect.
+The corrected test and physical log are `tests/pico-kms-smoke.c` and
+`live-root-v7-first-mode.log`. Vblank events do not establish optical quality,
+stereo mapping, or a usable Steam UI.
+
+Generic `v4l_id` probing also blocked native boot by opening vendor codec and
+camera control nodes. The observed codec stack waited for `venus.mdt` firmware.
+The Pico rule now skips `cam_req_mgr`, `cam_sync` and `msm_vidc_v4l2` while
+retaining ordinary video-device identification. The new initramfs stops udev
+normally without the previous 90-second timeout. This avoids incidental
+probing; codec firmware and camera-session bring-up remain separate work.
 
 ## Recovery and authorization
 
-1. Establish cold EDL entry on this unit without Android or fastboot commands.
-   Verify its ROM identity, reuse the already accepted signed programmer for
-   bounded reads, and verify the known Firehose reset returns stock Android.
-   Cold stock recovery and fastboot menu entry have already passed and should
-   not be repeated as substitutes.
-2. Define the smallest bootloader transition and its restoration procedure.
-   Bind every affected partition to verified original bytes, GPT extent and
-   replacement size/hash. Preserve XBL, XBL configuration, GPTs, stock recovery
-   and unrelated firmware. Do not perform a full firmware downgrade.
-3. Verify the physical restoration mechanism before installing Reframed VR.
-   An actual restoration rehearsal writes storage; it cannot be silently
-   treated as a read-only test under the current no-flash constraint. No
-   deliberate bootloader corruption is required. A plan and readable backups
-   alone are not evidence of successful restoration.
-4. After a verified restoration path and the minimum bootloader transition,
-   test command authorization and signed stock RAM boot before unlocking.
-   Inspect any refusal instead of running the complete community script.
-   Unlocking is a separate, data-erasing transition. Verify stock return before
-   attempting the bounded Linux diagnostic image.
+1. The owner's hardware fastboot entry and the demonstrated stock return now
+   cover this failed-boot recovery. Software EDL still depends on running
+   Android; arbitrary early-boot corruption and cold EDL remain untested.
+2. Retain verified original bytes, GPT extents and replacement sizes/hashes for
+   the completed transition. ABL/devinfo EDL read/write is demonstrated, but
+   restoration of their originals has not been rehearsed. Preserve XBL, XBL
+   configuration, GPTs, stock recovery and unrelated firmware.
+3. Stock boot restoration and independent full readback are demonstrated.
+   ABL/devinfo restoration and recovery of deleted secure keys remain unproven.
+   No deliberate bootloader corruption is required.
+4. Stock RAM boot and unsigned custom diagnostic startup under the engineering
+   ABL are demonstrated. The diagnostic's bounded exit returns to the verified
+   on-disk stock boot. Unlock and factory reset are already completed;
+   do not rerun them merely to test boot command availability.
 
-The current b1977 ABL has no RAM-boot handler. The authenticated older ABL has
-one, but must first be installed; its matching signing root does not prove
-rollback acceptance. The original community procedure replaces ABL, while the
-fork also replaces devinfo. Whether replacement of devinfo is necessary on this
-unit remains unverified. Authorization, unlocking, and unsigned-image
-authentication are separate operations. Do not run a complete unlock/factory
-reset script merely to test command availability.
+The authenticated early-4.6.3 ABL is now installed. Its saved command table
+registers a boot handler after authorization for each fastboot session. The
+later physical diagnostic establishes unsigned-image acceptance on this unit.
+The original community procedure replaces ABL, while the
+fork also replaces devinfo. Both were replaced in this session; whether devinfo
+replacement was necessary was not isolated. Authorization, unlocking and
+unsigned-image authentication remain separate operations.
 [Original procedure](https://github.com/264312431/more-picohaxx/blob/f911e67f1714e189ba1dd8a46111065482dd6681/more-picohaxx.py),
 [fork](https://github.com/chaixshot/more-picohaxx-tool/blob/c182399937107dd290cbc1ec2fdb06116af83a9d/picounlock.ps1).
 
@@ -45,12 +140,14 @@ that preserved early boot chain, not recovery from arbitrary storage damage.
 
 ## Available originals
 
-The October 15 audit passes for all 21 saved partitions and all six pairs of
-GPT copies. ABL, ABL backup, devinfo, boot, recovery and calibration originals
-are available. The audit identifies five additional state partitions without
-backups: `misc`, `frp`, `metadata`, `uefivarstore` and `secdata`. This does not
-establish that a proposed transition writes all five. Audit the actual write
-set and acquire any affected originals before proceeding. The existing
+The historical October 15 audit passes for all 21 saved partitions and all six
+pairs of GPT copies. ABL, ABL backup, devinfo, boot, recovery and calibration originals
+are available. That audit predates the October 18 `misc-live.bin` acquisition;
+its missing-`misc` result is historical. `live-hashes.txt` in the new evidence
+directory binds all seven pre-write acquisitions, including `misc`. The other
+state originals still absent from the retained inventory are `frp`, `metadata`,
+`uefivarstore` and `secdata`. Their absence does not establish that unlock writes
+them. Audit the actual write set before any further transition. The existing
 `bootbak`/`vbmetabak` mismatch remains preserved; those partitions are not a
 verified fallback.
 
@@ -76,29 +173,30 @@ the partition is refused until its exact intended complete bytes are defined.
 For the retained Pro Eye originals, an offline candidate copies the 37-sector
 older ABL payload and retains the original bytes through the end of the 1 MiB
 partition. The comparison finds 36 differing sectors; ABL backup is untouched.
-This defines one candidate's complete bytes, not the accepted device write
-policy. The raw shorter payload is refused by the auditor. The candidate and
-comparison are private in `output/pico-display-recovery-20261014-v1/`; missing
-`misc`, secure-key reset effects, rollback acceptance and physical restoration
-remain unresolved. No bootloader transition has been performed.
+This defined one candidate's complete bytes before the transition. The raw
+shorter payload is refused by the auditor. The candidate and comparison are
+private in `output/pico-display-recovery-20261014-v1/`. The October 18 full ABL
+readback is byte-identical to that candidate, and the changed loader returned
+to Android after unlock/reset. This establishes acceptance of that ABL on this
+unit, not an unsigned Linux boot or a physical restoration rehearsal. Secure-key
+restoration remains unverified.
 
-The missing `misc` read is prepared privately in
+The earlier `misc` acquisition plan is retained privately in
 `output/pico-state-backup-20261013-v1/`, using the revalidated stock GPT extent.
 The compiled helper permits only UFS configuration, six geometry queries,
 bounded GPT reads, the single `misc` extent after host confirmation, and reset.
 Its sanitizer fixture passes 532 allowed and 315 rejected commands without USB
 access. The reader was rebuilt with the renamed checkout paths, and its 847 outgoing
 command guard cases pass under ASan/UBSan using a fake transport. The device
-reader has not run and is stored without execute permission; no new `misc`
-original has been acquired. Current binaries and receipts are in
-`output/pico-usb-power-20261014-v1/recovery-tools/`. Recheck live ROM identity, geometry
+reader has not run and is stored without execute permission; the October 18
+original was instead acquired through qdl. Historical binaries and receipts are
+in `output/pico-usb-power-20261014-v1/recovery-tools/`. Recheck live ROM identity, geometry
 and both GPT copies before using it. A successful reset after failed acquisition
 must still report acquisition failure.
 
-The community unlock flow expects a factory reset. File/application exports
-and encryption implications need resolution before that step; raw userdata
-alone is not a proven way to restore usable data after key changes. There is
-no full userdata backup. A Pico4 owner's failed userdata restoration is a
+The owner completed the expected factory reset on October 18. Raw userdata
+alone is not a proven way to restore usable data after key changes, and there
+was no full userdata backup. A Pico4 owner's failed userdata restoration is a
 relevant limitation, not proof of identical Pro Eye behavior.
 [Owner report](https://github.com/chaixshot/more-picohaxx-tool/issues/4).
 
@@ -113,7 +211,7 @@ the transition requirements:
 | Ordinary or critical unlock | Writes the corresponding flag through the Verified Boot protocol | Either command can change persistent state; do not assume critical unlock is needed for a RAM-boot test |
 | Device-state storage | XBL uses Keymaster/RPMB when its security checks and secure reads succeed; other branches use `devinfo` | A raw `devinfo` backup is not a complete backup of the possible state stores |
 | State reset | Calls Keymaster with request `0x10e` before scheduling recovery | Treat this as destructive key-state reset, independently of filesystem erasure |
-| Recovery request | Writes a 1,088-byte message containing `--wipe_data` to `misc` | Acquire the missing `misc` original before an unlock; on this unit the helper read-modifies-writes one 4,096-byte sector |
+| Recovery request | Writes a 1,088-byte message containing `--wipe_data` to `misc` | The pre-unlock original was acquired October 18; the traced helper read-modifies-writes one 4,096-byte sector |
 
 The protocol header identifies the reset operation as a delete command to
 Keymaster. Both unlock paths in the exact older ABL reach it; its build-time
@@ -141,19 +239,24 @@ extractions, function exports, GPT correspondence and hashes are retained in
 
 Use the compiled Pico kernel and authenticated stock DTB pack with an
 initramfs-only diagnostic. It should reach init, provide bounded USB diagnostics
-and power off, without mounting internal filesystems or starting the VR
+and reboot to stock, without mounting internal filesystems or starting the VR
 runtime. Verify USB controller operation and controlled return before adding
 the external root filesystem, display/mux, DSP and tracking services.
 
 `tools/build-pico-diagnostic.py` now builds that separate initramfs. It packages
 one static ARM64 init executable and an explicit bootloader serial; no shell,
 modules, firmware, root filesystem or disk-mount service is included. Init
-requires PID 1, a RAM root, `qcom,kona`, an exact diagnostic command-line token
+requires PID 1, a RAM root, the exact live compatible list
+`qcom,kona-iot-mtp`, `qcom,kona-iot`, `qcom,mtp`, an exact diagnostic command-line token
 and matching `androidboot.serialno`. Missing or conflicting identity refuses
 USB setup. The virtual test requires a separate `qemu` serial and test token.
 Read `ro.boot.serialno` on the identified stock device for this input. On the
 inventoried Pro Eye it differs from `ro.serialno`, the serial shown by ADB.
 Using the ADB serial would make the diagnostic refuse startup.
+The former `qcom,kona` guard rejected this headset before USB setup. Its base
+DTB contains that generic compatible, but ABL applies the stock DTBO's root
+identity. The live list and stock overlay zero agree byte-for-byte; changing
+the stock DTB/DTBO to satisfy the old guard is unnecessary.
 
 ```sh
 python3 -B tools/build-pico-diagnostic.py PHYSICAL_PICO_KERNEL_DIRECTORY \
@@ -174,6 +277,8 @@ The assembler requires the diagnostic's physical serial, current source and
 matching kernel receipt. It reconstructs the ramdisk to reject extra payloads
 or substitution of the virtual test ramdisk, verifies the stock payload
 roundtrip, and checks the new kernel/ramdisk/stock DTB sections after unpacking.
+It preserves and checks the stock OS version/patch-level header field
+(`0x14000154`, Android 10.0.0 / April 2021 on this reference).
 The reference hash must come from independently retained authentication or
 backup evidence. The output remains unsigned, with boot/recovery and physical
 DTB compatibility explicitly unverified; this command never accesses a device.
@@ -198,6 +303,9 @@ container leaves display enabled and requires its separately verified external
 root image. Assembly does not establish that root transport, DTB selection,
 physical drivers or recovery work, and it does not replace the initial bounded
 diagnostic.
+New Pico runtime command lines use `rd.emergency=reboot` so a root-mount
+failure requests a return to the retained stock boot. That specific failure
+path still requires physical verification; kernel hangs can prevent reboot.
 
 It configures the kernel's existing `gser` USB function, waits for the primary
 `a600000.dwc3` UDC, and verifies its device-tree compatible, register extent and
@@ -210,7 +318,7 @@ short report before configuration and discard it when the serial device closes.
 The diagnostic transmits bounded kernel/system diagnostics and accepts no host
 commands.
 A 90-second alarm is armed before mounting the virtual filesystems or reading
-identity. Mount and identity failures immediately request power-off before USB
+identity. Mount and identity failures immediately request reboot before USB
 setup; a validated virtual test shortens the alarm to 10 seconds. Neither the
 timer nor a shutdown request can recover a hung kernel or replace independent
 recovery. The `1d6b:0104` Linux gadget identifier is for this development diagnostic only.
@@ -223,22 +331,27 @@ cc -std=c11 -O2 -Wall -Wextra -Werror tools/pico-diagnostic-log.c \
 NEW_LOG_RECEIVER --serial BOOT_SERIAL > NEW_LOG_FILE
 ```
 
-The receiver waits up to 90 seconds for enumeration and configuration, retrying
-when a matching device has no active diagnostic interface yet. It refuses
-duplicate matching devices and rejects incomplete or wrong-device reports. A received report proves neither physical shutdown nor
+The receiver waits up to 90 seconds for enumeration. It checks configuration
+one's descriptors before selecting an unconfigured device, and only configures
+and claims a unique identity match. It refuses duplicate matching devices and
+rejects incomplete or wrong-device reports. A received report proves neither physical reboot nor
 return to stock; those require separate observation. The diagnostic does not
 load an SELinux policy, so the enforcing kernel arguments alone are not a
 claim of userspace policy enforcement.
 
 ## Offline verification
 
-The current diagnostic uses the physical Pico kernel
+The historical October 14 diagnostic uses the physical Pico kernel
 `3588cea6461e9807f92fe559884ee313686fffec7eb2afd0d44ba5d3b0c0f513`
-and the current Reframed init. It has not been booted on a headset. The unsigned
+and the then-current Reframed init. That artifact was not booted on a headset. The unsigned
 Android-v2 image was assembled and unpacked with matching kernel, initramfs and
 unmodified stock DTB hashes. Build, assembly and VM receipts are in
 `output/pico-usb-power-20261014-v1/`; use `diagnostic` and `diagnostic-boot`.
-Earlier diagnostic artifacts remain historical. The private `first-boot-set.json`
+The October 18 corrected diagnostic instead uses Image SHA-256
+`4e9035de7fddf7179e2e99e6bc46a005d5033b2770b9f3cff9e041eb28eb864e`
+from `linux-camera-sensor-stop-20261015-v2`; its physical evidence is described
+above. The diagnostic contains no modules, so this does not establish physical
+loading of the kernel build's 38 modules. The private historical `first-boot-set.json`
 binds the diagnostic, host log receiver, runtime root and display overlay to
 exact hashes. It records the physical gates as pending and contains no flash
 commands.
@@ -260,9 +373,11 @@ Mesa compiler image:
 just test-pico-diagnostic-init NEW_TEST_DIRECTORY
 ```
 
-Host sanitizer tests cover log identity, truncation and eight USB discovery
-scenarios, including delayed configuration and duplicate devices. The matching
-host receiver is compiled in the `host` subdirectory; its tests use mocked USB.
+Host tests cover log identity, truncation and thirteen USB discovery/configuration
+scenarios, including delayed descriptors, unconfigured devices, configuration
+failure and duplicate identities. These use mocked USB. The October 18 native
+sanitizer tests additionally cover the observed board identity and the shipped
+kernel's lack of devtmpfs, using a RAM tmpfs fallback with explicit device nodes.
 
 The initial diagnostic requires `msm_drm.modeset=0`. Pico's vendor display
 configuration enables MSM DRM separately from the top-level kernel
@@ -276,29 +391,39 @@ this does not establish an untouched physical display.
 The authenticated older ABL's default ARM64 placement also passes the updated
 diagnostic size check, with more than 39 MiB between the kernel runtime extent
 and calculated DTB boundary in its default 86 MiB allocation. Actual UEFI
-`KernelBaseAddr`/`KernelSize`, live RAM reservations and bootloader DTB selection
-remain unverified. Container header addresses do not describe this dynamic
+`KernelBaseAddr`/`KernelSize` and live RAM reservations remain unverified.
+Stock DTB/DTBO selection is now observed as described above; the custom
+historical diagnostic had not transferred its own complete live report. The
+October 18 corrected diagnostic has now done so, as recorded above.
+Container header addresses do not describe this dynamic
 placement. The full runtime retains display support and needs a separate,
 verified external root filesystem.
 
-The current native full-root container is assembled and roundtrip-verified
+The historical `pico-boot-v4` full-root container is assembled and roundtrip-verified
 offline with the Reframed paths and matched packages. Its QEMU counterpart
 passes fresh read-only startup and package checks over emulated USB storage.
 Earlier builds separately passed the virtio transport checks.
-Physical root transport and device-tree compatibility are untested; kernel/VM results do not
-replace those checks. Native USB diagnostics, stock return and the complete
-recovery sequence remain physical acceptance requirements.
+That historical artifact's physical root transport and display-tree compatibility
+remain untested; its kernel/VM results do not replace those checks. The newer
+October 18 diagnostic and `live-root-v7` assemblies have separate physical
+evidence described above, with rebuilt identity guards, initramfs and root
+receipts. Their results do not retroactively validate the older container.
 
-Private audit and current-source receipts:
-`output/pico-flash-path-20261013-v1/`. No image has been flashed.
+Private October 13 audit and source receipts:
+`output/pico-flash-path-20261013-v1/`. Those receipts predate the October 18
+engineering ABL/devinfo writes; they do not record a custom Linux boot.
 
 
 ## Prepared artifact set
 
-The current private runtime set is
+The retained October 15 private runtime set is
 `output/quest-offline-parity-20261015-v1/pico-first-boot-set.json`; its matching
 recovery references are in `pico-recovery-session-set.json` in the same directory.
-This refresh includes the current native runtime, a new read-only USB-root VM
+Its missing-original and device-transition flags predate the October 18 session.
+Its recorded runbook hashes bind the earlier documentation, not this updated
+text. Preserve those historical receipts; a future device plan must bind current
+state and instructions rather than promote the old flags to current acceptance.
+The set includes the retained native runtime, a read-only USB-root VM
 check and matching boot/display assembly. The earlier
 `output/pico-camera-sensor-stop-20261015-v1/first-boot-set.json` remains preserved.
 Its bounded diagnostic and kernel with signed modules are unchanged.
@@ -326,9 +451,11 @@ capture. It has only been tested offline. Capture connected controllers'
 configuration before selecting their scale and axis branches; do not copy
 synthetic test settings into the runtime.
 
-Recovery, native USB power/role, panel scanout, Adreno buffer sharing and sensor
-clock/axis acceptance still need the unit. None of the prepared receipts marks
-these physical gates as passed or authorizes a bootloader write.
+Those historical prepared receipts do not establish physical recovery, native
+USB power/role, panel scanout, Adreno buffer sharing or sensor clock/axis
+acceptance. The newer physical results above establish specific recovery,
+USB-device, GPU execution and KMS milestones. GPU sharing/synchronization,
+optical output and sensor acceptance remain separate gates.
 
 ## Camera bring-up inputs
 
