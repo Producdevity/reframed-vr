@@ -11,6 +11,7 @@
 #include <sys/mount.h>
 #include <sys/reboot.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/vfs.h>
 #include <termios.h>
 #include <time.h>
@@ -18,6 +19,7 @@
 
 #define GADGET "/sys/kernel/config/usb_gadget/reframed_diagnostic"
 #define PRIMARY_UDC "a600000.dwc3"
+static const char pico_compatible[] = "qcom,kona-iot-mtp\0qcom,kona-iot\0qcom,mtp";
 static char report[128 * 1024];
 static size_t used;
 static int kernel_log = -1;
@@ -71,17 +73,50 @@ static int token(const char *command, const char *expected)
     return count == 1 && keys == 1;
 }
 
-static _Noreturn void poweroff(int signal_number)
+static int physical_board(const char *value, ssize_t size)
+{
+    return size == (ssize_t)sizeof(pico_compatible) &&
+        !memcmp(value, pico_compatible, sizeof(pico_compatible));
+}
+
+static int character_device(const char *path, unsigned int major_number, unsigned int minor_number)
+{
+    dev_t device = makedev(major_number, minor_number);
+    if (!mknod(path, S_IFCHR | 0600, device)) return 0;
+    if (errno != EEXIST) return -1;
+    struct stat status;
+    return lstat(path, &status) || !S_ISCHR(status.st_mode) || status.st_rdev != device ? -1 : 0;
+}
+
+static int devices(void)
+{
+    if (mount("devtmpfs", "/dev", "devtmpfs", MS_NOSUID | MS_NOEXEC, NULL)) {
+        /* The shipped Neo3 kernel has no devtmpfs; this remains a RAM filesystem. */
+        if (errno != ENODEV || mount("tmpfs", "/dev", "tmpfs", MS_NOSUID | MS_NOEXEC, "mode=0755")) return -1;
+    }
+    return character_device("/dev/kmsg", 1, 11);
+}
+
+static int serial_device(void)
+{
+    char value[64], tail, extra;
+    unsigned int major_number, minor_number;
+    if (read_file("/sys/class/tty/ttyGS0/dev", value, sizeof(value)) <= 0 ||
+        sscanf(value, "%u:%u%c%c", &major_number, &minor_number, &tail, &extra) != 3 || tail != '\n') return -1;
+    return character_device("/dev/ttyGS0", major_number, minor_number);
+}
+
+static _Noreturn void restart(int signal_number)
 {
     (void)signal_number;
-    reboot(RB_POWER_OFF);
+    reboot(RB_AUTOBOOT);
     for (;;) pause();
 }
 
 static double seconds(void)
 {
     struct timespec now;
-    if (clock_gettime(CLOCK_BOOTTIME, &now)) poweroff(0);
+    if (clock_gettime(CLOCK_BOOTTIME, &now)) restart(0);
     return now.tv_sec + now.tv_nsec / 1e9;
 }
 
@@ -213,7 +248,7 @@ static int transmit(double deadline)
 {
     int fd = -1;
     while (seconds() < deadline && fd < 0) {
-        fd = open("/dev/ttyGS0", O_WRONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+        if (!serial_device()) fd = open("/dev/ttyGS0", O_WRONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) usleep(100000);
     }
     if (fd < 0) return -1;
@@ -240,30 +275,40 @@ static int transmit(double deadline)
 int main(void)
 {
     if (getpid() != 1) return 2;
-    if (signal(SIGALRM, poweroff) == SIG_ERR) goto refused;
+    if (signal(SIGALRM, restart) == SIG_ERR) goto refused;
     alarm(90);
     if (mount("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) ||
         mount("sysfs", "/sys", "sysfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) ||
-        mount("devtmpfs", "/dev", "devtmpfs", MS_NOSUID | MS_NOEXEC, NULL)) goto refused;
+        devices()) goto refused;
     kernel_log = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
+    if (kernel_log >= 0) {
+        const char marker[] = "REFRAMED_PICO_DIAGNOSTIC_INIT\n";
+        (void)write(kernel_log, marker, sizeof(marker) - 1);
+    }
     char board[256], command[4096], serial[80], expected[128];
     struct statfs filesystem;
     ssize_t serial_size = read_file("/etc/pico-serial", serial, sizeof(serial));
     if (serial_size <= 0 || serial[serial_size - 1] != '\n') goto refused;
     serial[--serial_size] = 0;
     if (!serial_size || strspn(serial, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.") != (size_t)serial_size) goto refused;
-    if (read_file("/proc/device-tree/compatible", board, sizeof(board)) < 0 ||
+    ssize_t board_size = read_file("/proc/device-tree/compatible", board, sizeof(board));
+    if (board_size < 0 ||
         read_file("/proc/cmdline", command, sizeof(command)) < 0 || statfs("/", &filesystem) ||
         (filesystem.f_type != 0x858458f6 && filesystem.f_type != 0x01021994)) goto refused;
     int virtual = !strcmp(board, "linux,dummy-virt");
     snprintf(expected, sizeof(expected), "androidboot.serialno=%s", serial);
     if (virtual) {
         if (strcmp(serial, "qemu") || !token(command, "reframed.pico=diagnostic-test")) goto refused;
-    } else if (strcmp(board, "qcom,kona") || !token(command, "reframed.pico=diagnostic") || !token(command, expected)) goto refused;
+    } else if (!physical_board(board, board_size) || !token(command, "reframed.pico=diagnostic") || !token(command, expected)) {
+        record("DIAGNOSTIC_IDENTITY_GUARD_FAILED board_bytes=%zd\n", board_size);
+        snapshot("/proc/device-tree/compatible");
+        snapshot("/proc/cmdline");
+        goto refused;
+    }
     if (virtual) alarm(10);
     if (!token(command, "msm_drm.modeset=0") || !display_disabled("/sys")) {
-        record("DIAGNOSTIC_DISPLAY_GUARD_FAILED\nDIAGNOSTIC_POWEROFF\n");
-        poweroff(0);
+        record("DIAGNOSTIC_DISPLAY_GUARD_FAILED\nDIAGNOSTIC_REBOOT\n");
+        restart(0);
     }
     double deadline = seconds() + (virtual ? 2 : 70);
     record("REFRAMED_PICO_DIAGNOSTIC_BEGIN kind=%s serial=%s\n", virtual ? "virtual" : "physical", serial);
@@ -272,22 +317,22 @@ int main(void)
         "/proc/device-tree/compatible", "/proc/meminfo", "/proc/self/mountinfo"};
     for (size_t i = 0; i < sizeof(paths) / sizeof(*paths); ++i) snapshot(paths[i]);
     blocks();
-    if (gadget(serial)) { record("DIAGNOSTIC_GADGET_FAILED errno=%d\n", errno); poweroff(0); }
+    if (gadget(serial)) { record("DIAGNOSTIC_GADGET_FAILED errno=%d\n", errno); restart(0); }
     record("DIAGNOSTIC_GSER_CONFIGURED\n");
     char controller[256];
     int found;
     while ((found = udc("/sys/class/udc", controller, sizeof(controller))) == 0 && seconds() < deadline) usleep(100000);
     if (found != 1) {
-        record("DIAGNOSTIC_UDC_UNAVAILABLE count=%d\nDIAGNOSTIC_POWEROFF\n", found);
-        poweroff(0);
+        record("DIAGNOSTIC_UDC_UNAVAILABLE count=%d\nDIAGNOSTIC_REBOOT\n", found);
+        restart(0);
     }
-    if (set(GADGET "/UDC", controller)) { record("DIAGNOSTIC_BIND_FAILED errno=%d\n", errno); poweroff(0); }
+    if (set(GADGET "/UDC", controller)) { record("DIAGNOSTIC_BIND_FAILED errno=%d\n", errno); restart(0); }
     record("DIAGNOSTIC_UDC_BOUND %s\n", controller);
     /* gser accepts buffered writes before USB configuration and drops them on close. */
     while ((found = configured("/sys/class/udc/" PRIMARY_UDC "/state")) == 0 && seconds() < deadline) usleep(100000);
     if (found != 1) {
-        record("DIAGNOSTIC_USB_NOT_CONFIGURED\nDIAGNOSTIC_POWEROFF\n");
-        poweroff(0);
+        record("DIAGNOSTIC_USB_NOT_CONFIGURED\nDIAGNOSTIC_REBOOT\n");
+        restart(0);
     }
     record("DIAGNOSTIC_USB_CONFIGURED\n");
     boot_log();
@@ -296,9 +341,9 @@ int main(void)
     record("DIAGNOSTIC_USB_TRANSMIT result=%d\n", sent);
     sleep(2);
     int detached = set(GADGET "/UDC", "\n");
-    record("DIAGNOSTIC_USB_DETACH result=%d\nDIAGNOSTIC_POWEROFF\n", detached);
-    poweroff(0);
+    record("DIAGNOSTIC_USB_DETACH result=%d\nDIAGNOSTIC_REBOOT\n", detached);
+    restart(0);
 refused:
-    record("REFRAMED_PICO_DIAGNOSTIC_REFUSED\nDIAGNOSTIC_POWEROFF\n");
-    poweroff(0);
+    record("REFRAMED_PICO_DIAGNOSTIC_REFUSED\nDIAGNOSTIC_REBOOT\n");
+    restart(0);
 }

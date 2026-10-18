@@ -13,10 +13,13 @@ static GBytes *packed(const ProtobufCMessage *message)
 int main(void)
 {
     g_log_set_always_fatal(G_LOG_FATAL_MASK | G_LOG_LEVEL_CRITICAL);
-    const char pico[] = "qcom,kona", virt[] = "linux,dummy-virt";
+    const char pico[] = "qcom,kona-iot-mtp\0qcom,kona-iot\0qcom,mtp", virt[] = "linux,dummy-virt";
     g_assert_true(platform_permitted(pico, sizeof(pico), "ro reframed.pico=qrtr\n"));
     g_assert_true(platform_permitted(virt, sizeof(virt), "reframed.ssc_test=1 ro"));
     g_assert_false(platform_permitted(pico, sizeof(pico) - 1, "reframed.pico=qrtr"));
+    const char generic[] = "qcom,kona", extra[] = "qcom,kona-iot-mtp\0qcom,kona-iot\0qcom,mtp\0other,board";
+    g_assert_false(platform_permitted(generic, sizeof(generic), "reframed.pico=qrtr"));
+    g_assert_false(platform_permitted(extra, sizeof(extra), "reframed.pico=qrtr"));
     g_assert_false(platform_permitted(pico, sizeof(pico), "reframed.pico=qrtr reframed.pico=no"));
     g_assert_false(platform_permitted(pico, sizeof(pico), "reframed.pico=qrtr reframed.pico=qrtr"));
     g_assert_false(platform_permitted(pico, sizeof(pico), "reframed.pico=qrtr-extra"));

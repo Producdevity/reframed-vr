@@ -5,7 +5,7 @@ ConditionPathExists=!/etc/initrd-release
 ConditionPathExists=/etc/reframed-vr/pico-service-maps.sha256
 BindsTo=reframed-pico-qrtr.service
 After=local-fs.target reframed-pico-qrtr.service
-FailureAction=poweroff
+FailureAction=reboot
 
 [Service]
 Type=notify

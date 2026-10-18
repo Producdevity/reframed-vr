@@ -13,7 +13,9 @@ MOCK(libusb_get_device_descriptor);
 MOCK(libusb_open);
 MOCK(libusb_close);
 MOCK(libusb_get_string_descriptor_ascii);
-MOCK(libusb_get_active_config_descriptor);
+MOCK(libusb_get_config_descriptor_by_value);
+MOCK(libusb_get_configuration);
+MOCK(libusb_set_configuration);
 MOCK(libusb_free_config_descriptor);
 MOCK(libusb_claim_interface);
 MOCK(libusb_release_interface);
@@ -29,7 +31,9 @@ MOCK(nanosleep);
 #define libusb_open mock_libusb_open
 #define libusb_close mock_libusb_close
 #define libusb_get_string_descriptor_ascii mock_libusb_get_string_descriptor_ascii
-#define libusb_get_active_config_descriptor mock_libusb_get_active_config_descriptor
+#define libusb_get_config_descriptor_by_value mock_libusb_get_config_descriptor_by_value
+#define libusb_get_configuration mock_libusb_get_configuration
+#define libusb_set_configuration mock_libusb_set_configuration
 #define libusb_free_config_descriptor mock_libusb_free_config_descriptor
 #define libusb_claim_interface mock_libusb_claim_interface
 #define libusb_release_interface mock_libusb_release_interface
@@ -43,6 +47,8 @@ MOCK(nanosleep);
 static unsigned scans, ready_after, device_count, opened, closed, claims, released, lists, descriptors;
 static time_t elapsed;
 static int interface_class;
+static int configuration, configuration_error;
+static unsigned configured_count;
 static const char *serial;
 static libusb_device *devices[3];
 static int mock_libusb_init(libusb_context **ctx) { *ctx = (libusb_context *)(uintptr_t)1; return 0; }
@@ -74,9 +80,10 @@ static int mock_libusb_get_string_descriptor_ascii(libusb_device_handle *handle,
     const char *text = index == 1 ? "Reframed VR" : index == 2 ? "Reframed VR Pico diagnostic" : serial;
     assert((int)strlen(text) < length); memcpy(data, text, strlen(text)); return (int)strlen(text);
 }
-static int mock_libusb_get_active_config_descriptor(libusb_device *device, struct libusb_config_descriptor **result)
+static int mock_libusb_get_config_descriptor_by_value(libusb_device *device, uint8_t value, struct libusb_config_descriptor **result)
 {
     (void)device;
+    assert(value == 1);
     static struct libusb_endpoint_descriptor endpoints[2] = {
         {.bEndpointAddress = 0x81, .bmAttributes = LIBUSB_TRANSFER_TYPE_BULK},
         {.bEndpointAddress = 0x01, .bmAttributes = LIBUSB_TRANSFER_TYPE_BULK}
@@ -87,13 +94,24 @@ static int mock_libusb_get_active_config_descriptor(libusb_device *device, struc
     if (scans < ready_after) return LIBUSB_ERROR_NOT_FOUND;
     setting.bInterfaceClass = (uint8_t)interface_class; *result = &config; ++descriptors; return 0;
 }
+static int mock_libusb_get_configuration(libusb_device_handle *handle, int *value)
+{
+    assert(handle && device_count == 1); *value = configuration; return 0;
+}
+static int mock_libusb_set_configuration(libusb_device_handle *handle, int value)
+{
+    assert(handle && device_count == 1 && configuration == 0 && value == 1 && !claims);
+    ++configured_count;
+    if (configuration_error) return configuration_error;
+    configuration = value; return 0;
+}
 static void mock_libusb_free_config_descriptor(struct libusb_config_descriptor *config)
 {
     assert(config && descriptors); --descriptors;
 }
 static int mock_libusb_claim_interface(libusb_device_handle *handle, int interface)
 {
-    assert(handle && interface == 0 && scans >= ready_after); ++claims; return 0;
+    assert(handle && interface == 0 && scans >= ready_after && configuration == 1); ++claims; return 0;
 }
 static int mock_libusb_release_interface(libusb_device_handle *handle, int interface)
 {
@@ -115,7 +133,7 @@ static int mock_nanosleep(const struct timespec *delay, struct timespec *remaini
 }
 static void scenario(unsigned count, unsigned ready, int class, const char *identity, int expected)
 {
-    scans = opened = closed = claims = released = lists = descriptors = 0;
+    scans = opened = closed = claims = released = lists = descriptors = configured_count = 0;
     elapsed = 0; device_count = count; ready_after = ready; interface_class = class; serial = identity;
     char *args[] = {"diagnostic", "--serial", "test-device", NULL};
     assert(diagnostic_main(3, args) == expected);
@@ -124,7 +142,9 @@ static void scenario(unsigned count, unsigned ready, int class, const char *iden
 }
 int main(void)
 {
+    configuration = 1;
     scenario(1, 1, 0xff, "test-device", 0); assert(scans == 1);
+    assert(!configured_count);
     scenario(1, 5, 0xff, "test-device", 0); assert(scans == 5);
     scenario(1, 91, 0xff, "test-device", 1); assert(scans == 90);
     scenario(1, 1, 2, "test-device", 1); assert(scans == 90);
@@ -132,5 +152,14 @@ int main(void)
     scenario(2, 1, 0xff, "test-device", 1); assert(scans == 1);
     scenario(2, 5, 0xff, "test-device", 1); assert(scans == 1);
     scenario(0, 1, 0xff, "test-device", 1); assert(scans == 90);
-    puts("PICO_DIAGNOSTIC_DISCOVERY_PASS scenarios=8 USB_calls=0"); return 0;
+    configuration = 0;
+    scenario(1, 1, 0xff, "test-device", 0); assert(configured_count == 1);
+    configuration = 0; configuration_error = LIBUSB_ERROR_ACCESS;
+    scenario(1, 1, 0xff, "test-device", 1); assert(configured_count == 1);
+    configuration_error = 0;
+    scenario(2, 1, 0xff, "test-device", 1); assert(!configured_count);
+    scenario(1, 1, 0xff, "other-device", 1); assert(!configured_count);
+    configuration = 2;
+    scenario(1, 1, 0xff, "test-device", 1); assert(!configured_count);
+    puts("PICO_DIAGNOSTIC_DISCOVERY_PASS scenarios=13 USB_calls=0"); return 0;
 }

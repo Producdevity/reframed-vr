@@ -15,7 +15,7 @@ static int string_matches(libusb_device_handle *handle, unsigned char index, con
 static int interface(libusb_device *device, unsigned char *endpoint)
 {
     struct libusb_config_descriptor *config = NULL;
-    if (libusb_get_active_config_descriptor(device, &config)) return 0;
+    if (libusb_get_config_descriptor_by_value(device, 1, &config)) return 0;
     int valid = config->bConfigurationValue == 1 && config->bNumInterfaces == 1 &&
         config->interface[0].num_altsetting == 1;
     if (valid) {
@@ -91,8 +91,16 @@ int main(int argc, char **argv)
         const struct timespec delay = {.tv_sec = 0, .tv_nsec = 250000000};
         nanosleep(&delay, NULL);
     } while (seconds() < discovery_deadline);
-    if (matches != 1 || !selected || libusb_claim_interface(selected, 0)) {
+    if (matches != 1 || !selected) {
         fputs("No unique available Reframed VR diagnostic interface; no driver was detached.\n", stderr);
+        goto done;
+    }
+    int configuration, status = libusb_get_configuration(selected, &configuration);
+    if (!status && configuration == 0) status = libusb_set_configuration(selected, 1);
+    else if (!status && configuration != 1) status = LIBUSB_ERROR_NOT_FOUND;
+    if (!status) status = libusb_claim_interface(selected, 0);
+    if (status) {
+        fprintf(stderr, "Cannot configure/claim diagnostic interface: %s; no driver was detached.\n", libusb_error_name(status));
         goto done;
     }
     claimed = 1;

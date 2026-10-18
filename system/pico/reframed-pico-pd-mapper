@@ -29,11 +29,12 @@ case " $(< /proc/cmdline) " in
     *' reframed.pico=qrtr '*) ;;
     *) fail 'Pico services were not requested' ;;
 esac
-platform=
+platform=()
 while IFS= read -r -d '' item; do
-    [[ $item != qcom,kona ]] || platform=yes
+    platform+=("$item")
 done < /sys/firmware/devicetree/base/compatible
-[[ $platform == yes ]] || fail 'requires Kona device tree'
+[[ -z $item && ${#platform[@]} == 3 && ${platform[0]} == qcom,kona-iot-mtp &&
+   ${platform[1]} == qcom,kona-iot && ${platform[2]} == qcom,mtp ]] || fail 'requires Neo3 Pro Eye device tree'
 [[ $(< /sys/module/service_locator/parameters/enable) == 1 ]] || fail 'kernel service locator is disabled'
 
 manifest=/etc/reframed-vr/pico-service-maps.sha256

@@ -29,11 +29,12 @@ case " $(< /proc/cmdline) " in
     *' reframed.pico=qrtr '*) ;;
     *) fail 'Pico QRTR startup was not requested' ;;
 esac
-platform=
+platform=()
 while IFS= read -r -d '' item; do
-    [[ $item != qcom,kona ]] || platform=yes
+    platform+=("$item")
 done < /sys/firmware/devicetree/base/compatible
-[[ $platform == yes ]] || fail 'requires Kona device tree'
+[[ -z $item && ${#platform[@]} == 3 && ${platform[0]} == qcom,kona-iot-mtp &&
+   ${platform[1]} == qcom,kona-iot && ${platform[2]} == qcom,mtp ]] || fail 'requires Neo3 Pro Eye device tree'
 
 if qrtr-lookup >/dev/null 2>&1; then
     fail 'a QRTR name service is already active'

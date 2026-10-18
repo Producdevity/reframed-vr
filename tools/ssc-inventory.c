@@ -176,12 +176,13 @@ static void connected(GObject *object, GAsyncResult *result, gpointer data)
 
 static gboolean platform_permitted(const char *board, size_t size, const char *line)
 {
-    gboolean pico = FALSE, virt = FALSE, qrtr = FALSE, test = FALSE;
+    const char physical[] = "qcom,kona-iot-mtp\0qcom,kona-iot\0qcom,mtp";
+    gboolean pico = size == sizeof(physical) && !memcmp(board, physical, sizeof(physical));
+    gboolean virt = FALSE, qrtr = FALSE, test = FALSE;
     unsigned pico_keys = 0, test_keys = 0;
     for (size_t pos = 0; pos < size;) {
         size_t n = strnlen(board + pos, size - pos);
         if (n == size - pos) return FALSE;
-        pico |= !strcmp(board + pos, "qcom,kona");
         virt |= !strcmp(board + pos, "linux,dummy-virt");
         pos += n + 1;
     }

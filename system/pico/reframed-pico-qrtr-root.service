@@ -3,7 +3,7 @@ Description=Pico QRTR name service
 ConditionKernelCommandLine=reframed.pico=qrtr
 ConditionPathExists=!/etc/initrd-release
 After=local-fs.target
-FailureAction=poweroff
+FailureAction=reboot
 
 [Service]
 Type=notify

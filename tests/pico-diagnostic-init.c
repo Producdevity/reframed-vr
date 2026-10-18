@@ -130,6 +130,15 @@ int main(void)
     assert(token("msm_drm.modeset=0", "msm_drm.modeset=0"));
     assert(!token("msm_drm.modeset=0 msm_drm.modeset=1", "msm_drm.modeset=0"));
     assert(!token("msm_drm.modeset=0 msm_drm.modeset=0", "msm_drm.modeset=0"));
+    assert(physical_board(pico_compatible, sizeof(pico_compatible)));
+    assert(!physical_board(pico_compatible, sizeof(pico_compatible) - 1));
+    assert(!physical_board("qcom,kona", sizeof("qcom,kona")));
+    char altered[sizeof(pico_compatible) + 1];
+    memcpy(altered, pico_compatible, sizeof(pico_compatible));
+    altered[sizeof(pico_compatible)] = 0;
+    assert(!physical_board(altered, sizeof(altered)));
+    altered[0] = 'x';
+    assert(!physical_board(altered, sizeof(pico_compatible)));
     display_guard();
     usb_selection();
     for (unsigned int i = 0; i < 2000; ++i) record("%0100u\n", i);

@@ -74,15 +74,19 @@ def assemble(reference, stock, kernel, ramdisk, expected, cmdline, tools, output
         if roundtrip.read_bytes() != stream.read(stock['payload_end_aligned']):
             raise ValueError('Stock payload did not roundtrip byte-for-byte')
     report['stock_roundtrip'] = {'bytes': roundtrip.stat().st_size, 'sha256': digest(roundtrip)}
-    for name in ('--os_version', '--os_patch_level'):
-        index = vector.index(name)
-        del vector[index:index + 2]
     assembly.replace(vector, '--kernel', kernel)
     assembly.replace(vector, '--ramdisk', ramdisk)
     assembly.replace(vector, '--cmdline', cmdline)
     image = output / filename
     call([tools / 'mkbootimg.py', *vector, '--output', image])
     preserve_second_address(reference, image)
+    with reference.open('rb') as original, image.open('rb') as assembled:
+        original.seek(44)
+        assembled.seek(44)
+        os_version = original.read(4)
+        if assembled.read(4) != os_version:
+            raise ValueError('Stock OS version and patch level changed')
+    report['stock_os_version'] = struct.unpack('<I', os_version)[0]
     info = assembly.boot.inspect(image)
     if (info['header_version'] != 2 or info['page_size'] != 4096 or info['cmdline'] != cmdline or
             info['avb_footer_magic_present'] or info['trailing_bytes'] or
