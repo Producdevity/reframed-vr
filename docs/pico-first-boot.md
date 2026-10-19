@@ -195,6 +195,22 @@ decoding. See `display-mode-v1-physical-verification.json`,
 `output/pico-recovery-bringup-20261018-v1/`. Clean physical output remains a
 blocking requirement for a usable VR session.
 
+The subsequent guarded stock-kernel RAM comparison uses the same CPU colour
+producer, with the stock kernel, DTB and boot parameters preserved. Its initial
+legacy modeset fails because the primary plane retains a scaler configuration
+for a smaller source. Clearing that plane's `scaler_v2` property allows all nine
+72 Hz colour phases, 3,600 sampled producer pixels and display cleanup to pass.
+A subsequent normal stock boot is independently verified by its changed boot
+ID and device identity. This diagnostic makes no firmware partition writes;
+the stock direct test has no owner-confirmed optical result. See
+`stock-kms-v4-rejection-analysis.json`, `stock-kms-v7-physical-verification.json`
+and `stock-kms-v7-session.json` in the same evidence directory.
+
+The stock comparison also records varying controller-zero frame signatures.
+The driver's checksum reader does not poll a ready/latch status, so signature
+variability alone cannot locate the native corruption. Neither these signatures
+nor successful producer readbacks establish clean downstream panel output.
+
 ## October 19 native GPU presentation
 
 The new physical kernel `linux-dmabuf-20261019-v1`, its 38 matching modules,
