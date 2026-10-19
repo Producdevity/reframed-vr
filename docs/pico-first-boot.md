@@ -256,6 +256,29 @@ also matches the stock command kickoff flags (`6e` master, `6a` slave), without
 establishing complete packet or electrical equivalence; see
 `native-dsi-submit-v1-physical-verification.json`.
 
+Static analysis of the independently matching stock XBL backups extracts
+`DisplayDxe.efi` and the Neo3 Sharp panel XML from a compressed firmware volume.
+For the XML's DSC 1.1 SCR0, 8bpc/8bpp profile, the firmware encoder table uses
+minimum QP 13 in its final range, matching E6; Linux uses 12. The other minimum
+and maximum QP entries match. All 13 initialization command payloads match the
+installed Sharp120 DTBO, with three transport/timing differences: the first
+`B0 00` uses generic-long type `29` instead of `23`, and the waits after display-on
+and sleep-out are 2/128 ms instead of 120/120 ms. DisplayDxe also contains a
+conditional standard-PPS send path after initialization; this XML does not
+request its skip flag. This is static evidence, without a captured firmware
+execution or optical result. Reproducible extraction and comparisons are in
+`xbl-display-analysis-v1/verified-comparison.json` under the same evidence directory.
+
+A reversible native RAM control then applies the firmware's minimum QP 13 to
+Linux's software table and performs full display modesets. Both active encoder
+registers and the generated/driver PPS contain 13; both controller-zero E6 read
+methods still return 13. Restoring 12 and repeating the modesets changes only
+the two active minimum-QP registers among 300 compared words, and one PPS byte.
+Both passes check 1,200 source pixels and complete display cleanup; both
+diagnostic modules unload. This establishes the parameter A/B control, without
+an owner-confirmed optical result or a proven cause of banding. See
+`native-xbl-rc-v2-physical-verification.json`.
+
 The stock comparison also records varying controller-zero frame signatures.
 The driver's checksum reader does not poll a ready/latch status, so signature
 variability alone cannot locate the native corruption. Neither these signatures
