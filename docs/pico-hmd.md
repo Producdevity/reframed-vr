@@ -54,6 +54,58 @@ still need validation. The collector does not open streams, select a runtime,
 change device settings or certify lens output. Unit-specific records remain
 outside Git.
 
+## Native IMU and desktop-layer evidence
+
+The October 19 native RAM session selected fresh `icm4x6xx` acceleration and
+angular-velocity SUIDs for display body 0, plus its `gyro_cal` stream. Monado
+exposed `Pico Neo3 HMD` without the simulated driver. Two short stereo tests
+accepted 120 projection frames each; a longer test accepted 600. The OpenXR
+orientation-valid and orientation-tracked flags were present on 121, 121 and
+601 pose queries respectively. These are physical SSC-backed orientation
+results, not visual-inertial position tracking.
+
+A subsequent 60-second native desktop test submitted 6,900 OpenXR quad frames,
+with 6,902 tracked pose queries and 476 completed texture uploads. Its source capture
+shows the native ARM64 Steam welcome screen. The quad uses a fixed pose in
+LOCAL space and visibility in both eyes, so Monado can project a flat Steam
+panel with stereo depth and update its view from the physical head pose.
+Application submissions do not establish final scanout cadence or clean lens
+output. The native Steam source capture and frame counts are bound by
+`desktop-xr-async-physical-verification-v1.json` in the private evidence
+directory. The compositor completion median was about 25 ms in this run, despite
+an 8.333 ms advertised display period; sustained 120 Hz composition is not
+verified.
+
+The experimental profile applies the active stock radial/chromatic parameters
+and per-eye axis offsets, with portrait viewports and a proposed head-axis
+transform. Projection choice, eye ordering, panel rotation, motion directions
+and optical alignment still need independent physical acceptance. The profile
+and unit-specific calibration remain private under
+`output/pico-recovery-bringup-20261018-v1/`. No physical defaults are added to the
+runtime by this experiment.
+
+`tests/pico-desktop-xr.cpp` preserves the bounded desktop-layer test. Build it
+explicitly on Linux with `-DREFRAMED_PICO_DESKTOP_TEST=ON` and target
+`pico-desktop-xr-test`. It requires the supplied boot serial to match the native
+Pico board, a physical Pico HMD runtime and an authenticated local 1280×720 X11
+desktop. It refuses missing or invalid predicted tracking rather than substituting a
+simulated pose. X11 capture and optional source-image writes run on a worker;
+the XR loop polls image availability and GPU completion before releasing each
+upload. It continues submitting the latest completed texture between updates. The existing runtime, optical profile and sensor-listener
+setup must already be running; the test does not start or install them.
+
+```sh
+DISPLAY=:4 XAUTHORITY=/run/pico-steam-x11/Xauthority \
+  XR_RUNTIME_JSON=/opt/reframed-vr/monado/share/openxr/1/openxr_monado.json \
+  ./pico-desktop-xr-test --boot-serial BOOT_SERIAL --seconds 60
+```
+
+Source capture is optional and explicit: `--capture-source /run/NEW.ppm` writes
+one private, non-overwriting desktop image. The test defaults to 60 seconds,
+accepts 10–120 seconds, and is not installed or enabled by default. This CPU
+capture/upload path is an initial integration test; an efficient desktop
+sharing path and usable compositor timing remain work in progress.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
