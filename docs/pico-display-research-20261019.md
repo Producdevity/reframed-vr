@@ -5,7 +5,8 @@
 Pause parameter changes. The matched stock-kernel comparison below preserves
 the mode but changes two half-width DMA planes to one full-width VIG plane.
 A subsequent two-DMA-plane test produces owner-confirmed clean direct green.
-Port this working composition into native Linux before changing panel parameters.
+The native diagnostic now accepts the same DMA layout in software; integrate it
+with GPU/VR presentation before changing panel parameters.
 The cause remains unproven. Changing VR runtime cannot explain a fault
 already reproduced without a VR runtime; a new kernel is not yet justified by
 this symptom. The completed controls and their optical boundaries are recorded
@@ -167,6 +168,32 @@ under native Linux, then integrate it with GPU presentation and the VR session.
 See `state-route-v1/dma-split-takeover-v2/verified-manifest.json`, `analysis.json`
 and `owner-result.json`. The preceding DMA attempt guard-aborted before composer
 stop; the successful runner waits for the actual stock DMA route to settle.
+
+## Native Linux DMA port: software verification
+
+The existing hash-verified native RAM boot and root subsequently run the DMA
+diagnostic under `systemd`, kernel `4.19.81-perf`. DRM object IDs differ from
+stock: physical CRTC 140, primary plane 69, and DMA planes 109/112. The diagnostic
+discovers the planes and checks their capabilities before use. Captured SDE
+blend events independently identify the two active source pipes as DMA2/DMA3,
+with the same half-screen geometry and a shared linear AB24 buffer.
+
+After the previously exercised primary-plane initialization at inherited 120 Hz
+and then 72 Hz, an atomic `TEST_ONLY` request succeeds. One commit disables the
+primary and enables both DMA planes without permitting a modeset. The mode
+timings remain unchanged during that takeover, 400 green buffer samples pass,
+and the complete software snapshot reports zero errors across 25 objects and
+32 distinct blobs. DMA-plane cleanup and CRTC disable both succeed. A guarded
+normal reboot returns to stock with Wi-Fi off and the updater disabled; no
+firmware partition is written.
+
+The owner is away for this native run. It therefore establishes native DMA
+programming and cleanup, **not clean Linux output through the lenses**. The
+GPU swapchain and VR compositor still need this scanout integration, followed
+by patterned/stereo output, tracking and presentation-cadence verification.
+See `state-route-v1/native-dma-v1/verified-manifest.json`, `analysis.json` and
+`device-report.json`. The tested stripped native diagnostic SHA-256 is
+`ab9e948a0d0e1015296e19c115ae136799b93279b1bdd12a782c6b01b781135c`.
 
 ## Retained source identity
 

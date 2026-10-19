@@ -346,6 +346,12 @@ and no firmware writes. This is the first owner-confirmed clean direct output;
 native Linux, patterned rendering and VR remain separate gates. See the
 [clean direct result](pico-display-research-20261019.md#owner-confirmed-clean-direct-green).
 
+The same DMA2/DMA3 half-screen layout subsequently passes native Linux atomic
+validation, commit, software-state capture and cleanup at 72 Hz. Normal stock
+return is verified. The owner is away for that run, so native optical output
+remains unverified, and GPU/VR scanout integration is still required. See the
+[native DMA result](pico-display-research-20261019.md#native-linux-dma-port-software-verification).
+
 ## October 19 native GPU presentation
 
 The new physical kernel `linux-dmabuf-20261019-v1`, its 38 matching modules,
