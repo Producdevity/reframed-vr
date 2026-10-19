@@ -99,6 +99,13 @@ The corrected test and physical log are `tests/pico-kms-smoke.c` and
 `live-root-v7-first-mode.log`. Vblank events do not establish optical quality,
 stereo mapping, or a usable Steam UI.
 
+The same requirement applies to Vulkan display startup. Later VR scripts that
+forced 90 Hz first produced a logical 90 Hz mode with inherited 120 Hz IRQ
+timing, followed by a disabled physical encoder on restart. Adopting 120 Hz
+first, then starting and restarting at 90 Hz, restores real 90 Hz IRQ feedback
+in the verified native sequence. A selected mode or successful submission is
+insufficient evidence; see the [handoff and timing results](pico-hmd.md#inherited-mode-and-presentation-feedback).
+
 The subsequent Xorg test exposed two generic modesetting-driver incompatibilities:
 an unexposed vendor property had no atom table, and mode conversion dropped the
 kernel-supplied refresh field. The source-matched patches and build recipe are

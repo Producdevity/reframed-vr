@@ -177,6 +177,14 @@ packaging remains unverified while the three unrelated build/test helper
 deletions in this checkout remain unresolved. Artifact validation was not
 weakened or bypassed.
 
+The subsequent [inherited-mode investigation](pico-hmd.md#inherited-mode-and-presentation-feedback)
+finds a separate startup error: requesting 90 Hz at the first splash handoff
+violates the vendor driver contract. Adopting 120 Hz first and then starting
+and restarting at 90 Hz restores approximately 11.11 ms hardware vblank
+interrupts without vblank-fence timeouts. Both runs still average about 80
+completions/s. This is a startup correction, separate from patch 0013's timeout
+result fix, and it does not establish clean physical optics or a runtime winner.
+
 ## Correction to earlier build evidence
 
 The September 10 `output/mesa/turnip-drm-v5/` driver compiled with

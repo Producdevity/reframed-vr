@@ -260,6 +260,51 @@ remain unverified. The new evidence is under `vblank-feedback-v1/` in the same
 bring-up directory; GPU policy, full BOOT/DTBO hashes and normal stock return
 are verified again.
 
+## Inherited mode and presentation feedback
+
+The first native frame must adopt the inherited 120 Hz mode before requesting
+90 Hz. The later VR scripts had omitted this requirement, although the earlier
+KMS smoke test already enforced it. A retained failing boot explicitly logs
+`DMS not supported on first frame` and DSI prepare failure. Its first session's
+atomic state says 90 Hz while 478 hardware-sourced IRQ records have a median
+8.333 ms interval and advance the hardware frame counter once each. During the
+next session, the driver repeatedly skips its IRQ wait because the physical
+encoder is disabled. That session's roughly 89 completions/s is not evidence
+of physical 90 Hz presentation.
+
+The compiled vendor DSI source rejects this first-frame mode change during
+prepare. The bridge's pre-enable callback returns `void`, so this late failure
+does not act as atomic mode validation. The vendor interface also preserves
+bootloader timing during continuous splash. A successful atomic submission
+and a selected mode name therefore cannot establish a working mode transition.
+
+A fresh native test keeps the kernel and Mesa driver unchanged, first runs the
+compositor at 120 Hz with a matching profile interval, then starts and restarts
+it at 90 Hz. Read-only snapshots bracket startup and teardown. No diagnostic
+CRTC-counter polling or display-register changes are added.
+
+| Session | IRQ interval median | GPU median | Average completions/s | Vblank-fence timeouts |
+| --- | ---: | ---: | ---: | ---: |
+| Initial 120 Hz adoption | 8.333 ms | 8.492 ms | 55.18 | 0 |
+| Subsequent 90 Hz | 11.111 ms | 8.490 ms | 80.13 | 0 |
+| Same-mode 90 Hz restart | 11.111 ms | 8.492 ms | 79.36 | 0 |
+
+Neither 90 Hz run hits the disabled-encoder guard or reports device loss. Each
+has one present-completion timeout. The corrected boot's retained kernel
+summary has no first-frame DMS rejection, DSI prepare failure, disabled-encoder
+message or link-clock prepare failure. This sequence restores hardware-backed
+vblank feedback in these runs; composition still misses deadlines and does not
+sustain 90 completed frames/s. The inherited-mode adoption must remain part of
+native startup, including when a later mode is explicitly requested.
+
+All three full XB30 captures have matching transfer/member hashes and decoded
+previews. The inspected images contain Steam welcome in both eye viewports;
+clean lens output and physical tracking-axis acceptance remain unverified.
+Each session restores GPU policy and matches full BOOT/DTBO hashes. Normal stock
+return is verified after the third. Exact source, earlier report hash checks,
+phase snapshots, timing records, captures and the evidence manifest are under
+`output/pico-recovery-bringup-20261018-v1/vblank-lifecycle-v1/`.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
