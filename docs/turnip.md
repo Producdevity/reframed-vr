@@ -51,8 +51,9 @@ These checks do not establish presentation. The same boot renders a Steam welcom
 screen in Xorg, but the owner sees grey or corrupted colour bands through the
 lenses. Direct KMS colour tests also look corrupted despite correct framebuffer
 readbacks. That older kernel lacks the Neo3 DMA-buffer fence API. The later
-physical kernel supplies it and passes direct GPU presentation; optical output
-after the separate PPS correction has not been inspected.
+physical kernel supplies it and passes direct GPU presentation; subsequent
+owner checks still report corrupted output. The later two-DMA control below
+establishes a clean stock-kernel direct path.
 
 ## Native GPU presentation and timing
 
@@ -96,6 +97,30 @@ warnings remain, so this is not sustained VR performance acceptance. Eye
 alignment and optical output were not inspected. Receipts are
 `dmabuf-v1-refresh-v2-physical-verification.json` and
 `dmabuf-v1-native-xr-verification.json` in the bring-up evidence directory.
+
+### Neo3 split DMA scanout
+
+An owner-confirmed stock-kernel direct test produces clean solid green using
+DMA2/DMA3, each covering a 960×3664 half of the portrait output. Native Linux
+subsequently accepts the same layout, with buffer checks and cleanup, but has
+no contemporary optical result. These transport halves are not the VR eye
+viewports. See the [matched display investigation](pico-display-research-20261019.md).
+
+Patch 0012 adds an opt-in Vulkan display path using
+`MESA_VK_WSI_PICO_SPLIT_DMA=1`. It applies to the KGSL DSI backend, validates the
+vendor DMA inventory, intersects both planes' formats with the primary's, and
+selects linear scanout. After the existing primary-plane initialization, each
+atomic presentation disables that primary and updates both DMA halves with the
+same GPU framebuffer. It retains the existing GPU-fence and flip-event paths;
+it does not add another display-copy process. Other backends retain their
+existing path. Unexpected inventory or mode geometry is rejected.
+
+The actual helper passes 5,000 ASan/UBSan checks with modeled libdrm inventory
+and atomic requests on macOS and ARM64 Linux. The compiled ARM64 bundle
+`output/mesa/pico-split-dma-20261019-v1/` passes all ten helper suites, five
+Freedreno tests and artifact validation. This verifies compilation and bounded
+contracts. Physical GPU presentation with the new path, cadence, native lens
+output and VR acceptance remain pending; the option is not enabled by default.
 
 ## Correction to earlier build evidence
 
@@ -163,8 +188,8 @@ permissions and synchronization capabilities still require target validation.
 The [DMA-buffer sync-file backport](dma-buf-sync.md) supplies the kernel API
 Mesa uses to attach completion fences before presentation on the documented
 Quest builds. The October 18 Neo3 native-panel v2 kernel does not include that
-backport. The separate 4.19 port now passes the documented QEMU ioctl and
-reservation tests; the updated physical kernel has not booted on the Neo3.
+backport. The separate 4.19 port passes the documented QEMU ioctl and
+reservation tests and the later physical GPU presentation checks above.
 KGSL now rejects
 allocation/import requests for its unsupported implicit-sync fallback instead
 of silently accepting that flag. This does not prove GPU completion, modifier

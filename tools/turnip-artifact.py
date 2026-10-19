@@ -42,12 +42,13 @@ def validate(directory):
         artifacts[name] = item
     required = {LIBRARY, ICD, 'kgsl-compile-command.txt', 'dynamic-dependencies.txt',
                 'kgsl-display', 'tu_kgsl_display.h', 'display-format-under-test.h', 'display-image-under-test.h',
-                'display-refresh-under-test.h'}
+                'display-refresh-under-test.h', 'wsi_display_pico.h'}
     if not required <= artifacts.keys():
         raise ValueError('Turnip build omits library or compile/link evidence')
     library = (directory / LIBRARY).read_bytes()
     if (library[:6] != b'\x7fELF\x02\x01' or library[18:20] != b'\xb7\x00' or
-            b'TU_KGSL_DRM_SYNC' not in library or b'TU_KGSL_DISPLAY' not in library):
+            b'TU_KGSL_DRM_SYNC' not in library or b'TU_KGSL_DISPLAY' not in library or
+            b'MESA_VK_WSI_PICO_SPLIT_DMA' not in library):
         raise ValueError('Turnip is not an ARM64 library with the DRM bridge')
     command = (directory / 'kgsl-compile-command.txt').read_text()
     if '-DHAVE_LIBDRM ' not in command or '-DMESA_SYSTEM_HAS_KMS_DRM=1 ' not in command:
@@ -80,6 +81,12 @@ def validate(directory):
             refresh['model_sha256'] != digest(ROOT / 'tests/mesa-display-refresh-tests.c') or
             refresh['helpers_sha256'] != artifacts['display-refresh-under-test.h']['sha256']):
         raise ValueError('Turnip display refresh test sources changed or tests failed')
+    pico = report['display_pico_split_tests']
+    if (pico.get('status') != 'passed' or
+            pico['runner_sha256'] != digest(ROOT / 'tests/mesa-pico-split-tests.py') or
+            pico['model_sha256'] != digest(ROOT / 'tests/mesa-pico-split-tests.c') or
+            pico['helpers_sha256'] != artifacts['wsi_display_pico.h']['sha256']):
+        raise ValueError('Turnip Pico plane test sources changed or tests failed')
     display = report['kgsl_display_test']
     if (display['source_sha256'] != digest(ROOT / 'tests/kgsl-display.c') or
             display['header_sha256'] != artifacts['tu_kgsl_display.h']['sha256'] or

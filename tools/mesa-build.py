@@ -194,6 +194,17 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "display-refresh-under-test.h"),
                 "executable_sha256": digest(output / "mesa-display-refresh-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/mesa-pico-split-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_display_pico.h"), str(output)],
+                "mesa-pico-split-tests.log", timeout=120)
+            report["display_pico_split_tests"] = {
+                "status": "passed",
+                "scope": "actual helper; modeled libdrm inventory and atomic property assembly",
+                "runner_sha256": digest(ROOT / "tests/mesa-pico-split-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-pico-split-tests.c"),
+                "helpers_sha256": digest(output / "wsi_display_pico.h"),
+                "executable_sha256": digest(output / "mesa-pico-split-tests"),
+            }
         report["source_sha256"] = stamp.read_text()
         (output / "packages.txt").write_text(subprocess.check_output(["rpm", "-qa"], text=True))
         if not (build_dir / "build.ninja").is_file():
@@ -259,13 +270,13 @@ def build(profile, driver="lavapipe"):
             dynamic = subprocess.check_output(["readelf", "-d", str(output / names[0])], text=True)
             library = (output / names[0]).read_bytes()
             if ("libdrm.so.2" not in dynamic or b"TU_KGSL_DRM_SYNC" not in library or
-                    b"TU_KGSL_DISPLAY" not in library):
+                    b"TU_KGSL_DISPLAY" not in library or b"MESA_VK_WSI_PICO_SPLIT_DMA" not in library):
                 raise ValueError("Turnip library is missing the DRM bridge or dependency")
             (output / "kgsl-compile-command.txt").write_text(kgsl[0] + "\n")
             (output / "dynamic-dependencies.txt").write_text(dynamic)
             report["kgsl_drm_bridge_compiled"] = True
             report["kgsl_display_compiled"] = True
-        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h"] if driver == "turnip" else []
+        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
         for name in (*names, "vulkan-external-sync", "vulkan-interop", *evidence):
             path = output / name
             report["artifacts"].append({"path": name, "bytes": path.stat().st_size, "sha256": digest(path)})
