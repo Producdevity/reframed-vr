@@ -2,9 +2,10 @@
 
 ## Decision
 
-Pause parameter changes. Compare the complete working stock composition and
-display routing with the first corrupted direct takeover before selecting another
-fix. The cause remains unproven. Changing VR runtime cannot explain a fault
+Pause parameter changes. The matched stock-kernel comparison below preserves
+the mode but changes two half-width DMA planes to one full-width VIG plane.
+Audit this concrete composition difference before selecting another fix.
+The cause remains unproven. Changing VR runtime cannot explain a fault
 already reproduced without a VR runtime; a new kernel is not yet justified by
 this symptom. The completed controls and their optical boundaries are recorded
 in [pico-first-boot.md](pico-first-boot.md).
@@ -75,7 +76,8 @@ If composition or route differs, audit that concrete difference before another
 parameter test. If those states match but corruption begins with panel/link
 restart, prioritize the transition. If takeover cannot preserve and identify the
 working state, stop and improve capture rather than count it as another negative.
-This is a proposal; it has not been implemented or run by this research task.
+The software comparison has now run, as recorded below. Its optical result is
+unavailable.
 
 ## Subsequent stock-state capture
 
@@ -86,17 +88,61 @@ planes sharing one imported framebuffer, each covering a 960×3664 half of the
 screen-off captures are excluded from this live-panel baseline. No contemporary
 owner optical observation accompanies this capture.
 
-A temporary stock boot with a fuller read-only diagnostic subsequently leaves
-an empty root-owned userdata output file; it does not establish vendor-property
-or routing equivalence. Normal stock return is verified. The output failure is
-unresolved and must be fixed before repeating the comparison. See
-`state-route-v1/verified-state-route.json` in the evidence directory below.
+A temporary stock boot initially leaves an empty root-owned userdata output
+file. A revised collector writes to restricted `/dev` tmpfs, proves the first
+write to the host before proceeding, and completes a zero-error capture of all
+25 DRM objects and 33 distinct property blobs. The original output failure's
+cause remains unknown. Stock events identify physical planes 110/113 as distinct
+DMA2/DMA3 pipes, dual-pipe DSC, and disabled destination scaling despite reserved
+scaler resources. These are software-state observations. Normal stock return is
+verified. See `state-route-v1/tmpfs-snapshot-v2/verified-manifest.json`.
+
+## Matched stock-kernel takeover result
+
+The first attempt aborts before stopping composer or changing the display:
+stock is at 120 Hz while the diagnostic requires 72 Hz. The corrected diagnostic
+preserves the active stock mode, independently verifies its advertised timings,
+and captures baseline, composer-stopped and first-direct-frame state in one boot.
+Each phase contains 25 objects and 33 distinct blobs with no collector errors.
+
+In this run all three 68-byte mode blobs are byte-identical: 1920×3664 at 72 Hz,
+382164 kHz, SHA-256
+`5d4d44e6a350fdff455038f397df7cc6ba63560582baceb9df0a56a0fd7682f0`.
+Stopping SurfaceFlinger and the vendor composer removes the physical planes
+while the CRTC and both video engines remain active at the snapshot boundaries.
+The first direct frame changes composition as follows:
+
+| State | Physical planes | Buffer and geometry |
+|---|---|---|
+| Stock | 110/113, DMA2/DMA3 | Shared imported AB24 buffer, Qualcomm modifier `0x500000000000001`; two 960×3664 source/destination halves |
+| Composer stopped | None | CRTC remains active |
+| Direct green | 70, VIG0 | Owned linear XR24 buffer; one 1920×3664 source/destination rectangle |
+
+Connector properties remain unchanged. The CRTC's mode blob ID changes, but its
+content does not; the direct CRTC state reports `mode_changed=0`. No physical
+overlay remains alongside the direct plane. This narrows the next source audit
+to the changed source-pipe/mixer path; it does **not** establish the cause or
+prove uninterrupted electrical panel state.
+
+The cached event reader resets log counters on open and exposes retained/stale
+slots. Its printed indices cannot order separate captures, and missing events
+cannot prove that a panel restart did not occur. No fresh committed resource
+reservation records appear in the latter phases, so complete LM/CTL/pingpong/
+DSC/INTF equivalence remains unproven.
+
+The diagnostic preserves the stock kernel, DTB and non-ramdisk header fields,
+checks 400 green buffer samples, completes output-disable cleanup, and returns
+to normal stock boot-complete. It writes no firmware partitions. There is no
+contemporary lens observation; neither this comparison nor a software screenshot
+establishes clean output. See
+`state-route-v1/matched-takeover-v2/verified-manifest.json` and `analysis.json`.
 
 ## Retained source identity
 
 Evidence directory: `output/pico-recovery-bringup-20261018-v1/`.
-The research was offline except for browsing primary sources; no builds or
-device actions were performed. Exact local references used above:
+The initial source research was offline except for browsing primary sources.
+The subsequent capture and takeover sections explicitly describe later builds
+and device actions. Exact local references used for the source research:
 
 | Retained file | Lines | SHA-256 |
 |---|---|---|

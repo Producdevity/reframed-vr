@@ -326,6 +326,18 @@ colour hold also passes its producer checks and cleanup, with no owner-confirmed
 optical result. See `warm-hold-v1-physical-verification.json` and
 `warm-hold-v1-performance-state.json` in the same evidence directory.
 
+## October 19 matched display takeover
+
+A stock-kernel comparison now captures all DRM objects and property blobs before
+composer stop, after stop and after direct output. All three mode blobs are
+byte-identical at 72 Hz. Stock uses two half-width DMA planes; the direct producer
+uses one full-width VIG plane. The CRTC remains active at the capture boundaries,
+and no physical overlay remains beside the direct plane. This identifies a
+composition difference to audit, without proving the banding's cause. The run
+has no contemporary optical result and returns to normal stock. Full evidence
+and event-log limitations are in the
+[matched takeover result](pico-display-research-20261019.md#matched-stock-kernel-takeover-result).
+
 ## October 19 native GPU presentation
 
 The new physical kernel `linux-dmabuf-20261019-v1`, its 38 matching modules,
