@@ -77,6 +77,21 @@ restart, prioritize the transition. If takeover cannot preserve and identify the
 working state, stop and improve capture rather than count it as another negative.
 This is a proposal; it has not been implemented or run by this research task.
 
+## Subsequent stock-state capture
+
+A bounded wake-window capture confirms both physical DSI video engines on
+before and after the software-state read. The physical DSI connector uses two
+planes sharing one imported framebuffer, each covering a 960×3664 half of the
+1920×3664 output. Six other active planes belong to the virtual display. Earlier
+screen-off captures are excluded from this live-panel baseline. No contemporary
+owner optical observation accompanies this capture.
+
+A temporary stock boot with a fuller read-only diagnostic subsequently leaves
+an empty root-owned userdata output file; it does not establish vendor-property
+or routing equivalence. Normal stock return is verified. The output failure is
+unresolved and must be fixed before repeating the comparison. See
+`state-route-v1/verified-state-route.json` in the evidence directory below.
+
 ## Retained source identity
 
 Evidence directory: `output/pico-recovery-bringup-20261018-v1/`.
