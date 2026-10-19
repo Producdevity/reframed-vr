@@ -211,6 +211,22 @@ The driver's checksum reader does not poll a ready/latch status, so signature
 variability alone cannot locate the native corruption. Neither these signatures
 nor successful producer readbacks establish clean downstream panel output.
 
+Matched native 120 Hz tests then compare the first splash handoff with a full
+display re-enable, using the same colour producer. Both complete 3,600 sampled
+pixels and cleanup. Eight of 238 captured PHY words change between those paths:
+one clock configuration word and three timing words per PHY. The retained stock
+master settings match the inherited values; its slave settings match the
+re-enabled values. This establishes a startup difference, not its causal role
+in the banding. See `warm-cold-kms-v1-physical-verification.json`.
+
+A separate signed diagnostic uses the vendor's receive path to obtain one-byte
+panel replies: command `05` returns `00`, `0a` returns `1c`, and `0c` returns `77`.
+Clock-reference and command-engine cleanup succeed, and the module is unloaded.
+These readings do not establish correct DSC decoding or clean optical output.
+See `dsi-panel-status-v2-physical-verification.json` and
+`warm-kms-v1-final-evidence.json`; the latter also binds the unchanged full boot
+and DTBO readbacks and verified return to normal stock.
+
 ## October 19 native GPU presentation
 
 The new physical kernel `linux-dmabuf-20261019-v1`, its 38 matching modules,
