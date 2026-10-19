@@ -195,6 +195,32 @@ See `state-route-v1/native-dma-v1/verified-manifest.json`, `analysis.json` and
 `device-report.json`. The tested stripped native diagnostic SHA-256 is
 `ab9e948a0d0e1015296e19c115ae136799b93279b1bdd12a782c6b01b781135c`.
 
+## Native GPU presentation through both DMA planes
+
+The opt-in Mesa path subsequently completes 64 GPU-rendered frames at 120 Hz.
+Mesa selects primary plane 106 for its initial bootstrap. Each later frame
+uses exactly DMA planes 109/112, sharing a linear XR24 framebuffer. The first
+and last DMA frames verify both 960×3664 source/destination rectangles,
+rotation, alpha, blend and exclusion state. A separate zero-error full-state
+capture confirms the primary is disabled and both DMA halves remain active.
+
+All 400 spatial pixel samples per frame match the rendered colour. There are
+63 framebuffer changes; present-wait and DRM vblank checks succeed. The median
+observed completion interval is 8.376 ms, including diagnostic inspection.
+This establishes native GPU presentation on the DMA path. It does not establish
+optical clarity: the earlier owner-confirmed stock test used AB24, this test
+uses XR24, and no sustained native GPU lens observation accompanies it.
+
+The first GPU attempt stops on an invalid fixture assumption that the first
+plane inventory entry is Mesa's chosen primary. It does not establish a WSI
+failure. The corrected fixture records the actual active IDs and types. An
+intermediate host prompt-parser failure occurs before uploads or rendering;
+that failure and the recovered console session remain in the evidence bundle.
+Full boot and DTBO readback hashes match the preserved images, and acknowledged
+normal reboot returns to stock with Wi-Fi off and the updater disabled. No
+firmware partition is written. See `state-route-v1/gpu-dma-v2/analysis.json` and
+`verified-manifest.json`; the original failed fixture is in `gpu-dma-v1/`.
+
 ## Retained source identity
 
 Evidence directory: `output/pico-recovery-bringup-20261018-v1/`.

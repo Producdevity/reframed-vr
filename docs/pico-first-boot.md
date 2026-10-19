@@ -349,8 +349,18 @@ native Linux, patterned rendering and VR remain separate gates. See the
 The same DMA2/DMA3 half-screen layout subsequently passes native Linux atomic
 validation, commit, software-state capture and cleanup at 72 Hz. Normal stock
 return is verified. The owner is away for that run, so native optical output
-remains unverified, and GPU/VR scanout integration is still required. See the
+remains unverified. See the
 [native DMA result](pico-display-research-20261019.md#native-linux-dma-port-software-verification).
+
+The opt-in Vulkan DMA path then completes 64 native GPU frames at 120 Hz, with
+400 spatial pixel samples per frame and 63 framebuffer changes. All frames
+after the primary bootstrap use the two DMA halves; the median observed
+completion interval is 8.376 ms. The captured GPU buffer is linear XR24,
+whereas the owner-observed stock test used linear AB24. Full boot/DTBO hashes
+remain unchanged, and normal stock return is verified. This establishes GPU
+presentation on the native DMA path; native optical clarity, calibrated stereo
+and Steam in VR still require acceptance. See `state-route-v1/gpu-dma-v2/` in
+the bring-up evidence directory.
 
 ## October 19 native GPU presentation
 

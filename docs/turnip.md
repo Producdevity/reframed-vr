@@ -119,8 +119,16 @@ The actual helper passes 5,000 ASan/UBSan checks with modeled libdrm inventory
 and atomic requests on macOS and ARM64 Linux. The compiled ARM64 bundle
 `output/mesa/pico-split-dma-20261019-v1/` passes all ten helper suites, five
 Freedreno tests and artifact validation. This verifies compilation and bounded
-contracts. Physical GPU presentation with the new path, cadence, native lens
-output and VR acceptance remain pending; the option is not enabled by default.
+contracts. A subsequent native RAM test verifies 64 GPU frames through this
+path at 120 Hz: 400 spatial pixel samples per frame, 63 framebuffer changes,
+and a median observed completion interval of 8.376 ms. After the first-frame
+primary bootstrap, all 63 later frames use DMA planes 109/112 with one shared
+linear XR24 framebuffer. The full-state capture confirms both halves and the
+disabled primary. This differs from the owner-observed stock test's AB24 format.
+Boot and DTBO readback hashes remain unchanged, and normal stock return is
+verified. Receipts are under `state-route-v1/gpu-dma-v2/` in the bring-up
+evidence directory. Native lens output and VR acceptance remain pending;
+the option is not enabled by default.
 
 ## Correction to earlier build evidence
 
