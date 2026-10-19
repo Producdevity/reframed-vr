@@ -216,6 +216,15 @@ timing, panel reception or clean optical output. See
 `stock-pps-trace-v3-physical-verification.json` and
 `stock-native-generated-PPS-comparison-v3.json` in the same evidence directory.
 
+The owner then observes the same static/banding/grid during a stock-kernel
+72 Hz full-restart control holding solid green for one minute. This reproduces
+the visible fault without the custom kernel patches. The complete 261-event
+trace records successful software transfer and trigger returns, including PPS
+submission to both controllers; those returns do not prove correct panel output.
+The normal stock interface was previously reported clean. See
+`owner-stock-full-restart-noise-20261019-v1.json` and
+`stock-dsi-submit-v2-physical-verification.json` in the same evidence directory.
+
 The stock comparison also records varying controller-zero frame signatures.
 The driver's checksum reader does not poll a ready/latch status, so signature
 variability alone cannot locate the native corruption. Neither these signatures
