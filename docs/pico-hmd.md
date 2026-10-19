@@ -25,6 +25,35 @@ or with stale samples return an invalid relation. Stream restarts clear history.
 Angular velocity is expressed in tracking-origin coordinates, as Monado requires.
 This bounds extrapolation; it does not establish physical tracking accuracy.
 
+## Capturing the active stock record
+
+The b1977 HMD Binder service exposes read-only display and lens getters.
+`tools/read-pico-optics.py` requires explicit ADB and boot serials, the exact
+stock fingerprint and the SHA-256 of the inspected ARM64 Binder client. It
+checks the interface descriptor before calling only getter transactions 4 and
+5, using their verified 96-byte and 128-byte records. Unexpected parcel sizes,
+getter failures, invalid geometry and non-finite lens values are refused.
+
+```sh
+python3 -B tools/read-pico-optics.py --serial ADB_SERIAL \
+  --boot-serial BOOT_SERIAL --output NEW_PRIVATE_OPTICAL_RECORD.json
+```
+
+The October 19 capture on the inventoried Pro Eye succeeds against the current
+stock libraries and agrees with the retained factory lens coefficients and
+per-eye axis offsets. It additionally supplies the active screen dimensions,
+physical width/height, screen gap and 90-degree display orientation. The private
+record and copied-library ABI evidence are under
+`output/pico-recovery-bringup-20261018-v1/stock-optics-arm64-v1/`.
+
+The service reports 72 Hz while the Android display inventory reports a 120 Hz
+hardware mode. Keep this service field separate from actual DRM/Vulkan timing.
+The getter record is calibration input, not an installable HMD profile: panel
+view transforms, projection choice, sensor-to-head axes and optical alignment
+still need validation. The collector does not open streams, select a runtime,
+change device settings or certify lens output. Unit-specific records remain
+outside Git.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
