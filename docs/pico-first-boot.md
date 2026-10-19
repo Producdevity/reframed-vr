@@ -225,6 +225,37 @@ The normal stock interface was previously reported clean. See
 `owner-stock-full-restart-noise-20261019-v1.json` and
 `stock-dsi-submit-v2-physical-verification.json` in the same evidence directory.
 
+A further stock control enables the primary plane's hardware solid-green
+generator while its source framebuffer remains red. Driver calls and a narrow
+register read verify solid-fill mode and the green constant; 400 source-pixel
+checks, cleanup and normal stock return pass. This control has no owner-confirmed
+optical result. See `stock-hw-fill-v3-physical-verification.json`.
+
+The panel's vendor E6 initialization template also differs from the generated
+PPS in its final rate-control range: minimum QP 13 versus 12 in the PPS and
+measured encoder registers. A RAM-only stock control uses the existing panel
+command interface to test that byte and restore it. All 294 captured trace events
+are retained, including the E6 byte sequence `6b → 63 → 6b`; transfer returns,
+cleanup and normal stock return pass. This does not verify decoder acceptance
+or an optical fix. See `stock-e6-runtime-v1-physical-verification.json`.
+
+Read-only native diagnostics subsequently obtain two identical 94-byte E6
+responses from controller zero, using generic and DCS reads. Both match the
+vendor template, including minimum QP 13. The controller-one responses are
+uninterpretable and are not counted as DSC parameter replies. Clock and command
+engine references are released, and the signed diagnostic module is unloaded.
+See `native-panel-pps-read-v1-initial-verification.json`.
+
+A native runtime control then reads minimum QP 12 back through both methods
+after the one-byte E6 write, and QP 13 after restoring the original command.
+The other 93 parameter bytes remain identical. The hardware-green producer,
+module unloads and display cleanup pass; the viewing window has no owner result.
+This verifies a reversible parameter change, not the cause or removal of banding.
+See `native-E6-readback-v1-physical-verification.json`. A separate native trace
+also matches the stock command kickoff flags (`6e` master, `6a` slave), without
+establishing complete packet or electrical equivalence; see
+`native-dsi-submit-v1-physical-verification.json`.
+
 The stock comparison also records varying controller-zero frame signatures.
 The driver's checksum reader does not poll a ready/latch status, so signature
 variability alone cannot locate the native corruption. Neither these signatures
