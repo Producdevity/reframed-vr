@@ -19,6 +19,27 @@ target_compile_options(vulkan-interop PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(vulkan-interop PRIVATE Vulkan::Vulkan)
 install(TARGETS vulkan-interop RUNTIME DESTINATION bin)
 
+option(REFRAMED_PICO_DISPLAY_HANDOFF "Build the native Pico inherited-mode handoff" OFF)
+if(REFRAMED_PICO_DISPLAY_HANDOFF)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "Pico display handoff requires Linux")
+    endif()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(DRM REQUIRED IMPORTED_TARGET libdrm)
+    add_executable(pico-display-handoff src/pico-display-handoff.c)
+    target_compile_features(pico-display-handoff PRIVATE c_std_11)
+    target_compile_options(pico-display-handoff PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(pico-display-handoff PRIVATE PkgConfig::DRM)
+    install(TARGETS pico-display-handoff RUNTIME DESTINATION libexec/reframed-vr
+            COMPONENT PicoDisplayHandoff)
+    configure_file(system/pico/reframed-pico-display-handoff.service.in
+                   reframed-pico-display-handoff.service @ONLY)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-display-handoff.service"
+            DESTINATION lib/systemd/system COMPONENT PicoDisplayHandoff)
+    install(FILES system/pico/70-reframed-pico-display.rules
+            DESTINATION lib/udev/rules.d COMPONENT PicoDisplayHandoff)
+endif()
+
 option(REFRAMED_PICO_DESKTOP_TEST "Build the opt-in physical Pico desktop-layer test" OFF)
 if(REFRAMED_PICO_DESKTOP_TEST)
     find_package(X11 REQUIRED)

@@ -1,0 +1,18 @@
+[Unit]
+Description=Adopt the Pico inherited display mode
+Requires=dev-dri-card0.device
+After=dev-dri-card0.device systemd-modules-load.service
+Before=reframed-pico-vr.service
+
+[Service]
+Type=oneshot
+ExecStart=@CMAKE_INSTALL_PREFIX@/libexec/reframed-vr/pico-display-handoff --boot-serial-file /etc/reframed-vr/pico-boot-serial
+RemainAfterExit=yes
+TimeoutStartSec=30
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_SYS_ADMIN
+DevicePolicy=closed
+DeviceAllow=/dev/dri/card0 rw

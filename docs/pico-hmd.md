@@ -337,6 +337,49 @@ recovery receipt are retained under
 `output/pico-recovery-bringup-20261018-v1/first-mode-guard-v1/`.
 Clean physical optics and tracking-axis acceptance remain unverified.
 
+### Native display startup service
+
+`pico-display-handoff` performs the inherited-mode adoption without starting
+an XR runtime. It verifies the selected native boot, chooses a compatible CRTC
+when the splash encoder is unbound, and preserves the complete vendor 120 Hz
+mode. If the CRTC mode is unset, it requires a unique preferred 1920×3664 mode
+at exactly 120 Hz. It never substitutes a different refresh rate.
+
+The helper submits a black framebuffer, requires five increasing DRM sequence
+events with nonzero timestamps and a measured period within 5% of 120 Hz, then
+disables the CRTC and releases its resources. It reports readiness only after
+cleanup succeeds. This bootstrap does not replace the two-DMA-plane VR path.
+
+Build and stage the optional component with:
+
+```sh
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr \
+  -DREFRAMED_PICO_DISPLAY_HANDOFF=ON
+cmake --build build --target pico-display-handoff
+DESTDIR="$root" cmake --install build --component PicoDisplayHandoff
+```
+
+The root filesystem must also contain the selected serial, optionally followed
+by one newline, in `/etc/reframed-vr/pico-boot-serial` (root-owned, mode 0600).
+An initramfs copy alone is insufficient. The installed udev rule tags `card0`
+for systemd so the oneshot service can wait for the actual device. The service
+restricts GPU device access to that node and retains only `CAP_SYS_ADMIN`.
+It is not enabled automatically. A VR session unit must require
+`reframed-pico-display-handoff.service` and order itself after that service;
+the completed oneshot stays active across VR-session restarts.
+
+Native tests verify the installed service and the transition to Steam/OpenXR
+at 90 Hz. The service completes in about 0.45 seconds, replacing the previous
+full compositor bootstrap. Initial failures exposed the missing root serial
+file, missing systemd device tag and unavailable encoder/CRTC binding; those failures
+stopped before a modeset. A fresh boot repeats the complete installation and
+handoff as the first DRM client. The two 90 Hz runs record an 11.111 ms median
+hardware IRQ interval and average 79.10 and 77.85 completions/s. Both have valid
+XB30 captures, no vblank-fence warnings and unchanged BOOT/DTBO hashes; normal
+stock recovery is verified after each. This verifies startup rather than
+sustained 90 completed frames/s or clean output through the lenses. Evidence is under
+`output/pico-recovery-bringup-20261018-v1/native-display-startup-v1/`.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
