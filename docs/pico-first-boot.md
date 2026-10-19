@@ -206,6 +206,16 @@ the stock direct test has no owner-confirmed optical result. See
 `stock-kms-v4-rejection-analysis.json`, `stock-kms-v7-physical-verification.json`
 and `stock-kms-v7-session.json` in the same evidence directory.
 
+A full stock 72 Hz display disable/re-enable subsequently reaches panel enable
+and produces one captured DSC command buffer. All 135 bytes, including the
+seven-byte command header and 128-byte payload, match the retained earlier
+corrected-native 120 Hz buffer: picture 1920×3664, slices 480×16. The scoped probes
+are removed and return to normal stock is independently verified. This compares
+driver buffers before command submission; it does not establish identical link
+timing, panel reception or clean optical output. See
+`stock-pps-trace-v3-physical-verification.json` and
+`stock-native-generated-PPS-comparison-v3.json` in the same evidence directory.
+
 The stock comparison also records varying controller-zero frame signatures.
 The driver's checksum reader does not poll a ready/latch status, so signature
 variability alone cannot locate the native corruption. Neither these signatures
@@ -226,6 +236,15 @@ These readings do not establish correct DSC decoding or clean optical output.
 See `dsi-panel-status-v2-physical-verification.json` and
 `warm-kms-v1-final-evidence.json`; the latter also binds the unchanged full boot
 and DTBO readbacks and verified return to normal stock.
+
+A further native direct-colour run records the display core at 460 MHz, matching
+the driver's maximum, with maximum AB and IB requests of 16.6 GB/s on each of
+the data, LLCC and EBI buses. Incorrectly low performance requests are therefore
+not observed in this run. These are recorded requests, not measured memory
+throughput or proof of clean scanout. The preceding three-minute first-handoff
+colour hold also passes its producer checks and cleanup, with no owner-confirmed
+optical result. See `warm-hold-v1-physical-verification.json` and
+`warm-hold-v1-performance-state.json` in the same evidence directory.
 
 ## October 19 native GPU presentation
 
