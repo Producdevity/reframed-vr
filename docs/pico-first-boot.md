@@ -369,6 +369,10 @@ both eye viewports using this DMA path and physical SSC-backed orientation.
 Its compositor completion median remains about 33 ms despite a 120 Hz mode.
 This is raster and API evidence; native lens clarity and motion alignment are
 unverified. See [the stereo and timing results](pico-hmd.md#native-dual-dma-steam-stereo-and-timing).
+A later compute/pacing comparison raises average completion cadence to about
+80 Hz in a 90 Hz mode, with missed frames and an unresolved 10-bit capture
+decoding limitation. See [the controlled comparison](pico-hmd.md#render-path-and-pacing-comparison);
+this does not establish steady 90 Hz or clean native lens output.
 
 ## October 19 native GPU presentation
 

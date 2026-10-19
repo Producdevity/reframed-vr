@@ -154,6 +154,50 @@ Unit calibration and display captures remain outside Git. Optical acceptance,
 physical motion direction, position tracking, efficient desktop sharing and
 compositor timing remain open gates before a usable Steam VR session.
 
+## Render-path and pacing comparison
+
+A fresh native boot runs four more 30-second Steam/OpenXR tests with the same
+optics and SSC configuration. The graphics baseline reports 305 MHz in all
+100 active samples; its accumulated driver busy counters increase only at that
+power level. Temporarily raising `min_pwrlevel` from 5 to 0 changes all 100
+samples to the stock maximum of 587 MHz, with busy-counter increments at that
+level. Graphics composition still takes about 19 ms. This constraint change
+alone does not resolve the bottleneck. These are selected driver levels and
+busy counters, not independent hardware clock or wall-time residency measurements.
+
+| Configuration | Scanout format | GPU median | Completion median | Average completion rate |
+| --- | --- | ---: | ---: | ---: |
+| Graphics, default policy, 120 Hz | XR24 | 19.415 ms | 33.329 ms | 30.06 Hz |
+| Graphics, raised floor, 120 Hz | XR24 | 18.753 ms | 33.321 ms | 31.65 Hz |
+| Compute, raised floor, 120 Hz | XB30 | 8.496 ms | 16.663 ms | 59.83 Hz |
+| Compute, raised floor, 90 Hz, 10 ms composition budget | XB30 | 8.491 ms | 11.112 ms | 80.12 Hz |
+
+Average rate uses the elapsed span of the retained completion timestamps after
+the first ten compositor frames. Switching to compute also changes the chosen
+surface format from 8-bit XR24 to 10-bit XB30, so this comparison does not isolate
+the rendering algorithm from format selection. The 90 Hz candidate changes the
+DRM mode and profile period together and raises the fallback pacer's composition
+allowance from 3 to 10 ms. Only the profile's frame interval changes; its optical
+parameters are identical. This is a tested configuration, not an isolated pacing
+fix: 288 of 2,394 intervals exceed 1.5 display periods, the 95th percentile is
+22.518 ms, and one present wait times out. Sustained 90 Hz remains unverified.
+
+The full-state captures confirm both DMA planes, a shared linear framebuffer
+and the selected 120/90 Hz mode. The existing capture helper assumes XR24 for
+its full-frame RGB conversion, so its XB30 output is incorrectly decoded and
+cannot serve as a colour-accurate screenshot. Packed sample-word variation is
+not a substitute for correctly decoded pixels or clean lens output. The earlier
+XR24 graphics capture is unaffected. The helper must validate the actual format
+and preserve all native pixel bits before the next compute capture.
+
+All four tests restore the original power floor and governor, complete service
+cleanup and match full BOOT/DTBO hashes. The highest sampled GPU temperature is
+44.2 °C; these short runs do not establish sustained thermal behavior. Normal
+stock return is verified. Reports, raw timing records, the capture limitation
+and the final hash manifest are under
+`output/pico-recovery-bringup-20261018-v1/state-route-v1/vr-clock-v1/`.
+No firmware partitions are written, and native optical acceptance remains open.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described

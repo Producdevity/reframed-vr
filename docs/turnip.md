@@ -136,6 +136,10 @@ verifies the stereo raster, but composition takes about 33 ms per completion
 in that workload. This is separate from the 64-frame direct test and does not
 establish lens clarity or a runtime performance winner. See the
 [Steam stereo and timing evidence](pico-hmd.md#native-dual-dma-steam-stereo-and-timing).
+The subsequent [render-path comparison](pico-hmd.md#render-path-and-pacing-comparison)
+uses the same driver with linear XB30 in compute mode and improves average
+completion cadence to about 80 Hz in its 90 Hz candidate. Missed frames remain,
+and its legacy XR24-only screenshot conversion does not decode XB30 correctly.
 
 ## Correction to earlier build evidence
 
