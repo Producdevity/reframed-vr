@@ -106,6 +106,14 @@ first, then starting and restarting at 90 Hz, restores real 90 Hz IRQ feedback
 in the verified native sequence. A selected mode or successful submission is
 insufficient evidence; see the [handoff and timing results](pico-hmd.md#inherited-mode-and-presentation-feedback).
 
+The Linux kernel's early first-mode guard now rejects unsupported video DMS
+requests during mode validation, preserving the inherited mode. Its RAM test
+verifies that rejection before late clock/prepare failures, followed by working
+120 Hz adoption, 90 Hz Steam rendering and normal stock recovery. Startup must
+still perform the inherited-mode handoff. See the
+[guard verification](pico-hmd.md#early-first-mode-validation); physical optics
+and persistent installation remain separate acceptance gates.
+
 The subsequent Xorg test exposed two generic modesetting-driver incompatibilities:
 an unexposed vendor property had no atom table, and mode conversion dropped the
 kernel-supplied refresh field. The source-matched patches and build recipe are

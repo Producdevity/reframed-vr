@@ -1,0 +1,25 @@
+Subject: [PATCH] drm/msm/dsi: reject unsupported splash DMS before commit
+
+A video-mode DMS transition cannot be prepared on the first splash frame.
+Reject it in mode_fixup rather than after atomic validation has accepted it.
+Preserve transitions that bypass prepare and non-splash operation.
+
+--- a/techpack/display/msm/dsi/dsi_drm.c
++++ b/techpack/display/msm/dsi/dsi_drm.c
+@@ -456,6 +456,16 @@
+ 		(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK))) {
+ 		DSI_ERR("seamless upon active changed 0x%x %d\n",
+ 			dsi_mode.dsi_mode_flags, crtc_state->active_changed);
++		return false;
++	}
++
++	/* pre_enable cannot return the first-frame DMS prepare failure. */
++	if (display->is_cont_splash_enabled &&
++	    display->config.panel_mode == DSI_OP_VIDEO_MODE &&
++	    (dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DMS) &&
++	    !(dsi_mode.dsi_mode_flags & (DSI_MODE_FLAG_SEAMLESS |
++			DSI_MODE_FLAG_VRR | DSI_MODE_FLAG_DYN_CLK))) {
++		DSI_ERR("DMS not supported on first frame\n");
+ 		return false;
+ 	}
+ 

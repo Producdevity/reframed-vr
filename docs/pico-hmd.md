@@ -305,6 +305,38 @@ return is verified after the third. Exact source, earlier report hash checks,
 phase snapshots, timing records, captures and the evidence manifest are under
 `output/pico-recovery-bringup-20261018-v1/vblank-lifecycle-v1/`.
 
+### Early first-mode validation
+
+Linux kernel patch `0010-dsi-first-mode-validation.patch` adds an early check
+in bridge mode validation for the existing first-frame video DMS constraint.
+It preserves the
+seamless, VRR and dynamic-clock paths that bypass prepare. Native startup must
+still adopt the inherited mode before switching refresh rates.
+
+The actual vendor callback fixture covers 3,072 cases and 9,216 checks under
+ASan/UBSan, reproducing the original failure and passing after the guard. An
+isolated full kernel build preserves the tested configuration, module symbol
+versions and signing certificate. All 38 installed modules remain byte-identical.
+The known RAM boot container is reproduced before assembling the candidate;
+only its kernel payload and header ID change. This is a manual RAM diagnostic
+candidate, with canonical packaging and persistent-install readiness still open.
+
+On-device GNU build ID `afdc38ab5c216fef` identifies the tested kernel. Two
+unsupported initial 90 Hz attempts are rejected in `dsi_bridge_mode_fixup`,
+preserving the logical 120 Hz mode without late prepare, link-clock or
+disabled-encoder errors. Subsequent Steam/OpenXR sessions at 120 Hz and 90 Hz
+record median hardware IRQ intervals of 8.333 and 11.111 ms. Both retain valid
+XB30 stereo captures and have no vblank-fence timeouts or device-loss results.
+The 90 Hz run averages 79.90 completions/s, with one present-completion timeout;
+the guard does not establish sustained 90 completed frames/s.
+
+GPU policy and full BOOT/DTBO hashes are restored or verified after each case,
+and normal stock recovery is verified afterward. No firmware partition is
+written. The exact build, failure-path proof, captures, timing records and
+recovery receipt are retained under
+`output/pico-recovery-bringup-20261018-v1/first-mode-guard-v1/`.
+Clean physical optics and tracking-axis acceptance remain unverified.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
