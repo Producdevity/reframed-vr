@@ -1,0 +1,57 @@
+From: Producdevity
+Subject: [PATCH] compositor: expose raw GPU durations and completion timing in debug logs
+
+Raw timestamp durations remain useful when a driver cannot calibrate GPU ticks
+to host time. Keep them separate from host timestamps and report whether the
+completion path uses present-wait or image acquisition.
+
+--- a/src/xrt/compositor/main/comp_renderer.c
++++ b/src/xrt/compositor/main/comp_renderer.c
+@@ -842,6 +842,7 @@
+ 
+ 	// For estimating frame misses.
+ 	uint64_t before_ns = os_monotonic_get_ns();
++	VkResult present_result = VK_SUCCESS;
+ 
+ 	if (c->target->wait_for_present_supported) {
+ 		// reasonable timeout
+@@ -849,10 +850,9 @@
+ 
+ 		// @note we don't actually care about the return value, just swallow errors, anything *critical* that
+ 		// may be returned will be handled quite soon by later calls
+-		VkResult result = comp_target_wait_for_present(c->target, timeout_ns);
+-		(void)result;
+-
+-		assert(result != VK_ERROR_EXTENSION_NOT_PRESENT);
++		present_result = comp_target_wait_for_present(c->target, timeout_ns);
++
++		assert(present_result != VK_ERROR_EXTENSION_NOT_PRESENT);
+ 	} else {
+ 		/*
+ 		 * For direct mode this makes us wait until the last frame has been
+@@ -871,6 +871,10 @@
+ 
+ 	// How long did it take?
+ 	uint64_t after_ns = os_monotonic_get_ns();
++	COMP_DEBUG(c, "Present completion desired_ns=%" PRIu64 " before_ns=%" PRIu64
++	              " after_ns=%" PRIu64 " present_wait=%u result=%d",
++	           desired_present_time_ns, before_ns, after_ns,
++	           (unsigned)c->target->wait_for_present_supported, present_result);
+ 
+ 	/*
+ 	 * Make sure we at least waited 1ms before warning. Then check
+@@ -1213,6 +1217,14 @@
+ 
+ 	// Check timestamps.
+ 	if (xret == XRT_SUCCESS) {
++		if (c->settings.log_level <= U_LOGGING_DEBUG) {
++			uint64_t duration_ns;
++			if (render_resources_get_duration(&c->nr, &duration_ns)) {
++				COMP_DEBUG(c, "GPU duration frame=%" PRIu64 " duration_ns=%" PRIu64,
++				           frame_id, duration_ns);
++			}
++		}
++
+ 		/*
+ 		 * Get timestamps of GPU work (if available).
+ 		 */

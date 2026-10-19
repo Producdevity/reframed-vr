@@ -731,3 +731,23 @@ models token verification in Python; it is not a virtual Quest board with panel,
 GPU, sensor and UFS emulation. The [userdebug converter](https://github.com/Lumince/Quest_Userdebug_Converter)
 targets userdebug-to-user firmware conversion, not an established retail unlock
 path. Neither supplies the missing exact-device boot acceptance evidence.
+
+### Inspecting native compositor deadlines
+
+With the pinned Monado build, `XRT_COMPOSITOR_LOG=debug` logs raw GPU duration
+as `GPU duration frame=... duration_ns=...` and presentation completion as
+`Present completion desired_ns=... before_ns=... after_ns=... present_wait=...
+result=...`. GPU duration is a difference between device timestamp queries,
+not a host monotonic timestamp. It remains measurable when the driver lacks
+calibrated GPU-to-host timestamps; no artificial host timestamp is supplied to
+the compositor pacer.
+
+The completion record distinguishes explicit present-wait from the image-acquire
+fallback and exposes returned wait errors. The October 19 Pico tests verified
+successful KHR present-wait2 completions, but enabling that path alone did not
+resolve the deadline misses. Neither holding the GPU within its stock maximum
+nor requesting a third swapchain image established 120 Hz composition. The
+60-second native Steam quad run completed at a median interval of about 25 ms.
+Root cause remains under investigation; this instrumentation does not change
+frame scheduling or establish clean optical output. Repeat performance
+acceptance with debug logging disabled after a candidate fix.
