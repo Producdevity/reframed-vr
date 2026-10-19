@@ -284,6 +284,18 @@ from both active encoders. That capture has no contemporaneous lens observation;
 the firmware/Linux table difference does not uniquely identify the native fault.
 See `xbl-rc-stock-Android-countercheck-v1.json`.
 
+A subsequent native RAM control verifies all four combinations of the XBL
+packet-type and wait changes across full modesets. Driver traces confirm the
+changed command timing; these individual passes have no owner optical result.
+A combined control then applies those changes and encoder minimum QP 13 while
+the primary plane generates solid green in hardware, with a red source buffer.
+The owner still observes static/banding/grid during that live hold. The known
+XBL parameter differences and primary-plane hardware fill are therefore
+insufficient to clear the fault; its cause remains unresolved. Temporary modules
+unload, full BOOT/DTBO hashes remain unchanged, and a fresh normal stock boot is
+verified. See `native-xbl-init-v1-final-evidence.json` and the bound
+`native-xbl-hw-fill-v1-owner-result.json` in the same evidence directory.
+
 The stock comparison also records varying controller-zero frame signatures.
 The driver's checksum reader does not poll a ready/latch status, so signature
 variability alone cannot locate the native corruption. Neither these signatures
