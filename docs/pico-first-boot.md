@@ -172,8 +172,39 @@ retained for recovery.
 Binary DRM synchronization and GPU semaphore/buffer sharing across processes do
 pass on this boot, separately from panel output. See
 [Turnip's physical binary-sync evidence](turnip.md) and
-`native-v8-binary-sync-verification.json`. This does not supply the still-missing
-Neo3 DMA-buffer fence ioctls or establish a VR compositor session.
+`native-v8-binary-sync-verification.json`. That older kernel lacks the Neo3
+DMA-buffer fence ioctls; the subsequent build below supplies them.
+
+## October 19 native GPU presentation
+
+The new physical kernel `linux-dmabuf-20261019-v1`, its 38 matching modules,
+`runtime-initramfs-v9` and `live-root-v13` boot the full native RAM root.
+The direct Vulkan test now presents GPU-rendered swapchain images through SDE,
+with pixel readbacks, present-completion waits, active plane-framebuffer changes
+and DRM vblank checks. A 64-frame test without an application delay measures
+about 120 completed presentations per second. Both DSI video engines remain
+enabled, ACK error status is zero, and the DSC PPS width remains 1920 pixels.
+See the [physical DMA-buffer results](dma-buf-sync.md#neo3-physical-presentation)
+for hashes, receipts and proof limits. This boot makes no partition writes.
+
+Monado also initializes its direct-display target on the actual GPU with
+explicitly simulated head tracking. Before the refresh correction, Vulkan
+reports 48.358 Hz for the driver-labelled 120 Hz mode, and Monado consequently
+selects a 20.679 ms frame period. The corrected Turnip bundle reports the
+advertised 120/90/72 Hz modes, and Monado selects 8.333333 ms. A native OpenXR
+client then submits 120 two-eye projection frames and exits successfully.
+Tracking is simulated and optics uncalibrated; missed-deadline warnings remain.
+This does not establish sustained VR performance, physical tracking or correct
+stereo alignment through the lenses. Both DSI engines and the 1920-pixel PPS
+width remain correct in the final snapshot.
+
+The controlled normal reboot subsequently reaches stock boot-complete with the
+exact Pico serial, Wi-Fi off and the updater disabled. See
+`dmabuf-v1-native-xr-verification.json` and
+`dmabuf-v1-normal-stock-return-verification.json`. The native root remains
+temporary; Android has not yet been replaced on persistent storage.
+
+## Earlier boot integration and recovery
 
 Generic `v4l_id` probing also blocked native boot by opening vendor codec and
 camera control nodes. The observed codec stack waited for `venus.mdt` firmware.

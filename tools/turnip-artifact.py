@@ -41,7 +41,8 @@ def validate(directory):
             raise ValueError('Turnip artifact mismatch: ' + name)
         artifacts[name] = item
     required = {LIBRARY, ICD, 'kgsl-compile-command.txt', 'dynamic-dependencies.txt',
-                'kgsl-display', 'tu_kgsl_display.h', 'display-format-under-test.h', 'display-image-under-test.h'}
+                'kgsl-display', 'tu_kgsl_display.h', 'display-format-under-test.h', 'display-image-under-test.h',
+                'display-refresh-under-test.h'}
     if not required <= artifacts.keys():
         raise ValueError('Turnip build omits library or compile/link evidence')
     library = (directory / LIBRARY).read_bytes()
@@ -73,6 +74,12 @@ def validate(directory):
             images['model_sha256'] != digest(ROOT / 'tests/mesa-display-image-tests.c') or
             images['types_sha256'] != digest(ROOT / 'tests/mesa-display-image-types.h')):
         raise ValueError('Turnip display image test sources changed or tests failed')
+    refresh = report['display_refresh_tests']
+    if (refresh.get('status') != 'passed' or
+            refresh['runner_sha256'] != digest(ROOT / 'tests/mesa-display-refresh-tests.py') or
+            refresh['model_sha256'] != digest(ROOT / 'tests/mesa-display-refresh-tests.c') or
+            refresh['helpers_sha256'] != artifacts['display-refresh-under-test.h']['sha256']):
+        raise ValueError('Turnip display refresh test sources changed or tests failed')
     display = report['kgsl_display_test']
     if (display['source_sha256'] != digest(ROOT / 'tests/kgsl-display.c') or
             display['header_sha256'] != artifacts['tu_kgsl_display.h']['sha256'] or

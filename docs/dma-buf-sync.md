@@ -183,8 +183,8 @@ The compiled test kernel is
 private source/build layers over the read-only, fully compiled v2 baseline;
 records retain the baseline, source changes, configuration differences and
 matching signed test-module inputs. It exports a test kernel and that module,
-not a physical firmware or vendor-module bundle. The full physical kernel
-build is separate and has not yet booted on the headset.
+not a physical firmware or vendor-module bundle. The physical build and its
+headset results are recorded separately below.
 
 Host ASan/UBSan checks of the actual merge function also pass 8,192 AND/OR
 truth-table cases, allocation-failure cleanup, sequence wrap, duplicate fences,
@@ -192,3 +192,34 @@ empty dependencies and 1,024-import ownership checks. Those use modeled fence
 objects; the QEMU results above exercise the real kernel implementation.
 Neither result proves KGSL execution, SDE buffer import, presentation, optical
 quality, stereoscopic VR or persistent Linux installation.
+
+## Neo3 physical presentation
+
+On October 19, `output/kernel/pico-neo3/linux-dmabuf-20261019-v1/` and its
+38 matching modules booted the native Linux RAM root on the inventoried Pro Eye.
+Its Image SHA-256 is
+`684f09b7d33ba3f042741028ea67a4c74071023d1fd82dde5badc8fd0c719529`.
+The physical build retains the Qualcomm entropy and secure-firmware configuration;
+it contains neither the QEMU exporter nor the virtual-board adaptations.
+
+With the matched Turnip driver, a direct Vulkan test clears the actual display
+swapchain images on the GPU, verifies a pixel readback from each image, and waits
+for present-ID completion. Twelve RGB frames produce eleven changes of the
+active DRM plane framebuffer, with successful DRM vblank checks. A second run
+without an application delay completes 64 frames and 63 framebuffer changes;
+the mean completion interval after the initial interval is 8.328 ms, about
+120 Hz. This is a simple clear/readback test, not compositor or game performance.
+No CPU copy supplies the full presentation image.
+
+Both DSI video engines remain enabled with zero ACK error status. The matching
+signed read-only driver snapshot records a stable 1920-pixel DSC PPS width.
+The complete current DTBO carrier readback also matches its retained hash.
+Headless GPU readback and binary semaphore/buffer IPC controls pass on the same
+boot. The receipts are `dmabuf-v1-physical-presentation-verification.json` and
+`dmabuf-v1-physical-cadence-verification.json` under
+`output/pico-recovery-bringup-20261018-v1/`.
+
+These results establish the native KGSL-to-SDE presentation path on this unit.
+The owner has not inspected lens output after the PPS correction; clean optical
+output, calibrated stereo, tracking accuracy and persistent Linux installation
+remain separate acceptance checks.

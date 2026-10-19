@@ -183,6 +183,17 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "display-image-under-test.h"),
                 "executable_sha256": digest(output / "mesa-display-image-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/mesa-display-refresh-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-refresh-tests.log", timeout=120)
+            report["display_refresh_tests"] = {
+                "status": "passed",
+                "scope": "actual DRM mode conversion, identity and refresh selection; no hardware",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-refresh-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-refresh-tests.c"),
+                "helpers_sha256": digest(output / "display-refresh-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-refresh-tests"),
+            }
         report["source_sha256"] = stamp.read_text()
         (output / "packages.txt").write_text(subprocess.check_output(["rpm", "-qa"], text=True))
         if not (build_dir / "build.ninja").is_file():
@@ -254,7 +265,7 @@ def build(profile, driver="lavapipe"):
             (output / "dynamic-dependencies.txt").write_text(dynamic)
             report["kgsl_drm_bridge_compiled"] = True
             report["kgsl_display_compiled"] = True
-        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt"] if driver == "turnip" else []
+        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h"] if driver == "turnip" else []
         for name in (*names, "vulkan-external-sync", "vulkan-interop", *evidence):
             path = output / name
             report["artifacts"].append({"path": name, "bytes": path.stat().st_size, "sha256": digest(path)})

@@ -75,6 +75,19 @@ This packages the bundle without selecting a runtime or enabling a service.
 
 ## Direct display selection
 
+The October 19 native Pico RAM session initializes this target on the actual
+Adreno/SDE display with explicitly simulated tracking. Its mode enumeration
+exposes a vendor DSI [refresh reporting mismatch](turnip.md#vendor-dsi-refresh-reporting):
+Monado initially selects a 20.679 ms period for a mode whose direct presentation
+test completes at approximately 120 Hz. With the corrected Turnip bundle, the
+same physical session selects 8.333333 ms and accepts 120 two-eye projection
+frames from the native OpenXR renderer. Its two 128×128 client swapchains carry
+distinct eye colours. The service uses simulated tracking and uncalibrated
+optics; this does not establish a calibrated Pico HMD session, tracking accuracy
+or clean lens output. Missed-deadline warnings remain in the compositor log,
+so sustained performance is unresolved. The receipt is
+`output/pico-recovery-bringup-20261018-v1/dmabuf-v1-native-xr-verification.json`.
+
 `XRT_COMPOSITOR_FORCE_VK_DISPLAY` selects a zero-based display index.
 `XRT_COMPOSITOR_DESIRED_MODE` selects a zero-based mode index; `-1` retains the
 upstream automatic policy. The patch rejects invalid explicit indices rather

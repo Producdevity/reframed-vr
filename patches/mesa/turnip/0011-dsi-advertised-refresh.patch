@@ -1,0 +1,121 @@
+--- a/src/vulkan/wsi/wsi_common.h
++++ b/src/vulkan/wsi/wsi_common.h
+@@ -92,6 +92,9 @@
+    bool supports_protected[VK_ICD_WSI_PLATFORM_MAX];
+ 
+    bool supports_modifiers;
++
++   /* Vendor DSI clocks can describe compressed transport instead of scanout. */
++   bool use_drm_dsi_vrefresh;
+    uint32_t maxImageDimension2D;
+    uint32_t optimalBufferCopyRowPitchAlignment;
+    VkPresentModeKHR override_present_mode;
+--- a/src/freedreno/vulkan/tu_wsi.cc
++++ b/src/freedreno/vulkan/tu_wsi.cc
+@@ -50,6 +50,9 @@
+       return result;
+ 
+    physical_device->wsi_device.supports_modifiers = true;
++   physical_device->wsi_device.use_drm_dsi_vrefresh =
++      strcmp(physical_device->instance->knl->name, "kgsl") == 0 &&
++      physical_device->has_master;
+    physical_device->wsi_device.can_present_on_device =
+       tu_wsi_can_present_on_device;
+ 
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -114,6 +114,8 @@
+    bool                         valid; /* was found in most recent poll */
+    bool                         preferred;
+    uint32_t                     clock; /* in kHz */
++   uint32_t                     drm_vrefresh;
++   bool                         use_drm_vrefresh;
+    uint16_t                     hdisplay, hsync_start, hsync_end, htotal, hskew;
+    uint16_t                     vdisplay, vsync_start, vsync_end, vtotal, vscan;
+    uint32_t                     flags;
+@@ -174,6 +176,7 @@
+    struct list_head             list;
+    struct wsi_display           *wsi;
+    uint32_t                     id;
++   uint32_t                     connector_type;
+    uint32_t                     crtc_id;
+    uint32_t                     plane_id;
+    bool                         connected;
+@@ -560,7 +563,8 @@
+ wsi_display_mode_matches_drm(wsi_display_mode *wsi,
+                              drmModeModeInfoPtr drm)
+ {
+-   return wsi->clock == drm->clock &&
++   return (!wsi->use_drm_vrefresh || wsi->drm_vrefresh == drm->vrefresh) &&
++      wsi->clock == drm->clock &&
+       wsi->hdisplay == drm->hdisplay &&
+       wsi->hsync_start == drm->hsync_start &&
+       wsi->hsync_end == drm->hsync_end &&
+@@ -577,6 +581,9 @@
+ static double
+ wsi_display_mode_refresh(struct wsi_display_mode *wsi)
+ {
++   if (wsi->use_drm_vrefresh && wsi->drm_vrefresh)
++      return wsi->drm_vrefresh;
++
+    return (double) wsi->clock * 1000.0 / ((double) wsi->htotal *
+                                           (double) wsi->vtotal *
+                                           (double) MAX2(wsi->vscan, 1));
+@@ -610,6 +617,27 @@
+    wsi_for_each_display_mode(display_mode, connector) {
+       display_mode->valid = false;
+    }
++}
++
++static void
++wsi_display_mode_set_drm(struct wsi_display_mode *mode,
++                         const drmModeModeInfo *drm_mode,
++                         bool use_drm_vrefresh)
++{
++   mode->drm_vrefresh = drm_mode->vrefresh;
++   mode->use_drm_vrefresh = use_drm_vrefresh;
++   mode->clock = drm_mode->clock; /* kHz */
++   mode->hdisplay = drm_mode->hdisplay;
++   mode->hsync_start = drm_mode->hsync_start;
++   mode->hsync_end = drm_mode->hsync_end;
++   mode->htotal = drm_mode->htotal;
++   mode->hskew = drm_mode->hskew;
++   mode->vdisplay = drm_mode->vdisplay;
++   mode->vsync_start = drm_mode->vsync_start;
++   mode->vsync_end = drm_mode->vsync_end;
++   mode->vtotal = drm_mode->vtotal;
++   mode->vscan = drm_mode->vscan;
++   mode->flags = drm_mode->flags;
+ }
+ 
+ static VkResult
+@@ -635,18 +663,9 @@
+    display_mode->connector = connector;
+    display_mode->valid = true;
+    display_mode->preferred = (drm_mode->type & DRM_MODE_TYPE_PREFERRED) != 0;
+-   display_mode->clock = drm_mode->clock; /* kHz */
+-   display_mode->hdisplay = drm_mode->hdisplay;
+-   display_mode->hsync_start = drm_mode->hsync_start;
+-   display_mode->hsync_end = drm_mode->hsync_end;
+-   display_mode->htotal = drm_mode->htotal;
+-   display_mode->hskew = drm_mode->hskew;
+-   display_mode->vdisplay = drm_mode->vdisplay;
+-   display_mode->vsync_start = drm_mode->vsync_start;
+-   display_mode->vsync_end = drm_mode->vsync_end;
+-   display_mode->vtotal = drm_mode->vtotal;
+-   display_mode->vscan = drm_mode->vscan;
+-   display_mode->flags = drm_mode->flags;
++   wsi_display_mode_set_drm(display_mode, drm_mode,
++      wsi_device->use_drm_dsi_vrefresh &&
++      connector->connector_type == DRM_MODE_CONNECTOR_DSI);
+ 
+    list_addtail(&display_mode->list, &connector->display_modes);
+    return VK_SUCCESS;
+@@ -752,6 +771,7 @@
+    }
+ 
+    connector->connected = drm_connector->connection != DRM_MODE_DISCONNECTED;
++   connector->connector_type = drm_connector->connector_type;
+ 
+    /* Mark all connector modes as invalid */
+    wsi_display_invalidate_connector_modes(connector);

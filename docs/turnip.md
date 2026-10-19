@@ -4,7 +4,8 @@ The headset graphics backend is native AArch64 Mesa Turnip using Qualcomm's
 KGSL kernel interface. FEX is used separately for x86 applications; the native
 ARM64 SteamVR runtime is now available for integration. The Android hardware
 tests below establish bounded GPU execution on both headsets under their stock
-kernels. Physical Linux display acceptance remains open.
+kernels. The Neo3 now passes the bounded native GPU presentation test below;
+clean lens output and a calibrated VR session remain open.
 
 ```sh
 bash tools/build-mesa.sh NEW_MESA_DIRECTORY turnip
@@ -49,8 +50,52 @@ excerpts in `output/pico-recovery-bringup-20261018-v1/`.
 These checks do not establish presentation. The same boot renders a Steam welcome
 screen in Xorg, but the owner sees grey or corrupted colour bands through the
 lenses. Direct KMS colour tests also look corrupted despite correct framebuffer
-readbacks. Panel output remains a separate failed acceptance check, in addition
-to the missing Neo3 DMA-buffer fence API described below.
+readbacks. That older kernel lacks the Neo3 DMA-buffer fence API. The later
+physical kernel supplies it and passes direct GPU presentation; optical output
+after the separate PPS correction has not been inspected.
+
+## Native GPU presentation and timing
+
+The October 19 [physical presentation results](dma-buf-sync.md#neo3-physical-presentation)
+supersede the earlier missing-fence-API limitation for the new Neo3 kernel.
+The ordered binary-sync Turnip build renders and presents 64 checked RGB frames
+on that kernel, with 63 actual plane-framebuffer changes and successful
+present-completion/vblank checks. Its simple clear/readback workload completes
+at about 120 Hz. This does not establish clean optical output or calibrated VR.
+
+### Vendor DSI refresh reporting
+
+The same physical test exposes a timing mismatch: Vulkan reports 48.358 Hz for
+the 1920×3664 mode that DRM labels 120 Hz. The advertised pixel clock and totals
+do not describe the measured frame cadence; Mesa's calculation therefore reports
+the wrong refresh. Monado consequently starts its pacer at 20.679 ms despite the
+measured approximately 8.33 ms presentation cadence.
+
+Patch 0011 preserves the advertised DRM refresh for DSI modes when the explicitly
+selected KGSL display backend is active. It leaves other connectors/backends on
+the existing clock/totals calculation, preserving fractional desktop rates, and
+falls back to that calculation when the DRM refresh is zero. Mode identity
+distinguishes different advertised refresh values on the opted-in path while
+retaining the existing XRandR matching behavior elsewhere. It does not alter the
+kernel mode clock or the complete DRM mode passed back during a modeset.
+
+The new sanitizer suite executes the actual mode conversion, mode matching and
+refresh functions. It checks 72–120 Hz, zero-rate fallback, scan factors,
+changed timing/refresh identity and the unchanged 59.94 Hz path. All 325 checks
+pass. `output/mesa/pico-display-refresh-20261019-v2/` also passes the eight
+existing KGSL/WSI suites and all five Freedreno tests, and its artifact validator
+checks the added test inputs and extracted helper hash.
+
+That exact driver subsequently runs from the Pico's RAM filesystem. Vulkan now
+reports 120,000/90,000/72,000 mHz, and 64 GPU-cleared frames pass pixel readback,
+present-completion and DRM vblank checks with 63 plane-framebuffer changes.
+The median completion interval is 8.328 ms. Monado selects an 8.333333 ms period
+and accepts 120 two-eye projection frames from a native OpenXR client with
+simulated tracking. The client exits successfully; compositor missed-deadline
+warnings remain, so this is not sustained VR performance acceptance. Eye
+alignment and optical output were not inspected. Receipts are
+`dmabuf-v1-refresh-v2-physical-verification.json` and
+`dmabuf-v1-native-xr-verification.json` in the bring-up evidence directory.
 
 ## Correction to earlier build evidence
 
