@@ -151,9 +151,9 @@ are identical and differ from the original captured packet only in the two width
 bytes. Xorg, Openbox and Steam are active after the final cycle. See
 `pps-width-v1-first-packet-verification.json`,
 `pps-width-v1-xorg-packet-verification.json` and
-`pps-width-v1-restart-packet-verification.json`. The owner is away, so clean
-physical output, stereo and optical calibration remain unverified. This packet
-fix does not establish a usable physical graphical session by itself.
+`pps-width-v1-restart-packet-verification.json`. The owner was away during those
+tests, so clean physical output, stereo and optical calibration were unverified.
+This packet fix does not establish a usable physical graphical session by itself.
 
 The SSC isolation test also installs a narrowly changed DTBO carrier with
 SHA-256 `a784b74fc998e91b3080068ab1c00c40543e5670584d80ae1ed7c3baffb69c2b`.
@@ -174,6 +174,26 @@ pass on this boot, separately from panel output. See
 [Turnip's physical binary-sync evidence](turnip.md) and
 `native-v8-binary-sync-verification.json`. That older kernel lacks the Neo3
 DMA-buffer fence ioctls; the subsequent build below supplies them.
+
+## October 19 owner-visible direct display retest
+
+The owner subsequently inspected the native direct KMS colour test with the
+PPS-width correction included. The same static/banding/grid remained at both
+120 Hz and 72 Hz. Neither Monado nor SteamVR participates in this test. Lowering
+the refresh rate after the required 120 Hz splash handoff therefore does not
+remove the corruption; the PPS-width fix is also insufficient to establish clean
+panel output.
+
+The bounded test completes the inherited 120 Hz handoff, disables and re-enables
+that mode, then switches to 72 Hz. Both controllers remain active with zero
+reported ACK and timeout errors. At 72 Hz, 22 selected controller registers match
+the retained stock reference; the reported byte/pixel clocks differ slightly.
+The 7,200 sampled producer pixels match the requested solid colours, which does
+not establish correct downstream fetch, compression, link transmission or panel
+decoding. See `display-mode-v1-physical-verification.json`,
+`owner-direct120-72-static-20261019-v1.json` and `display-mode-v2-native.log` under
+`output/pico-recovery-bringup-20261018-v1/`. Clean physical output remains a
+blocking requirement for a usable VR session.
 
 ## October 19 native GPU presentation
 
