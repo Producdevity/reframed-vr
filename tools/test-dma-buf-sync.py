@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import stat
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,12 +42,18 @@ def initramfs(init, module=None):
 
 def run(args):
     kernel, output = args.kernel.absolute(), args.output.absolute()
+    dtb = args.dtb.absolute() if args.dtb else None
     fixture = ROOT / 'tests/dma-buf-sync.c'
-    if output.exists() or output.is_symlink() or any(c in str(p) for p in (kernel, output, fixture) for c in (':', ',')):
+    if output.exists() or output.is_symlink() or any(c in str(p) for p in (kernel, output, fixture, dtb) if p for c in (':', ',')):
         raise ValueError('Choose a new output directory and paths without commas or colons')
+    if dtb and (dtb.is_symlink() or not dtb.is_file()):
+        raise ValueError('Expected a regular QEMU board DTB')
+    dtb_sha256 = digest(dtb) if dtb else None
     build = json.loads((kernel / 'build.json').read_text())
     if build.get('status') != 'compiled' or build.get('qemu_transports') is not True:
         raise ValueError('Requires a compiled QEMU transport kernel; physical builds are refused')
+    pico = build.get('repository') == 'bytedance/neo3-kernel'
+    skipped_initcalls = ['socinfo_init', 'remoteqdss_init', 'hwinfo_init'] if pico else []
     expected = {item['path']: item['sha256'] for item in build['artifacts']}
     config_name = '.config' if '.config' in expected else 'resolved.config'
     for name in ('Image', config_name):
@@ -68,6 +75,8 @@ def run(args):
               'hardware_verified': False, 'flash_image': False, 'expect_unsupported': args.expect_unsupported,
               'kernel_build_sha256': digest(kernel / 'build.json'), 'kernel_sha256': expected['Image'],
               'fixture_sha256': digest(fixture), 'runner_sha256': digest(Path(__file__)),
+              'board_dtb': str(dtb) if dtb else None, 'board_dtb_sha256': dtb_sha256,
+              'virtual_initcall_exclusions': skipped_initcalls,
               'compiler_image': image, 'reservation_module_sha256': digest(module) if module else None, 'commands': []}
     started = time.monotonic()
 
@@ -78,6 +87,22 @@ def run(args):
                            check=True, timeout=timeout)
 
     try:
+        if pico and dtb is None:
+            dtb = output / 'pico-qemu-board.dtb'
+            prepare = ROOT / 'tools/prepare-pico-qemu-board.py'
+            prepare_sha256 = digest(prepare)
+            execute([args.qemu, '-machine', f'virt,dumpdtb={dtb}', '-accel', args.accel,
+                     '-cpu', 'host' if args.accel in ('hvf', 'kvm') else 'max',
+                     '-smp', '2', '-m', '1024', '-nodefaults', '-nographic',
+                     '-monitor', 'none', '-nic', 'none'], 'board-dump.log', 20)
+            execute([sys.executable, '-B', str(prepare), str(dtb),
+                     '--report', str(output / 'pico-qemu-board.json')],
+                    'board-prepare.log', 30)
+            if digest(prepare) != prepare_sha256:
+                raise ValueError('Board preparation source changed during execution')
+            dtb_sha256 = digest(dtb)
+            report.update(board_dtb=str(dtb), board_dtb_sha256=dtb_sha256,
+                          board_prepare_sha256=prepare_sha256)
         execute([args.engine, 'run', '--rm', '--network', 'none', '--read-only', '--cpus', '1',
                  '--memory', '256m', '--memory-swap', '256m', '--pids-limit', '64',
                  '--tmpfs', '/tmp:rw,nosuid,size=32m', '-v', f'{fixture}:/test.c:ro',
@@ -85,11 +110,14 @@ def run(args):
                  '-static', '-O2', '-Wall', '-Wextra', '-Werror', '/test.c', '-o', '/output/init'], 'build.log', 60)
         (output / 'initramfs.cpio').write_bytes(initramfs((output / 'init').read_bytes(), module.read_bytes() if module else None))
         mode = 'unsupported' if args.expect_unsupported else '1'
+        trace = (' initcall_debug ignore_loglevel loglevel=8'
+                 ' initcall_blacklist=' + ','.join(skipped_initcalls) if pico else '')
         execute([args.qemu, '-name', 'Reframed DMA-buffer sync test', '-machine', 'virt', '-accel', args.accel,
                  '-cpu', 'host' if args.accel in ('hvf', 'kvm') else 'max', '-smp', '2', '-m', '1024',
                  '-nodefaults', '-nographic', '-monitor', 'none', '-serial', 'stdio', '-no-reboot',
                  '-nic', 'none', '-kernel', str(kernel / 'Image'), '-initrd', str(output / 'initramfs.cpio'),
-                 '-append', f'console=ttyAMA0 earlycon rdinit=/init selinux=0 audit=0 reframed.dmabuf_test={mode}'],
+                 '-append', f'console=ttyAMA0 earlycon rdinit=/init selinux=0 audit=0 reframed.dmabuf_test={mode}{trace}',
+                 *(['-dtb', str(dtb)] if dtb else [])],
                 'boot.log', 45)
         log = (output / 'boot.log').read_text(errors='replace')
         cases = (['BASELINE_UNSUPPORTED'] if args.expect_unsupported else
@@ -97,8 +125,12 @@ def run(args):
                   'SNAPSHOT', 'CROSS_PROCESS', '1024_IMPORTS', 'FD_EXHAUSTION', 'POLL_WRITER', 'ALL'])
         if module:
             cases.append('RESERVATION_MODULE')
-            if any(f'DMA_BUF_RESV_{name}_PASS' not in log for name in ('WAIT_ALL', 'TEST_SIGNALED')):
+            reservation_cases = ['WAIT_ALL', 'TEST_SIGNALED']
+            if pico:
+                reservation_cases.extend(['MERGE_OR', 'MERGE_1024_FLAT'])
+            if any(f'DMA_BUF_RESV_{name}_PASS' not in log for name in reservation_cases):
                 raise RuntimeError('Missing kernel reservation acceptance')
+            report['reservation_cases'] = reservation_cases
             if digest(module) != report['reservation_module_sha256']:
                 raise ValueError('Reservation module changed during test')
         if any(f'DMA_BUF_SYNC_{name}_PASS' not in log for name in cases) or 'reboot: Power down' not in log:
@@ -109,6 +141,8 @@ def run(args):
             raise ValueError('Kernel input changed during test')
         if digest(fixture) != report['fixture_sha256'] or digest(Path(__file__)) != report['runner_sha256']:
             raise ValueError('Test source changed during execution')
+        if dtb and digest(dtb) != dtb_sha256:
+            raise ValueError('QEMU board DTB changed during execution')
         report.update(status='passed', cases=cases)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         report.update(status='failed', error=str(error))
@@ -125,6 +159,7 @@ if __name__ == '__main__':
     parser.add_argument('kernel', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--reservation-module', action='store_true', help="Also load the kernel build record's reservation test module")
+    parser.add_argument('--dtb', type=Path, help='Explicit QEMU board DTB, recorded and hash checked')
     parser.add_argument('--expect-unsupported', action='store_true', help='Confirm an unpatched baseline rejects both ioctls')
     parser.add_argument('--engine', default=os.environ.get('CONTAINER_ENGINE', 'docker'))
     parser.add_argument('--qemu', default='qemu-system-aarch64')

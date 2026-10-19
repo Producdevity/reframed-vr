@@ -188,8 +188,8 @@ def build_inputs(profile, linux_userspace, qemu_abi):
     patch_sets = ["pico-neo3"] if pico else []
     if linux_userspace:
         patch_sets.append("pico-neo3-linux" if pico else "linux-userspace")
-    if qemu_abi and not pico:
-        patch_sets.append("qemu-abi")
+    if qemu_abi:
+        patch_sets.append("pico-neo3-qemu" if pico else "qemu-abi")
     patches = []
     for name in patch_sets:
         selected = sorted((sources.ROOT / "patches/kernel" / name).glob("*.patch"))

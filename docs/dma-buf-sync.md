@@ -1,4 +1,4 @@
-# Quest DMA-buffer synchronization
+# DMA-buffer synchronization
 
 Mesa's display WSI imports rendering-completion sync files into DMA buffers
 before presenting them. The Quest 5.10.246 vendor source lacks the standard
@@ -16,9 +16,9 @@ The October 18 Neo3 `linux-native-panel-20261018-v2` kernel (Image SHA-256
 `fa99caa82c272832013354abb14bd4677ac26515ed9c5ddc1417a26eed97e583`)
 does not contain this backport. Its build receipt selects
 `patches/kernel/pico-neo3-linux/0001` through `0008`, and its corresponding
-cached source has neither ioctl definitions nor handlers. Porting and testing
-the API against Neo3's 4.19 reservation API remains necessary for that display
-path. The Quest results below do not establish Neo3 support.
+cached source has neither ioctl definitions nor handlers. The separate Neo3
+4.19 port and its QEMU results are described below. The Quest results do not
+establish Neo3 support, and the older Neo3 artifact remains unchanged.
 
 Read exports wait on writers; write exports wait on readers and writers.
 Imported writers preserve earlier independent writers, while readers remain
@@ -133,3 +133,62 @@ clean power-off and no kernel warning. Its complete maintained kernel build is
 `1d9f5c180b247aa63b16f15080aeb1c4660775907daa95d91147a722a5e29911`.
 This closes the isolated udmabuf regression. It does not establish the cause of
 Steam's independent renderer restarts or prove physical rendering.
+
+## Neo3 4.19 port
+
+`patches/kernel/pico-neo3-linux/0003-dma-buf-sync-file.patch` implements the
+same ioctl ABI using 4.19's `reservation_object` and WW-mutex APIs. Independent
+writers retain preceding writers and readers. The reservation wait, query and
+poll paths account for both kinds of dependency. Ordinary ordered driver
+submissions retain their existing reservation behavior.
+
+This tree lacks the newer fence-unwrapping helper. The port instead flattens
+AND arrays iteratively, merges ordered fences from the same context, and keeps
+OR arrays as intact dependencies. Fence arrays record their immutable
+`signal_on_any` setting so merging cannot turn an OR dependency into an AND.
+The reservation update retains 4.19's preemption guard around its seqcount.
+
+The QEMU variant has a separate test-only memfd exporter, adapted to the 4.19
+DMA operations and mapping APIs. Its PFN mapping preserves the source-close
+lifetime fix above. The physical variant includes neither this exporter nor
+the virtual-board patches. QEMU has no Qualcomm secure firmware: its config
+disables early Qualcomm entropy and QHEE memory-protection calls, and its QTEE
+initcall declines the virtual board. The test command additionally skips
+`socinfo_init`, `remoteqdss_init` and `hwinfo_init`, whose hardware is absent.
+These omissions do not apply to a physical boot.
+
+For Neo3, the runner prepares QEMU's generated two-CPU device tree with
+`tools/prepare-pico-qemu-board.py`. Modern QEMU adds a socket wrapper that the
+vendor topology parser cannot understand. Preparation removes that wrapper,
+checks both CPU references, and verifies that every property outside the CPU
+map is unchanged. It refuses physical board identities and inconsistent maps.
+The host needs `fdtget` and `fdtput` from the device-tree compiler tools. An
+explicit virtual board can instead be supplied with `--dtb`.
+
+```sh
+python3 -B tools/test-dma-buf-sync.py PICO_QEMU_KERNEL \
+  --reservation-module --output NEW_TEST_DIRECTORY
+```
+
+`output/pico-recovery-bringup-20261018-v1/dma-buf-qemu-test-v10/` passes the
+complete ioctl suite, 256 mapped-buffer lifetime cases, reservation wait/query
+tests, OR-array preservation and a single flat aggregate of 1,024 independent
+fences. The guest powers off cleanly without kernel warnings. The signed test
+module loads only after the mapping tests; its expected out-of-tree module
+taint is distinct from a kernel warning. The runner records the virtual board,
+firmware exclusions, source identities and input hashes.
+
+The compiled test kernel is
+`output/kernel/pico-neo3/qemu-dmabuf-20261019-v6/`. Its incremental build uses
+private source/build layers over the read-only, fully compiled v2 baseline;
+records retain the baseline, source changes, configuration differences and
+matching signed test-module inputs. It exports a test kernel and that module,
+not a physical firmware or vendor-module bundle. The full physical kernel
+build is separate and has not yet booted on the headset.
+
+Host ASan/UBSan checks of the actual merge function also pass 8,192 AND/OR
+truth-table cases, allocation-failure cleanup, sequence wrap, duplicate fences,
+empty dependencies and 1,024-import ownership checks. Those use modeled fence
+objects; the QEMU results above exercise the real kernel implementation.
+Neither result proves KGSL execution, SDE buffer import, presentation, optical
+quality, stereoscopic VR or persistent Linux installation.

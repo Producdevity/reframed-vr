@@ -15,10 +15,14 @@ class KernelPatchTests(unittest.TestCase):
         physical, patches = kernel.build_inputs(profile, True, False)
         virtual, virtual_patches = kernel.build_inputs(profile, True, True)
         self.assertEqual(virtual[:-1], physical)
-        self.assertEqual(virtual_patches, patches)
+        self.assertEqual(virtual_patches[:len(patches)], patches)
+        self.assertTrue(virtual_patches[len(patches):])
+        self.assertTrue(all(path.parent.name == "pico-neo3-qemu"
+                            for path in virtual_patches[len(patches):]))
         self.assertEqual(virtual[-1].name, "pico-neo3-qemu.config")
         self.assertTrue(all("pico-neo3" in str(path) for path in patches))
-        self.assertNotIn("CONFIG_UDMABUF", kernel.config_values(virtual[-1]))
+        self.assertEqual(kernel.config_values(virtual[-1])["CONFIG_UDMABUF"], "y")
+        self.assertNotIn("CONFIG_UDMABUF", kernel.config_values(physical[-1]))
 
     def test_quest_virtual_transports_keep_quest_source_patches(self):
         profile = kernel.sources.read_profile("quest3")

@@ -1,0 +1,26 @@
+Subject: [Pico QEMU ABI] Refuse QTEE firmware initialization on the virtual board
+
+QEMU has no Qualcomm TEE shared-memory monitor. Keep the exported API
+linked for vendor callers, but do not issue an SMC from its early initcall.
+This patch is selected only by the separate QEMU transport variant.
+
+--- a/drivers/soc/qcom/qtee_shmbridge.c
++++ b/drivers/soc/qcom/qtee_shmbridge.c
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/device.h>
+ #include <linux/slab.h>
+ #include <linux/genalloc.h>
+@@ -342,6 +343,9 @@
+ 	uint32_t ns_vm_ids[] = {VMID_HLOS};
+ 	uint32_t ns_vm_perms[] = {VM_PERM_R|VM_PERM_W};
+ 
++	if (of_machine_is_compatible("linux,dummy-virt"))
++		return -ENODEV;
++
+ 	if (default_bridge.vaddr) {
+ 		pr_warn("qtee shmbridge is already initialized\n");
+ 		return 0;
