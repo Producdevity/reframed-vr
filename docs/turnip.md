@@ -140,6 +140,9 @@ The subsequent [render-path comparison](pico-hmd.md#render-path-and-pacing-compa
 uses the same driver with linear XB30 in compute mode and improves average
 completion cadence to about 80 Hz in its 90 Hz candidate. Missed frames remain,
 and its legacy XR24-only screenshot conversion does not decode XB30 correctly.
+The [format-aware capture](pico-hmd.md#format-aware-native-scanout-capture)
+subsequently verifies those 10-bit buffers. Repeated sessions still show variable
+cadence and vblank-fence errors, so sustained timing acceptance remains open.
 
 ## Correction to earlier build evidence
 

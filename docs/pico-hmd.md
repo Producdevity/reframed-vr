@@ -188,7 +188,8 @@ its full-frame RGB conversion, so its XB30 output is incorrectly decoded and
 cannot serve as a colour-accurate screenshot. Packed sample-word variation is
 not a substitute for correctly decoded pixels or clean lens output. The earlier
 XR24 graphics capture is unaffected. The helper must validate the actual format
-and preserve all native pixel bits before the next compute capture.
+and preserve all native pixel bits. The subsequent capture below implements
+that correction.
 
 All four tests restore the original power floor and governor, complete service
 cleanup and match full BOOT/DTBO hashes. The highest sampled GPU temperature is
@@ -197,6 +198,49 @@ stock return is verified. Reports, raw timing records, the capture limitation
 and the final hash manifest are under
 `output/pico-recovery-bringup-20261018-v1/state-route-v1/vr-clock-v1/`.
 No firmware partitions are written, and native optical acceptance remains open.
+
+## Format-aware native scanout capture
+
+When copied into a native Pico session, `tools/capture-pico-scanout.py` captures
+an already-active dual-DMA framebuffer. Supply the exact boot serial and current
+boot UUID, and choose a new private directory directly under `/run`:
+
+```sh
+python3 /run/capture-pico-scanout.py --boot-serial BOOT_SERIAL \
+  --boot-id NATIVE_BOOT_UUID --output /run/NEW_CAPTURE
+```
+
+The helper checks both halves' framebuffer identity, source/destination
+rectangles, fourcc, modifier, dimensions, pitch and offset. It refuses unsupported
+or inconsistent formats and non-linear layouts. DMA-buffer read synchronization
+brackets the copy. The output retains all 32 native bits in `native.bin`, with
+private `metadata.json` and the corresponding atomic `display-state.txt`.
+`decode_rgb()` interprets the recorded 8/10-bit RGB/BGR layout explicitly;
+it does not infer format from bytes per pixel. The output directory is mode
+0700, its files are mode 0600, and existing capture paths are refused.
+
+Six focused regression tests cover packed primary colours, 10-bit rounding,
+channel order, row padding and layout rejection. The parser also passes the four
+retained real atomic-state captures. A fresh native test then captures linear
+XB30, preserves the full 28,139,520-byte buffer, verifies its hash after transfer,
+and decodes it using the matched state. The decoded full image agrees with the
+helper's sampled preview and shows Steam's welcome UI in both eye viewports.
+This verifies pixel layout and rendered content; single-presentation coherence,
+colorimetry and clean physical lens output remain unverified.
+
+Timing remains unresolved. This fresh boot's 90 Hz configuration averages
+60.00 completions per second; a subsequent warm session averages 88.98. During
+the warm run, 100 successful `drmCrtcGetSequence` calls return one unchanged
+sequence and zero timestamps, so those results cannot measure display cadence.
+Its journal also records 31 vblank-fence `VK_ERROR_DEVICE_LOST` results, including
+errors during active composition, plus one present-wait timeout. The runtime
+reports `VK_GOOGLE_display_timing` unsupported. The display-feedback path requires
+investigation before another cadence claim or pacing change.
+
+Both runs restore the original GPU policy and match full BOOT/DTBO hashes. Normal
+stock return is verified after the second run. The format definitions, tests,
+raw capture, decoded image, journals and hash manifest are retained under
+`output/pico-recovery-bringup-20261018-v1/state-route-v1/scanout-format-v1/`.
 
 ## Calibration file
 

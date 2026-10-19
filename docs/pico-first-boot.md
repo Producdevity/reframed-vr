@@ -373,6 +373,9 @@ A later compute/pacing comparison raises average completion cadence to about
 80 Hz in a 90 Hz mode, with missed frames and an unresolved 10-bit capture
 decoding limitation. See [the controlled comparison](pico-hmd.md#render-path-and-pacing-comparison);
 this does not establish steady 90 Hz or clean native lens output.
+A format-aware follow-up verifies the full 10-bit Steam raster, but repeated
+sessions show variable cadence and unusable vblank timestamp feedback. See
+[the capture and timing follow-up](pico-hmd.md#format-aware-native-scanout-capture).
 
 ## October 19 native GPU presentation
 
