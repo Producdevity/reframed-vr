@@ -1,0 +1,19 @@
+From: Producdevity
+Subject: [PATCH] wsi/display: preserve timeout results across C11 waits
+
+The monotonic condition helper returns thrd_timedout. Display acquisition and
+display-event fence waits expect ETIMEDOUT and otherwise report a surface or
+device failure. Translate only the timeout result at their shared wait helper.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -2185,6 +2185,9 @@
+    };
+ 
+    int ret = u_cnd_monotonic_timedwait(cond, mutex, &abs_timeout);
++   /* WSI wait callers recognize errno ETIMEDOUT rather than the C11 result. */
++   if (ret == thrd_timedout)
++      ret = ETIMEDOUT;
+    wsi_display_debug("%9ld done waiting for event %d\n", pthread_self(), ret);
+    return ret;
+ }

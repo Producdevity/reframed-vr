@@ -144,6 +144,39 @@ The [format-aware capture](pico-hmd.md#format-aware-native-scanout-capture)
 subsequently verifies those 10-bit buffers. Repeated sessions still show variable
 cadence and vblank-fence errors, so sustained timing acceptance remains open.
 
+### Display wait timeout correction
+
+Patch 0013 translates C11 `thrd_timedout` to `ETIMEDOUT` in the shared WSI
+condition-wait helper. Mesa 26.1.8's compiled condition-variable implementation
+returns the former, while display acquisition and display-event fence callers
+expect the latter. Passing it through reports an ordinary timeout as surface
+loss or device loss. Successful waits and other errors retain their results.
+
+`tests/mesa-display-timeout-tests.py` extracts the actual helper and links
+Mesa's compiled condition-variable object with its configured headers. Real
+expired and future deadlines, signalled waits and an injected error produce
+250 checks: 68 fail before the fix and all pass after it. The fixture uses
+ASan/UBSan; the existing Mesa utility object retains its release build flags.
+Run it inside the matching Linux build environment with the WSI source,
+Meson build directory and a new output directory as its three arguments.
+
+An isolated ARM64 diagnostic build passes five Freedreno tests and four
+related WSI helper suites. On the native Pico, the same-driver-hash warm Steam
+session reports 31 vblank-fence `VK_TIMEOUT` warnings instead of the previous
+false `VK_ERROR_DEVICE_LOST` errors. Thirty occur during composition. Missing
+events persist, and the cold/warm completion averages remain 60.00/89.25 Hz;
+this corrects the error contract without establishing steady 90 Hz.
+
+Both sessions retain full format-aware XB30 captures and restore the original
+GPU policy. BOOT/DTBO hashes and normal stock recovery are verified. Evidence
+is retained under
+`output/pico-recovery-bringup-20261018-v1/vblank-feedback-v1/`.
+The candidate library is `57adb34739305d4b52586f5a936097bd1a6e2b12be46a0b6527b603e74ba7848`.
+It is a manually verified RAM diagnostic candidate: canonical artifact
+packaging remains unverified while the three unrelated build/test helper
+deletions in this checkout remain unresolved. Artifact validation was not
+weakened or bypassed.
+
 ## Correction to earlier build evidence
 
 The September 10 `output/mesa/turnip-drm-v5/` driver compiled with

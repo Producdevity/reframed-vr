@@ -242,6 +242,24 @@ stock return is verified after the second run. The format definitions, tests,
 raw capture, decoded image, journals and hash manifest are retained under
 `output/pico-recovery-bringup-20261018-v1/state-route-v1/scanout-format-v1/`.
 
+The subsequent [Mesa wait correction](turnip.md#display-wait-timeout-correction)
+reproduces a C11/errno result mismatch and fixes false device-loss reporting.
+Two new native sessions average 60.00 and 89.25 completions/s with median GPU
+composition times of 8.488 and 8.491 ms. The warm session still has 31 missing
+vblank-event waits, now correctly reported as `VK_TIMEOUT`, including 30 during
+composition. One present-completion wait also times out. No device-loss result
+is recorded. The live kernel's `vblankoffdelay` is 5000 ms; its default alone
+does not identify the missing-event cause. No diagnostic CRTC-counter polling
+is performed in these runs.
+
+Both full XB30 buffers are transferred with matching carrier/member hashes,
+decoded with the maintained helper and visually inspected: the Steam welcome
+quad appears in both eye viewports. Their sampled previews match the full
+decodes. Physical lens clarity, orientation-axis accuracy and stable timing
+remain unverified. The new evidence is under `vblank-feedback-v1/` in the same
+bring-up directory; GPU policy, full BOOT/DTBO hashes and normal stock return
+are verified again.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described
