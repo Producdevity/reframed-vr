@@ -106,6 +106,54 @@ accepts 10–120 seconds, and is not installed or enabled by default. This CPU
 capture/upload path is an initial integration test; an efficient desktop
 sharing path and usable compositor timing remain work in progress.
 
+## Native dual-DMA Steam stereo and timing
+
+Three subsequent 30-second tests in one native RAM boot use the opt-in Turnip
+DMA path, the same experimental stock-optics profile and fresh physical SSC
+subscriptions. Steam runs as a native Linux process in an authenticated
+1280×720 Xvfb desktop; the OpenXR client uploads that desktop to a quad in
+LOCAL space. The graphics compositor uses 50% recommended render scale and a
+120 Hz display mode. The runs submit 3,277, 3,292 and 3,353 quad frames, with
+3,281, 3,295 and 3,356 tracked orientation queries. These are application/API
+counts, not physical presentation rates.
+
+The DRM captures show DMA planes 109/112 sharing a linear XR24 framebuffer,
+with the primary disabled. A full 1920×3664 DMA-buffer readback contains the
+Steam welcome UI projected into both top/bottom eye viewports. Its decoded RGB
+hash is verified, and DMA-buffer read synchronization succeeds. This establishes
+the rendered stereo raster in memory. The readback does not establish a coherent
+single presentation, clean lens output, correct eye ordering or physical motion
+alignment. No owner lens observation accompanies these native runs.
+
+| Run | GPU duration median | Completion interval median | Present-wait results |
+| --- | ---: | ---: | --- |
+| Default governor, initial capture | 19.223 ms | 33.332 ms | 907 success |
+| Default governor, corrected capture | 19.161 ms | 33.327 ms | 907 success, 1 timeout |
+| Temporary performance governor | 18.362 ms | 33.102 ms | 1,016 success, 1 timeout |
+
+The compositor therefore completes at roughly 30 Hz in this workload despite
+the 120 Hz display mode. In each of the latter two runs, five active clock
+samples report 305 MHz, the lowest advertised frequency, with a 587 MHz maximum.
+Changing only the governor to `performance` does not materially improve cadence
+or those samples; the original `msm-adreno-tz` policy is restored and verified.
+Five periodic samples do not establish continuous frequency residency, a thermal
+limit or the cause of the compositor cost. These results do not establish a
+performance ceiling for either Monado or SteamVR.
+
+The initial optional readback helper rejects an incorrect PRIME-export flag;
+the corrected helper passes in the later runs. Owned services are stopped after
+each test; a redundant second stop of the already-unloaded Monado transient unit
+returns `unit not loaded`. Full BOOT and DTBO readback hashes match after every
+run. Normal stock return, offline state and disabled updater are verified after
+the third run. No firmware partitions are written.
+
+The input manifests, reports, full source and scanout captures, timing records
+and stock-return receipt are sealed by `verified-manifest.json` under
+`output/pico-recovery-bringup-20261018-v1/state-route-v1/vr-dma-v1/`.
+Unit calibration and display captures remain outside Git. Optical acceptance,
+physical motion direction, position tracking, efficient desktop sharing and
+compositor timing remain open gates before a usable Steam VR session.
+
 ## Calibration file
 
 Version 1 uses RGB grids. Versions 2 and 3 use the analytic lens model described

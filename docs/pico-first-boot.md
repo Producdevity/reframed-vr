@@ -3,9 +3,11 @@
 The inventoried Neo3 Pro Eye now boots a full native Linux root with systemd
 PID 1 and an authorized USB root console, and returns to stock without physical
 handling. Native GPU execution, initial panel modesets and the native Steam
-welcome UI work; desktop integration and tracking bring-up remain ahead. This is not yet an
-installation procedure. The intended installation replaces Android; stock
-Android is temporarily retained for recovery and staging.
+welcome UI work. A native Steam desktop now projects into both eye viewports
+with physical SSC-backed orientation, verified by framebuffer readback. Clean
+native lens output, motion alignment and usable compositor timing remain open.
+This is not yet an installation procedure. The intended installation replaces
+Android; stock Android is temporarily retained for recovery and staging.
 
 ## October 18 device status
 
@@ -361,6 +363,12 @@ remain unchanged, and normal stock return is verified. This establishes GPU
 presentation on the native DMA path; native optical clarity, calibrated stereo
 and Steam in VR still require acceptance. See `state-route-v1/gpu-dma-v2/` in
 the bring-up evidence directory.
+
+A subsequent native Steam/OpenXR integration test captures the welcome UI in
+both eye viewports using this DMA path and physical SSC-backed orientation.
+Its compositor completion median remains about 33 ms despite a 120 Hz mode.
+This is raster and API evidence; native lens clarity and motion alignment are
+unverified. See [the stereo and timing results](pico-hmd.md#native-dual-dma-steam-stereo-and-timing).
 
 ## October 19 native GPU presentation
 

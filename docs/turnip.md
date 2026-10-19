@@ -130,6 +130,13 @@ verified. Receipts are under `state-route-v1/gpu-dma-v2/` in the bring-up
 evidence directory. Native lens output and VR acceptance remain pending;
 the option is not enabled by default.
 
+The same driver subsequently presents the native Steam desktop quad into both
+eye viewports with physical SSC-backed orientation. Full framebuffer readback
+verifies the stereo raster, but composition takes about 33 ms per completion
+in that workload. This is separate from the 64-frame direct test and does not
+establish lens clarity or a runtime performance winner. See the
+[Steam stereo and timing evidence](pico-hmd.md#native-dual-dma-steam-stereo-and-timing).
+
 ## Correction to earlier build evidence
 
 The September 10 `output/mesa/turnip-drm-v5/` driver compiled with
