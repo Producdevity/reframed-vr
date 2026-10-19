@@ -4,7 +4,8 @@
 
 Pause parameter changes. The matched stock-kernel comparison below preserves
 the mode but changes two half-width DMA planes to one full-width VIG plane.
-Audit this concrete composition difference before selecting another fix.
+A subsequent two-DMA-plane test produces owner-confirmed clean direct green.
+Port this working composition into native Linux before changing panel parameters.
 The cause remains unproven. Changing VR runtime cannot explain a fault
 already reproduced without a VR runtime; a new kernel is not yet justified by
 this symptom. The completed controls and their optical boundaries are recorded
@@ -136,6 +137,36 @@ to normal stock boot-complete. It writes no firmware partitions. There is no
 contemporary lens observation; neither this comparison nor a software screenshot
 establishes clean output. See
 `state-route-v1/matched-takeover-v2/verified-manifest.json` and `analysis.json`.
+
+## Owner-confirmed clean direct green
+
+The next controlled stock-kernel test replaces Android composition with two
+DMA planes, retaining the physical plane IDs 110/113 and their 960×3664 source
+and destination halves, rotation, alpha and blend settings. Both share an owned
+**linear AB24** green buffer. The vendor exclusion rectangles are explicitly
+cleared; pointers originating in the composer process are not replayed.
+The driver accepts an atomic `TEST_ONLY` request and then the two-plane commit
+without `ALLOW_MODESET`; no CRTC or connector property is written. The owner
+answers **“Clean, solid green”** during the verified 90-second hold and then
+confirms that it is green again.
+
+All three mode blobs remain byte-identical to the 72 Hz blob above. Captured
+programming events identify DMA2/DMA3 in both stock and direct phases, with the
+same half-screen geometry. Each capture has 25 objects, 34 distinct blobs and
+zero collector errors. Buffer checks cover 400 samples. Plane-disable cleanup
+succeeds, followed by verified normal stock boot-complete. Kernel, DTB and
+non-ramdisk boot header fields remain stock; no firmware partition is written.
+
+This establishes a clean direct DRM path after Android display services stop.
+It also shows that a linear buffer can produce clean output on this hardware.
+It does not isolate one causal difference from the earlier VIG path: pipe
+selection/count, format, blend state and transaction contents changed together.
+It does not establish clean native-Linux output, patterned rendering, stereo,
+tracking or Steam acceptance. The next step is to reproduce this DMA layout
+under native Linux, then integrate it with GPU presentation and the VR session.
+See `state-route-v1/dma-split-takeover-v2/verified-manifest.json`, `analysis.json`
+and `owner-result.json`. The preceding DMA attempt guard-aborted before composer
+stop; the successful runner waits for the actual stock DMA route to settle.
 
 ## Retained source identity
 

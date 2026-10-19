@@ -338,6 +338,14 @@ has no contemporary optical result and returns to normal stock. Full evidence
 and event-log limitations are in the
 [matched takeover result](pico-display-research-20261019.md#matched-stock-kernel-takeover-result).
 
+A subsequent stock-kernel direct test uses those two DMA planes and stock half-
+screen geometry with an owned linear AB24 green buffer. The owner confirms
+**clean, solid green** during its 90-second hold. Atomic validation, commit,
+plane cleanup and normal stock return succeed, with identical 72 Hz mode blobs
+and no firmware writes. This is the first owner-confirmed clean direct output;
+native Linux, patterned rendering and VR remain separate gates. See the
+[clean direct result](pico-display-research-20261019.md#owner-confirmed-clean-direct-green).
+
 ## October 19 native GPU presentation
 
 The new physical kernel `linux-dmabuf-20261019-v1`, its 38 matching modules,
