@@ -73,6 +73,23 @@ reboot path, so a source-level watchdog recipe alone cannot promise a return
 to stock. Download-mode control, a bounded timeout and the actual reset outcome
 must be checked before relying on that path for an unattended kernel jump.
 
+## Stock watchdog return calibration
+
+On October 20 the runtime download-mode parameter was set to `0`, its Linux
+readback was checked, and no new SCM/download error was reported. Triggering
+the stock Gunyah watchdog through its existing `apps_wd_trigger` file returned
+automatically to completed stock Android in 38.791 seconds. The build, slot A
+and locked/green state were unchanged; the boot ID changed, uid returned to
+2000 and SELinux to Enforcing. Wi-Fi stayed off, with empty routing tables.
+The pinned offline Fugu tool restored RAM root, and `update_engine` was stopped
+again. No physical handling, EDL, flash, erase or factory reset was used.
+
+The private receipt is `watchdog-return-v1/result.json` beneath the port evidence
+directory. This proves the reset outcome while stock Android owns the hardware.
+It does not yet prove a preserved watchdog deadline, successful USB shell or
+stock return after our loader changes CPU/peripheral state. Recheck and clear
+download mode before each such test; the stock boot configuration enables it.
+
 ## Acceptance sequence
 
 1. Preserve and independently hash-check the stock boot inputs and unit data;
