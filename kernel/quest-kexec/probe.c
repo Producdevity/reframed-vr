@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <linux/cred.h>
+#include <linux/efi.h>
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -46,7 +47,7 @@ static int report_regions(struct device_node *node)
 static int report_device(struct device *dev, void *data)
 {
 	static const char * const compatibles[] = {
-		"qcom,dwc3", "snps,dwc3", "qcom,aoss-qmp",
+		"qcom,dwc3", "qcom,dwc-usb3-msm", "snps,dwc3", "qcom,aoss-qmp",
 		"qcom,qmp-aop", "qcom,msm-smmu-v2",
 	};
 	unsigned int *count = data;
@@ -84,6 +85,8 @@ static int __init probe_init(void)
 		return -EPERM;
 
 	si_meminfo(&memory);
+	pr_info(PROBE_PREFIX "efi_flags=%#lx efi_runtime=%d\n",
+		efi.flags, efi_enabled(EFI_RUNTIME_SERVICES));
 	pr_info(PROBE_PREFIX "begin release=%s uid=%u el=%llu sctlr=%#llx tcr=%#llx total_pages=%lu free_pages=%lu page_size=%lu\n",
 		utsname()->release, __kuid_val(current_uid()),
 		read_sysreg(CurrentEL) >> 2, read_sysreg(sctlr_el1),
