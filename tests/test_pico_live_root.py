@@ -21,6 +21,15 @@ class LiveRootConfigTests(unittest.TestCase):
         result = live.config('c980c8d4', 1024, 'a' * 64, 8 * 1024**3, 'reframed-vr-root')
         self.assertIn('PAYLOAD_BYTES=1024\nPAYLOAD_SHA256=' + 'a' * 64, result)
         self.assertIn('ROOT_BYTES=8589934592', result)
+        self.assertIn('CONSOLE_SECONDS=1800\n', result)
+
+    def test_bounded_console_duration(self):
+        for seconds in (60, 7200, 86400):
+            result = live.config('c980c8d4', 1024, 'a' * 64, 4096, 'root', seconds)
+            self.assertIn(f'CONSOLE_SECONDS={seconds}\n', result)
+        for seconds in (True, None, 59, 86401, 7200.0, '7200\ncommand'):
+            with self.subTest(seconds=seconds), self.assertRaises(ValueError):
+                live.config('c980c8d4', 1024, 'a' * 64, 4096, 'root', seconds)
 
     def test_unsafe_identity_or_unbounded_payload_refused(self):
         for serial, size, sha, root_size, label in (

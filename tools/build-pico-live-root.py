@@ -43,15 +43,17 @@ find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > /output/initram
 '''
 
 
-def config(serial, payload_bytes, payload_sha256, root_bytes, label):
+def config(serial, payload_bytes, payload_sha256, root_bytes, label, console_seconds=1800):
     runtime.diagnostic.diagnostic.serial(serial)
     runtime.assembly.root_arguments(label, pico_services=True)
     if not 0 < payload_bytes <= 3 * 1024**3 or not runtime.re.fullmatch('[0-9a-f]{64}', payload_sha256):
         raise ValueError('Compressed root must fit the 3 GiB development limit')
     if type(root_bytes) is not int or not 0 < root_bytes <= 128 * 1024**3:
         raise ValueError('Invalid inner filesystem size')
+    if type(console_seconds) is not int or not 60 <= console_seconds <= 86400:
+        raise ValueError('Console duration must be 60..86400 seconds')
     return (f'BOOT_SERIAL={serial}\nPAYLOAD_BYTES={payload_bytes}\nPAYLOAD_SHA256={payload_sha256}\n'
-            f'ROOT_BYTES={root_bytes}\nROOT_LABEL={label}\n')
+            f'ROOT_BYTES={root_bytes}\nROOT_LABEL={label}\nCONSOLE_SECONDS={console_seconds}\n')
 
 
 def userdata_config(relative, start, sectors):
@@ -101,7 +103,7 @@ def build(args):
         payload_bytes = (output / 'root.squashfs').stat().st_size
         payload_sha = digest(output / 'root.squashfs')
         (output / 'pico-live-root.conf').write_text(config(serial, payload_bytes, payload_sha,
-            (root / 'rootfs.ext4').stat().st_size, inputs['root_label']) + userdata)
+            (root / 'rootfs.ext4').stat().st_size, inputs['root_label'], args.console_seconds) + userdata)
         run(args.initramfs_image, AUGMENT,
             ['-v', f'{initrd}:/baseline:ro', '-v', f'{ROOT / "system/pico"}:/source:ro'], 'augment.log')
         cmdline = runtime.assembly.root_arguments(inputs['root_label'], pico_services=True)
@@ -154,6 +156,8 @@ if __name__ == '__main__':
     parser.add_argument('--userdata-start', type=int, help='Retained userdata start in 512-byte sectors')
     parser.add_argument('--userdata-sectors', type=int, help='Retained userdata length in 512-byte sectors')
     parser.add_argument('--enable-display', action='store_true')
+    parser.add_argument('--console-seconds', type=int, default=1800,
+                        help='Bounded native development console duration, 60..86400 seconds (default: 1800)')
     try:
         build(parser.parse_args())
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
