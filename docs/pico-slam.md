@@ -573,6 +573,35 @@ physical calibration. A physical owner still needs exclusive device access,
 verified settings, regular polling and independently established DMA shutdown.
 Do not call the quiescence acknowledgment solely because a stop ioctl succeeded.
 
+## Pose transport to SteamVR
+
+`pico-slam-channel` transports converted head poses between the separate Bionic
+SLAM producer and a native Linux consumer. Its 136-byte, versioned mapping uses
+lock-free atomic words and a bounded sequence check. The owner serializes one
+writer, creates a fresh mapping before sharing it, and binds readers to explicit
+process-instance and estimator-generation identifiers. It must not truncate or
+reinitialize a mapping that readers still hold.
+
+Startup confidence 0 remains untracked. Once a pose has been published,
+confidence loss or failed conversion stops that generation. Resuming requires
+the owner to establish the world frame again and bind a new generation; an old
+callback cannot publish into or stop the replacement generation. Readers reject
+stale, future, malformed and clock-uncertain samples without returning an old
+pose as tracked.
+
+`pico-steamvr-pose` converts that channel into the actual OpenVR `DriverPose_t`.
+It carries the capture age in `poseTimeOffset`, maps quaternion component order,
+and supplies no invented height, neck model, velocity or prediction. The input
+must already use the calibrated OpenVR head origin and right/up/back world axes.
+Tracking loss returns an invalid pose immediately.
+
+Host sanitizer tests and offline ARM64 tests pass. Concurrent Bionic-to-glibc
+and glibc-to-Bionic process tests verify coherent transport with the actual Pico
+Bionic loader. These are transport and API tests: the live vendor consumer is
+not yet connected, and the existing `steamvr-headset.h` remains a simulator.
+A physical Neo3 driver, calibrated frame binding and actual compositor
+presentation still require integration and device validation.
+
 ## Remaining integration
 
 - Capture native camera buffers with known ownership, format and exposure times.
