@@ -38,9 +38,10 @@ inputs were acquired and both groups stopped cleanly before MCU stream-off.
 The camera QTimer-to-monotonic mapping was measured against the CPU counter.
 The first retained images were almost black. Enabling the MCU's dual exposure
 mode and applying both exposure groups revealed scene content in one camera;
-the other three views remained dark. This is not yet a usable four-camera VIO
-input. Exposure-center correction and optical camera-to-calibration ordering
-remain prerequisites for a usable estimator feed.
+the other three views remained dark. That recording was not a usable
+four-camera VIO input. Later uncovered-room captures below supersede its image-quality result.
+Exposure-center correction and optical camera-to-calibration ordering still
+require physical validation.
 
 The maintained station encoder now selects the stock
 `CameraInitWithReg4323` mode. Native capture verified 347 frames per camera over
@@ -108,9 +109,9 @@ released, and the SSC producer joined without overflowing its ring. Missing
 library messages were traced to system performance reporting and PXR
 notifications; they are not evidence of a missing image-processing dependency.
 No Android framework services were started to satisfy those optional paths.
-Three retained camera views remain almost black; a well-lit, uncovered view and
-physical motion validation are still needed. The diagnostic does not publish
-positional poses to a VR runtime.
+Three retained camera views in that run were almost black; that recording did
+not establish tracking with a well-lit, uncovered view or physical motion.
+The diagnostic does not publish positional poses to a VR runtime.
 
 A second combined run explicitly withheld images until the IMU input covered
 their corrected timestamps. All 249 sets were already covered by 12.1–18.4 ms;
@@ -118,8 +119,8 @@ none needed to wait. It delivered 12,541 IMU pairs and callbacks, again with
 confidence 0, and stopped cleanly. This rules out images arriving ahead of the
 IMU in that run, but does not physically validate the exposure-center constants.
 In the retained 640×480 images, only 6, 10 and 10 pixels exceeded value 16 in the
-three darkest views, respectively. Repeating this unchanged scene is not a
-tracking validation; usable scene detail and head motion remain untested.
+three darkest views, respectively. Repeating that unchanged scene could not
+validate tracking. The later captures below supplied usable scene detail and included a physical motion check.
 
 After returning to stock b1977, its post-boot SLAM logs also showed nearly zero
 keypoints in three views. The last logged four-camera counts were 0, 134, 0, 0,
@@ -149,6 +150,53 @@ the SDK conversion is not evidence of the correct OpenXR world frame or the
 physically calibrated head offset. Neither the oracle nor packet replay proves
 live positional tracking.
 
+### Uncovered-room and motion captures
+
+Later on 2026-10-20, the owner confirmed working stock positional tracking,
+cleared all four outward cameras and faced the headset toward a lit room. A fresh
+native Linux RAM boot captured recognizable scene detail in all four head-frame
+images. Both camera groups stopped cleanly and released the MCU power reference.
+The first capture used 600 exposure lines and gain 128; two views had substantial
+saturation. The following combined runs kept 600 lines and lowered gain to 32.
+This change and the different physical scene prevent attributing the earlier
+failure to one cause alone.
+
+The maintained vendor feed and result decoder then ran against the actual b1977
+library, private factory calibration and live CDSP under native Linux:
+
+| Capture | Four-camera head sets | IMU pairs / pose records | Confidence 1 records | First confidence 1 |
+| --- | --- | --- | --- | --- |
+| Stationary | 249 | 10,776 | 8,148 | 2.567 s |
+| Owner motion | 249 | 10,753 | 8,149 | 2.543 s |
+
+Every retained packet decoded, and all timestamps increased. Both runs changed
+from `(state, confidence, error) = (1, 0, 32)` to `(1, 1, 512)` without a later
+confidence drop. The last tuple also appears in the fresh working stock logs;
+the field named error remains opaque, so 512 is not interpreted as a fault.
+The result callbacks ran at approximately 1,024 Hz; camera head sets arrived at
+25 Hz. Callback rate is not a measurement of independent visual updates.
+
+After initialization, the stationary run covered 7.957 seconds. Maximum
+translation from its first confidence-1 pose was 0.000268 in vendor position
+units, with axis ranges 0.000213/0.000296/0.000358 and at most 0.0244 degrees of
+orientation change. These are short-term estimator stability measurements,
+not independently measured physical accuracy.
+
+The owner performed an approximate sideways movement, return and gentle
+rotation by feel. The recording contains translation and rotation: confidence-1
+axis ranges were 0.0748/0.2270/0.0704 vendor units, with at most 8.93 degrees of
+orientation change from its first confidence-1 pose. Its endpoint was still
+moving and 0.2419 vendor units from that initial pose; the capture does not
+establish a completed return, measured scale, axis alignment or loop closure.
+It establishes a live positional response under native Linux, independently of
+an Android framework session. No positional pose is published to SteamVR yet.
+
+The carrier archive in `live-20261020-v1/vio-export.tar.gz` is 4,198,518 bytes,
+SHA-256 `75014c026bf06cc067c45acd93b344d559599b4bace093e08412e87ccba1545d`.
+Its embedded manifest verifies all 20 exported members, including both complete
+pose streams, component logs and eight camera images. The carrier, member
+receipts and analysis remain private under the evidence directory below.
+
 ### Maintained vendor input feed
 
 `pico-vendor-slam-feed` now owns the input-side behavior previously confined to
@@ -175,10 +223,10 @@ elapsed time alone is not used to declare a buffer safe to overwrite.
 
 The feed passed 100 delayed-read ownership cycles and 50 failure scenarios
 under host address/undefined-behavior sanitizers and again under the actual
-stock Bionic loader in an offline ARM64 container. The next private diagnostic
-consumer compiles with this feed and the maintained result decoder. These are
-software checks with a modeled backend, not another on-headset VIO run or
-evidence of positional tracking. Run the host checks with:
+stock Bionic loader in an offline ARM64 container. The private diagnostic
+consumer links this feed and the maintained result decoder; the two physical
+runs above now validate that combination against the actual vendor backend.
+The sanitizer checks themselves use a modeled backend. Run the host checks with:
 
 ```sh
 python3 -B -m unittest discover -s tests -p test_pico_vendor_slam_feed.py
@@ -188,8 +236,9 @@ python3 -B -m unittest discover -s tests -p test_pico_vendor_slam_feed.py
 Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
 `output/pico-recovery-bringup-20261018-v1/neo3-6dof-v1/`. BOOT and DTBO readbacks
-still match the preserved originals. Native camera DMA/fence delivery is now
-established for short captures. No on-device positional pose has been established.
+still match the preserved originals. Native camera DMA/fence delivery and a
+positional estimator response are now established for short captures. Continuous operation, calibrated head/world
+conversion, loss/recovery and runtime pose publication remain unverified.
 
 ## Build
 
