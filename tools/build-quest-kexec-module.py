@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a read-only Quest 3 probe; never load it or contact a device."""
+"""Build a selected Quest 3 module; never load it or contact a device."""
 import argparse
 import difflib
 import gzip
@@ -22,8 +22,12 @@ EXPORTERS = (
     'drivers/of/base.o', 'drivers/base/bus.o', 'drivers/base/platform.o',
     'mm/page_alloc.o',
     'drivers/firmware/efi/efi.o',
+    'kernel/reboot.o',
+    'kernel/cpu.o', 'kernel/params.o',
 )
 ASSEMBLY_EXPORTERS = ('arch/arm64/lib/strcmp.o', 'arch/arm64/lib/memset.o')
+MODULES = {'probe': ('reframed_quest_probe', 'probe.c'),
+           'reset-test': ('reframed_quest_reset_test', 'reset-test.c')}
 
 
 def sha(path):
@@ -60,6 +64,8 @@ def source_digest(root):
 
 def inside():
     out = Path('/output')
+    selection = json.loads((out / 'inputs.json').read_text())['module']
+    module_name, source_name = MODULES[selection]
     build = out / 'kbuild'
     build.mkdir()
     requested = (out / 'requested.config').read_text()
@@ -72,6 +78,7 @@ def inside():
     make = ['make', '-C', '/source', 'O=' + str(build), 'CC=clang-14',
             'HOSTCC=gcc', 'HOSTCXX=g++', 'PYTHON=python3',
             'LOCALVERSION=-gd7102a837402',
+            'QUEST_KEXEC_MODULE=' + module_name,
             'LD=ld.lld --threads=1 --lto-partitions=1']
     report = {'status': 'started', 'commands': [], 'hardware_tested': False}
     start = time.monotonic()
@@ -132,7 +139,7 @@ def inside():
                     for line in Path('/stock/Module.symvers').read_text().splitlines()}
         imported = {name: int(value, 16) for value, name in re.findall(
             r'\{ 0x([0-9a-f]+), "([^"]+)" \}',
-            (out / 'module/reframed_quest_probe.mod.c').read_text())}
+            (out / 'module' / (module_name + '.mod.c')).read_text())}
         if not imported:
             raise ValueError('Module has no versioned imports')
         missing = imported.keys() - generated.keys()
@@ -142,12 +149,12 @@ def inside():
             if value != expected.get(name) or value != generated.get(name):
                 raise ValueError('Stock/source/module CRC disagreement: ' + name)
         report['verified_imports'] = {key: f'{value:08x}' for key, value in imported.items()}
-        module = out / 'module/reframed_quest_probe.ko'
+        module = out / 'module' / (module_name + '.ko')
         data = module.read_bytes()
         vermagic = RELEASE + ' SMP preempt mod_unload modversions aarch64'
         if ('vermagic=' + vermagic + '\x00').encode() not in data:
             raise ValueError('Unexpected module vermagic')
-        command = (out / 'module/.probe.o.cmd').read_text()
+        command = (out / 'module' / ('.' + source_name[:-2] + '.o.cmd')).read_text()
         for flag in ('-flto', '-fsanitize=cfi', '-fsanitize=shadow-call-stack', '-ffixed-x18'):
             if flag not in command:
                 raise ValueError('Missing compile protection: ' + flag)
@@ -164,6 +171,7 @@ def inside():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--module', choices=MODULES, default='probe')
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--stock-symvers', type=Path, required=True)
@@ -181,16 +189,16 @@ def main():
     out.mkdir(parents=True)
     module = out / 'module'
     module.mkdir()
-    for name in ('Makefile', 'probe.c'):
+    for name in ('Makefile', MODULES[args.module][1]):
         shutil.copyfile(ROOT / 'kernel/quest-kexec' / name, module / name)
     config = args.config.read_bytes()
     if config.startswith(b'\x1f\x8b'):
         config = gzip.decompress(config)
     (out / 'requested.config').write_bytes(config)
-    inputs = {'release': RELEASE, 'source_profile_sha256': sha(ROOT / 'profiles/kernel/quest3.json'),
+    inputs = {'module': args.module, 'release': RELEASE, 'source_profile_sha256': sha(ROOT / 'profiles/kernel/quest3.json'),
               'source_tree_sha256': source_digest(args.source),
               'config_sha256': sha(args.config), 'stock_symvers_sha256': sha(args.stock_symvers),
-              'probe_sha256': sha(module / 'probe.c'), 'makefile_sha256': sha(module / 'Makefile'),
+              'module_source_sha256': sha(module / MODULES[args.module][1]), 'makefile_sha256': sha(module / 'Makefile'),
               'builder_sha256': sha(Path(__file__)), 'container_image': IMAGE,
               'compiler_sha256': sha(args.toolchain / 'bin/clang-14')}
     (out / 'inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')

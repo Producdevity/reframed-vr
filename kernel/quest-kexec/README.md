@@ -10,7 +10,7 @@ Build with the captured stock configuration, the exact Android Clang 14.0.7
 build `8508608`, and a hash-verified stock vmlinux `Module.symvers`:
 
 ```sh
-python3 -B tools/build-quest-kexec-probe.py \
+python3 -B tools/build-quest-kexec-module.py --module probe \
   --source EXACT_QUEST_SOURCE \
   --config CAPTURED_PROC_CONFIG_GZ \
   --stock-symvers STOCK_MODULE_SYMVERS \
@@ -49,3 +49,31 @@ its receipts are `probe-build-v6`, `probe-vm-v2` and `probe-device-v2`.
 This validates a limited module interface. RAM staging, the transition,
 peripheral handoff, Linux USB access and reset-to-stock remain separate gates
 in [the port plan](../../docs/quest-kexec.md).
+
+## Separate no-jump reset rehearsal
+
+The same builder accepts `--module reset-test` for `reset-test.c`. Its default
+mode checks the board, release, uid and EFI gate, then returns `-ECANCELED`.
+Only the explicit load parameter `execute=1` enables the reset path. The
+operator must first verify the matching firmware, offline state, enabled GH
+watchdog and runtime `qcom_dload_mode.download_mode=0` on the selected unit.
+
+The reset path registers a typed, command-gated restart handler, sets a
+45-second GH watchdog deadline and calls normal `kernel_restart()`. If reached,
+the late handler refreshes that deadline and waits without jumping to another
+kernel. Stock's pet thread can still run before late entry; this is not a
+general shutdown-hang timeout.
+
+Build `reset-test-build-v2` passed all 12 import comparisons and the inert
+stock-kernel VM/device tests. Binary SHA-256:
+`6326617a149b9536132c4d8aeea6dda447dc4ea700a30957282cdffc24821f29`.
+The enabled rehearsal returned to completed stock Android in 66.702 seconds,
+with the same build, slot and locked/green state. No late-handler record was
+recovered, so the timing is not direct proof of that handler's execution.
+
+The first attempt to restore RAM root failed. An ordinary offline stock reboot
+cleared its partial cache changes; after boot settled, the pinned Fugu tool
+restored root and `update_engine` was stopped again. The cause of the first
+failure is unproved. Receipts are `reset-test-vm-v1`,
+`reset-test-device-inert-v1` and `restart-handler-return-v1` under the private
+port evidence directory. No custom kernel has executed.
