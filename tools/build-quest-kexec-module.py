@@ -28,9 +28,14 @@ EXPORTERS = (
 ASSEMBLY_EXPORTERS = ('arch/arm64/lib/strcmp.o', 'arch/arm64/lib/memset.o')
 MODULES = {'probe': ('reframed_quest_probe', 'probe.c'),
            'reset-test': ('reframed_quest_reset_test', 'reset-test.c'),
-           'memory-test': ('reframed_quest_memory_test', 'memory-test.c')}
+           'memory-test': ('reframed_quest_memory_test', 'memory-test.c'),
+           'usb-test': ('reframed_quest_usb_test', 'usb-test.c')}
 MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
-                                  'kernel/time/timekeeping.o', 'arch/arm64/mm/init.o')}
+                                  'kernel/time/timekeeping.o', 'arch/arm64/mm/init.o'),
+                    'usb-test': ('drivers/base/core.o', 'drivers/base/power/runtime.o',
+                                 'arch/arm64/mm/ioremap.o', 'kernel/time/hrtimer.o',
+                                 'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o',
+                                 'lib/vsprintf.o')}
 
 
 def sha(path):

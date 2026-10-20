@@ -136,6 +136,14 @@ the Image region, with 96 MiB of separate heap RAM including two low DMA banks.
 All patterns and cleanup passed without losing RAM root or changing the boot.
 These allocations were released; their reported addresses are not reserved.
 
+A separate [USB observer](../kernel/quest-kexec/README.md#usb-halt-and-rebind-observer)
+also passed the physical configfs gadget shutdown/rebind check. Five register
+samples confirmed device-mode hardware halt with event interrupts disabled;
+both platform drivers stayed bound. Rebinding, module cleanup and watchdog
+restoration passed without rebooting or restarting rooted adbd. The remaining
+transition still needs the returning MMU test and a final USB halt check after
+CPU shutdown.
+
 A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its
 default inert tests and an enabled stock-return rehearsal. Completed stock
 Android returned in 66.702 seconds with unchanged firmware and boot state.
