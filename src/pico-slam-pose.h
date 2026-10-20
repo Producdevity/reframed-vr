@@ -3,6 +3,10 @@
 
 #include "pico-slam-result.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct pico_slam_pose {
     double orientation[4]; /* x, y, z, w */
     double position[3]; /* metres */
@@ -30,4 +34,7 @@ bool pico_slam_pose_convert(const struct pico_slam_pose_config *config,
                             int64_t uncertainty_ns, int64_t now_ns,
                             struct pico_slam_pose *world_from_head);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

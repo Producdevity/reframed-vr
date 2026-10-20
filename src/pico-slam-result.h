@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define PICO_SLAM_RESULT_SIZE 0x170
 
 struct pico_slam_result {
@@ -18,4 +22,7 @@ struct pico_slam_result {
  * No prediction, head offset, world conversion or tracking validity is inferred.
  * Status bytes and the error field remain opaque. Failure preserves output. */
 bool pico_slam_result_decode(const void *bytes, size_t size, struct pico_slam_result *result);
+#ifdef __cplusplus
+}
+#endif
 #endif

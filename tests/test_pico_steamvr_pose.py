@@ -20,7 +20,7 @@ class PicoSteamvrPoseTests(unittest.TestCase):
             flags = ['-O1', '-g', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                      '-fno-sanitize-recover=all', '-I', str(ROOT / 'src')]
             objects = []
-            for name in ('pico-slam-channel', 'pico-slam-pose'):
+            for name in ('pico-slam-channel', 'pico-slam-pose', 'pico-slam-result', 'pico-vendor-slam-output'):
                 target = directory / (name + '.o')
                 subprocess.run(['cc', '-std=c11', *flags, '-c', str(ROOT / 'src' / (name + '.c')),
                                 '-o', str(target)], check=True, capture_output=True, text=True, timeout=30)
@@ -28,7 +28,7 @@ class PicoSteamvrPoseTests(unittest.TestCase):
             binary = directory / 'pico-steamvr-pose'
             subprocess.run(['c++', '-std=c++17', *flags, '-isystem', str(SDK),
                             str(ROOT / 'tests/pico-steamvr-pose.cpp'), str(ROOT / 'src/pico-steamvr-pose.cpp'),
-                            *objects, '-lm', '-o', str(binary)],
+                            *objects, '-pthread', '-lm', '-o', str(binary)],
                            check=True, capture_output=True, text=True, timeout=30)
             result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=10)
             self.assertIn('PICO_STEAMVR_POSE_PASS', result.stdout)

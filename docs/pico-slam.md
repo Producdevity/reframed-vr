@@ -595,10 +595,24 @@ and supplies no invented height, neck model, velocity or prediction. The input
 must already use the calibrated OpenVR head origin and right/up/back world axes.
 Tracking loss returns an invalid pose immediately.
 
+`pico-vendor-slam-output` owns result-side callback serialization, including
+`getAlgorithmResult`, decoding and channel publication. It rejects invalid
+configuration before beginning a generation. A failed result call, malformed
+packet, regressing clock or stale tracked result stops publication. Stop waits
+for an in-flight result call, then prevents late callbacks from accessing the
+vendor handle. The process owner must still join/unregister vendor callbacks
+before releasing the output object.
+
 Host sanitizer tests and offline ARM64 tests pass. Concurrent Bionic-to-glibc
 and glibc-to-Bionic process tests verify coherent transport with the actual Pico
-Bionic loader. These are transport and API tests: the live vendor consumer is
-not yet connected, and the existing `steamvr-headset.h` remains a simulator.
+Bionic loader. The result owner also passes 4,000 concurrent callbacks, eight
+fault cases and shutdown during a blocked result read. Replay through the
+complete decoder/conversion/publication/OpenVR chain processes all 61,905
+retained packets and publishes exactly 59,342 tracked poses; the remaining
+startup packets stay invalid. Bionic and glibc result-owner replays agree.
+Replay uses explicit identity test transforms, not verified head calibration.
+These are transport and API tests: live publication has not yet been tested,
+and the existing `steamvr-headset.h` remains a simulator.
 A physical Neo3 driver, calibrated frame binding and actual compositor
 presentation still require integration and device validation.
 

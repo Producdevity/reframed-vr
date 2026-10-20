@@ -2,6 +2,20 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include "pico-vendor-slam-output.h"
+
+struct Replay {
+    uint8_t bytes[PICO_SLAM_RESULT_SIZE];
+    int64_t now;
+};
+
+static int get_result(void *data, void *bytes)
+{
+    std::memcpy(bytes, static_cast<Replay *>(data)->bytes, PICO_SLAM_RESULT_SIZE);
+    return 0;
+}
+static int64_t clock_ns(void *data) { return static_cast<Replay *>(data)->now; }
 
 static void near(double a, double b) { assert(std::fabs(a-b)<1e-9); }
 static void invalid(const vr::DriverPose_t &p, bool connected=true)
@@ -12,7 +26,7 @@ static void invalid(const vr::DriverPose_t &p, bool connected=true)
     for(unsigned i=0;i<3;++i)assert(p.vecPosition[i]==0&&p.vecVelocity[i]==0);
 }
 
-int main()
+int main(int argc, char **argv)
 {
     pico_slam_channel channel{};
     assert(pico_slam_channel_init(&channel,42)&&pico_slam_channel_begin(&channel,1));
@@ -53,5 +67,41 @@ int main()
     invalid(pico_steamvr_pose(&channel,42,1,now,age,true));
     assert(pico_steamvr_pose(&channel,42,2,now,age,true).poseIsValid);
     assert(pico_slam_channel_stop(&channel,2));invalid(pico_steamvr_pose(&channel,42,2,now,age,true));
-    std::puts("PICO_STEAMVR_POSE_PASS");
+    unsigned records=0,published=0;
+    if (argc==2) {
+        FILE *file=std::fopen(argv[1],"rb");assert(file);
+        Replay replay{};
+        assert(pico_slam_channel_init(&channel,77));
+        pico_vendor_slam_output_config config{};
+        config.channel=&channel;config.generation=1;
+        config.pose.world_from_slam.orientation[3]=config.pose.body_from_head.orientation[3]=1;
+        config.pose.direction=PICO_SLAM_WORLD_FROM_BODY;config.pose.metres_per_unit=1;config.pose.max_age_ns=age;
+        config.uncertainty_ns=1000;config.handle=config.clock_data=&replay;
+        config.get_result=get_result;config.monotonic_ns=clock_ns;
+        pico_vendor_slam_output *output=nullptr;
+        assert(!pico_vendor_slam_output_create(&config,&output));
+        size_t count;
+        while ((count=std::fread(replay.bytes,1,sizeof(replay.bytes),file))) {
+            pico_slam_result decoded{};
+            assert(count==sizeof(replay.bytes)&&pico_slam_result_decode(replay.bytes,count,&decoded));
+            replay.now=decoded.timestamp_ns+2000000;
+            auto rc=pico_vendor_slam_output_callback(output);
+            auto pose=pico_steamvr_pose(&channel,77,1,replay.now,age,true);
+            if (decoded.state==1&&decoded.confidence==1) {
+                assert(rc==PICO_SLAM_CHANNEL_PUBLISHED&&pose.poseIsValid);
+                for (unsigned i=0;i<3;++i) near(pose.vecPosition[i],decoded.position[i]);
+                near(pose.qRotation.w,decoded.orientation[3]);
+                near(pose.qRotation.x,decoded.orientation[0]);
+                near(pose.qRotation.y,decoded.orientation[1]);
+                near(pose.qRotation.z,decoded.orientation[2]);
+                near(pose.poseTimeOffset,-.002);++published;
+            } else {assert(rc==PICO_SLAM_CHANNEL_WAITING);invalid(pose);}
+            ++records;
+        }
+        assert(!std::ferror(file));std::fclose(file);
+        pico_vendor_slam_output_stop(output);
+        invalid(pico_steamvr_pose(&channel,77,1,replay.now,age,true));
+        assert(!pico_vendor_slam_output_release(&output));
+    }
+    std::printf("PICO_STEAMVR_POSE_PASS replay_records=%u published=%u\n",records,published);
 }

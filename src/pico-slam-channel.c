@@ -131,7 +131,7 @@ enum pico_slam_channel_result pico_slam_channel_publish_result(
     }
     struct pico_slam_channel_sample sample={.generation=generation,.uncertainty_ns=uncertainty,.published_ns=now};
     if (!pico_slam_pose_convert(config,result,uncertainty,now,&sample.pose)) {
-        if (__atomic_load_n(&c->words[TIMESTAMP],__ATOMIC_RELAXED)) {
+        if (result->confidence == 1 || __atomic_load_n(&c->words[TIMESTAMP],__ATOMIC_RELAXED)) {
             pico_slam_channel_stop(c,generation);
             return PICO_SLAM_CHANNEL_REFUSED;
         }
