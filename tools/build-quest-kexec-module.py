@@ -31,7 +31,8 @@ MODULES = {'probe': ('reframed_quest_probe', 'probe.c'),
            'memory-test': ('reframed_quest_memory_test', 'memory-test.c'),
            'usb-test': ('reframed_quest_usb_test', 'usb-test.c'),
            'mmu-test': ('reframed_quest_mmu_test', 'mmu-test.c'),
-           'ram-stage': ('reframed_quest_ram_stage', 'ram-stage.c')}
+           'ram-stage': ('reframed_quest_ram_stage', 'ram-stage.c'),
+           'boot': ('reframed_quest_boot', 'boot.c')}
 MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
                                   'kernel/time/timekeeping.o', 'arch/arm64/mm/init.o'),
                     'usb-test': ('drivers/base/core.o', 'drivers/base/power/runtime.o',
@@ -43,10 +44,18 @@ MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
                                  'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o'),
                     'ram-stage': ('arch/arm64/mm/init.o', 'kernel/time/hrtimer.o',
                                   'kernel/ksysfs.o', 'lib/kobject.o',
-                                  'fs/sysfs/file.o', 'lib/vsprintf.o')}
+                                  'fs/sysfs/file.o', 'lib/vsprintf.o'),
+                    'boot': ('arch/arm64/mm/init.o', 'kernel/time/hrtimer.o',
+                             'kernel/ksysfs.o', 'lib/kobject.o', 'fs/sysfs/file.o',
+                             'lib/vsprintf.o', 'drivers/base/core.o',
+                             'drivers/base/power/runtime.o', 'arch/arm64/mm/ioremap.o',
+                             'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o',
+                             'arch/arm64/kernel/smp.o',
+                             'lib/crypto/sha256.o', 'lib/hexdump.o')}
 MODULE_EXTRA_FILES = {'mmu-test': ('transition.S',),
                       'memory-test': ('ram.c', 'ram.h'),
-                      'ram-stage': ('ram.c', 'ram.h')}
+                      'ram-stage': ('ram.c', 'ram.h', 'stage.c', 'stage.h'),
+                      'boot': ('ram.c', 'ram.h', 'stage.c', 'stage.h', 'transition.S')}
 
 
 def sha(path):
@@ -87,7 +96,9 @@ def inside():
     module_name, source_name = MODULES[selection]
     exporters = EXPORTERS + MODULE_EXPORTERS.get(selection, ())
     assembly_exporters = ASSEMBLY_EXPORTERS + (('arch/arm64/lib/memcpy.o',)
-                                               if selection in ('mmu-test', 'ram-stage') else ())
+                                               if selection in ('mmu-test', 'ram-stage', 'boot') else ())
+    if selection == 'boot':
+        assembly_exporters += ('arch/arm64/lib/strlen.o',)
     build = out / 'kbuild'
     build.mkdir()
     requested = (out / 'requested.config').read_text()

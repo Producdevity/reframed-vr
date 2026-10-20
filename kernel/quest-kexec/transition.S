@@ -101,3 +101,45 @@ reframed_phys_pc:
 .global reframed_phys_probe_end
 reframed_phys_probe_end:
 SYM_FUNC_END(reframed_phys_probe)
+
+/* x0: TTBR0 root; x1: owned code page; x2: Image; x3: DTB. */
+SYM_FUNC_START(reframed_enter)
+	msr daifset, #0xf
+	mov x19, x2
+	mov x20, x3
+	mrs x9, tcr_el1
+	orr x9, x9, #(1 << 7)
+	msr tcr_el1, x9
+	isb
+	dsb ishst
+	tlbi vmalle1
+	dsb ish
+	isb
+	msr ttbr0_el1, x0
+	bic x9, x9, #0x3f
+	mov x10, #25
+	orr x9, x9, x10
+	bic x9, x9, #(3 << 14)
+	bic x9, x9, #(1 << 37)
+	bic x9, x9, #(1 << 7)
+	msr tcr_el1, x9
+	isb
+	ic iallu
+	dsb sy
+	isb
+	br x1
+SYM_FUNC_END(reframed_enter)
+
+SYM_FUNC_START(reframed_phys_enter)
+	mov_q x12, INIT_SCTLR_EL1_MMU_OFF
+	pre_disable_mmu_workaround
+	msr sctlr_el1, x12
+	isb
+	mov x0, x20
+	mov x1, xzr
+	mov x2, xzr
+	mov x3, xzr
+	br x19
+.global reframed_phys_enter_end
+reframed_phys_enter_end:
+SYM_FUNC_END(reframed_phys_enter)
