@@ -1,0 +1,27 @@
+Subject: [PATCH] drm/msm/dsi: select host requests for non-continuous clocks
+
+Configure request selection before enabling the controller, while its existing
+state check and controller mutex protect the operation. The non-continuous
+clock path otherwise leaves DSI_LANE_CTRL bit 24 set. Both Neo3 controllers
+were observed in that state with corrupted physical output, despite correct
+linear framebuffer contents. This does not itself establish a display fix.
+
+Adapted from the diagnosis in PicoFrame patch 0015, commit 79110e2
+(https://github.com/TheReal-Flo/PicoFrame). Keep continuous-clock behavior and
+controllers without the request-selection callback unchanged.
+
+--- a/techpack/display/msm/dsi/dsi_ctrl.c
++++ b/techpack/display/msm/dsi/dsi_ctrl.c
+@@ -3480,6 +3480,10 @@
+-	if (state == DSI_CTRL_ENGINE_ON)
++	if (state == DSI_CTRL_ENGINE_ON) {
++		if (!dsi_ctrl->host_config.common_config.force_hs_clk_lane &&
++				dsi_ctrl->hw.ops.hs_req_sel)
++			dsi_ctrl->hw.ops.hs_req_sel(&dsi_ctrl->hw, true);
+ 		dsi_ctrl->hw.ops.ctrl_en(&dsi_ctrl->hw, true);
+-	else
++	} else {
+ 		dsi_ctrl->hw.ops.ctrl_en(&dsi_ctrl->hw, false);
++	}
+ 
+ 	DSI_CTRL_DEBUG(dsi_ctrl, "Set host engine state = %d\n", state);

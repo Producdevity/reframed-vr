@@ -1,0 +1,24 @@
+Subject: dsi: use the three-bit lane swap selector on v2.4
+
+Neo3 stock controller readback has LANE_SWAP_CTRL=0 for identity
+routing. The native cold initialization writes the v2 one-hot nibble
+map 0x8421, which reads back as selector 1 on both controllers.
+Upstream msm DSI uses the three-bit legacy selector for this register;
+reuse the existing selector helper on v2.4 while retaining the per-lane
+PHY configuration and all other controller versions.
+
+This is a display test candidate; physical output has not been verified.
+
+--- a/techpack/display/msm/dsi/dsi_catalog.c
++++ b/techpack/display/msm/dsi/dsi_catalog.c
+@@ -102,7 +102,9 @@
+ 	case DSI_CTRL_VERSION_2_4:
+ 		ctrl->ops.phy_reset_config = dsi_ctrl_hw_22_phy_reset_config;
+ 		ctrl->ops.config_clk_gating = dsi_ctrl_hw_22_config_clk_gating;
+-		ctrl->ops.setup_lane_map = dsi_ctrl_hw_20_setup_lane_map;
++		ctrl->ops.setup_lane_map = version == DSI_CTRL_VERSION_2_4 ?
++			dsi_ctrl_hw_14_setup_lane_map :
++			dsi_ctrl_hw_20_setup_lane_map;
+ 		ctrl->ops.wait_for_lane_idle =
+ 			dsi_ctrl_hw_20_wait_for_lane_idle;
+ 		ctrl->ops.reg_dump_to_buffer =
