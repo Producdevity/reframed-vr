@@ -20,7 +20,8 @@ static int memory_failure(void) { return ++memory_calls == fail_memory ? -EIO : 
 int pico_camera_buffer_create(int crm, int ion, const struct pico_camera_buffer_config *c,
                               struct pico_camera_buffer **out)
 {
-    assert(crm == 10 && ion == -1 && buffer_count < 32 && !*out && c->cached);
+    assert(crm == 10 && ion == -1 && buffer_count < 32 && !*out);
+    assert(c->cached == (c->mapping == PICO_CAMERA_MEMORY_CPU));
     assert(c->size == 4096 || c->size == 8192);
     if (c->mapping == PICO_CAMERA_MEMORY_CPU) assert(!c->mmu_count);
     else assert(c->mapping == PICO_CAMERA_MEMORY_SHARED && c->mmu_count == 1 && c->mmus[0] == 31);

@@ -38,7 +38,7 @@ static int prepare(const struct pico_camera_front_end_target *target,
         bool mapped = ife && i == DIRECT;
         struct pico_camera_buffer_config c = {.kind = PICO_CAMERA_BUFFER_COMMAND,
             .mapping = mapped ? mapping : PICO_CAMERA_MEMORY_CPU,
-            .size = mapped ? 8192 : 4096, .cached = true,
+            .size = mapped ? 8192 : 4096, .cached = !mapped,
             .mmus = {mapped ? mmu : 0}, .mmu_count = mapped ? 1 : 0};
         int result = pico_camera_buffer_create(target->crm_fd, -1, &c, &s->buffers[i]);
         if (result) return result;

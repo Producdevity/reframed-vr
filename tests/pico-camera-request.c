@@ -40,10 +40,13 @@ int pico_camera_buffer_create(int crm, int ion, const struct pico_camera_buffer_
     assert(b->view.data);
     switch (id % 4) {
     case 0: assert(c->kind == PICO_CAMERA_BUFFER_PIXELS && c->mapping == PICO_CAMERA_MEMORY_IO);
+        assert(c->cached);
         assert(c->mmu_count == 1 && c->mmus[0] == 71 && c->ion_heap == 25 && c->size == 8192); break;
     case 1: case 2: assert(c->kind == PICO_CAMERA_BUFFER_PACKET && c->mapping == PICO_CAMERA_MEMORY_CPU);
+        assert(c->cached);
         assert(!c->mmu_count && c->size == 4096); break;
     case 3: assert(c->kind == PICO_CAMERA_BUFFER_COMMAND && c->mapping == PICO_CAMERA_MEMORY_SHARED);
+        assert(!c->cached);
         assert(c->mmu_count == 1 && c->mmus[0] == 72 && c->size == 4096); break;
     }
     int result = memory_failure(); b->ready = !result; return result;

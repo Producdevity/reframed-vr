@@ -54,6 +54,7 @@ int pico_camera_request_prepare(const struct pico_camera_request_config *config,
         if (result) return result;
     }
     allocation.kind = PICO_CAMERA_BUFFER_COMMAND; allocation.mapping = config->command_mapping;
+    allocation.cached = false;
     allocation.mmus[0] = config->command_mmu; allocation.mmu_count = 1;
     result = pico_camera_buffer_create(config->crm_fd, config->ion_fd, &allocation, &r->buffers[IFE_COMMAND]);
     if (result) return result;

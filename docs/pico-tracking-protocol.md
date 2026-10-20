@@ -1094,6 +1094,16 @@ from the capability query, and no secure mapping is requested. CPU cache access
 and userspace mapping are separate from this ioctl layer. The caller owns each
 returned fd and retains it until both DMA and CRM use have ended.
 
+Buffers containing kernel-generated CDM commands must be uncached on b1977.
+The retained kernel keeps their CPU mapping across submissions and does not
+clean those command writes before CDM execution. A userspace cache flush before
+configuration cannot cover commands the kernel writes afterward. Native capture
+with cached command memory stopped after two frames per camera with a CDM
+invalid-command interrupt. Uncached command memory captured 247 frames per
+camera over five seconds and stopped cleanly. Pixel and CPU-only packet buffers
+remain cached; image access still uses explicit DMA-BUF synchronization. This
+short capture test does not establish image quality, exposure timing or 6DoF.
+
 Memory tests exercise the retained CRM allocation/import/release dispatch and
 flag validators in 76 calls, with ION and MMU operations mocked. Another 50
 host/ARM64 sanitizer cases cover malformed outputs, partial errors, bounded MMU

@@ -31,7 +31,7 @@ int pico_camera_buffer_create(int crm, int ion, const struct pico_camera_buffer_
     assert(c->kind == (command ? PICO_CAMERA_BUFFER_COMMAND : PICO_CAMERA_BUFFER_PACKET));
     assert(c->mapping == (mapped ? expected.command_mapping : PICO_CAMERA_MEMORY_CPU));
     assert(c->mmu_count == (mapped ? 1U : 0U) && (!mapped || c->mmus[0] == 55));
-    assert(c->cached && c->size == (mapped ? 8192U : 4096U));
+    assert(c->cached == !mapped && c->size == (mapped ? 8192U : 4096U));
     struct pico_camera_buffer *b = calloc(1, sizeof(*b)); assert(b);
     b->view = (struct pico_camera_buffer_view){100 + (int)next_buffer, 200 + (int)next_buffer, calloc(1, c->size), c->size};
     assert(b->view.data); buffers[next_buffer++] = b; *out = b; ++live;
