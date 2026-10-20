@@ -35,6 +35,8 @@ static bool decode(const void *payload, size_t length, struct ssc_imu_vector *ve
     else {
         assert(vector->accuracy <= 3);
         for (unsigned i = 0; i < 3; i++) assert(isfinite(vector->values[i]));
+        assert(isfinite(vector->fourth));
+        if (!vector->has_fourth) assert(vector->fourth == 0);
     }
     checks++;
     return result;
@@ -50,6 +52,7 @@ static void payload_tests(void)
     memset(&vector, 0x5a, sizeof(vector));
     assert(decode(packed, sizeof(packed), &vector));
     assert(vector.values[0] == 1 && vector.values[1] == -2 && vector.values[2] == 3.5f && vector.accuracy == 3);
+    assert(!vector.has_fourth && vector.fourth == 0);
     unsigned char payload[4200];
     for (unsigned accuracy = 0; accuracy <= 4; accuracy++) {
         memcpy(payload, packed, sizeof(packed)); payload[15] = (unsigned char)accuracy;
@@ -129,6 +132,8 @@ static void neo3_payload_tests(void)
     for (unsigned i = 0; i < 2; i++) {
         assert(decode(live[i], sizeof(live[i]), &vector));
         assert(vector.accuracy == 0);
+        uint32_t fourth = le32(live[i] + 14);
+        assert(vector.has_fourth && !memcmp(&fourth, &vector.fourth, 4));
         for (unsigned axis = 0; axis < 3; axis++) {
             uint32_t expected = le32(live[i] + 2 + axis * 4);
             assert(!memcmp(&expected, &vector.values[axis], 4));
@@ -150,9 +155,12 @@ static void neo3_payload_tests(void)
     memcpy(payload, packed, 16);
     memcpy(payload + 16, extra, sizeof(extra));
     assert(decode(payload, 21, &vector) && vector.accuracy == 3);
+    assert(vector.has_fourth && vector.fourth == 0);
     assert(vector.values[0] == 1 && vector.values[1] == -2 && vector.values[2] == 3.5f);
     memcpy(payload + 21, extra, sizeof(extra));
     assert(!decode(payload, 26, &vector));
+    assert(decode(packed, sizeof(packed), &vector));
+    assert(!vector.has_fourth && vector.fourth == 0);
 }
 
 static bool receive(struct ssc_imu_stream *stream, uint64_t generation, unsigned sensor,

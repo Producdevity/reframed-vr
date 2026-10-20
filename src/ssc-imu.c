@@ -66,6 +66,10 @@ bool ssc_imu_decode(const void *payload, size_t length, struct ssc_imu_vector *v
                     return false;
                 if (count < 3)
                     decoded.values[count] = component;
+                else {
+                    decoded.fourth = component;
+                    decoded.has_fourth = true;
+                }
                 count++;
             }
         } else if (field == 2) {

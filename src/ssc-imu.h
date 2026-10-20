@@ -9,6 +9,8 @@ enum ssc_imu_sensor { SSC_IMU_ACCELERATION, SSC_IMU_GYROSCOPE };
 struct ssc_imu_vector {
     float values[3];
     unsigned accuracy;
+    float fourth;
+    bool has_fourth;
 };
 
 struct ssc_imu_config {
@@ -32,8 +34,8 @@ struct ssc_imu_stream {
 };
 
 /* Decode only the sns_std_sensor_event payload: three or four finite floats,
- * returning the first three and the required accuracy 0..3. Neo3 b1977 also
- * sends a fourth component; its meaning is not inferred. Packed/unpacked
+ * returning XYZ, required accuracy 0..3, and an optional fourth component.
+ * Its meaning is not inferred; has_fourth distinguishes absence from zero. Packed/unpacked
  * floats may be mixed. Unknown scalar fields are skipped; groups and payloads
  * over 4096 bytes are refused.
  * Output is unchanged on failure. No units, axes or calibration are inferred. */
