@@ -18,6 +18,10 @@ int main(void)
     golden("aa010100000000000000000000000000000000000000000000000000000000000000000000000044");
     assert(pico_station_camera_initialize(3, true, frame));
     golden("aa0104010300010000000000000000000000000000000000000000000000000000000000000000b7");
+    assert(pico_station_camera_initialize_metadata(0, true, PICO_STATION_CAMERA_METADATA_EXPOSURE, frame));
+    golden("aa0104010001010000000000000000000000000000000000000000000000000000000000000000bf");
+    assert(pico_station_camera_initialize_metadata(0, true, PICO_STATION_CAMERA_METADATA_EXPOSURE_AND_TYPE, frame));
+    golden("aa0104010002010000000000000000000000000000000000000000000000000000000000000000ec");
     assert(pico_station_camera_stream(3, false, frame));
     golden("aa01040203020000000000000000000000000000000000000000000000000000000000000000006c");
     assert(pico_station_camera_pacing(1, frame));
@@ -31,6 +35,9 @@ int main(void)
 #define BAD(call) do { assert(!(call)); assert(!memcmp(frame, original, sizeof(frame))); } while (0)
     BAD(pico_station_camera_initialize(5, false, frame));
     BAD(pico_station_camera_initialize((unsigned)-1, true, frame));
+    BAD(pico_station_camera_initialize_metadata(5, true, PICO_STATION_CAMERA_METADATA_EXPOSURE, frame));
+    BAD(pico_station_camera_initialize_metadata(0, true, (enum pico_station_camera_metadata)3, frame));
+    BAD(pico_station_camera_initialize_metadata(0, true, (enum pico_station_camera_metadata)-1, frame));
     BAD(pico_station_camera_stream(5, true, frame));
     BAD(pico_station_camera_pacing(0, frame));
     BAD(pico_station_camera_pacing(3, frame));
@@ -39,6 +46,7 @@ int main(void)
     BAD(pico_station_camera_read_register(0xea, 0, frame));
     BAD(pico_station_camera_read_register(0xe6, 0x10000, frame));
     assert(!pico_station_camera_initialize(0, false, NULL));
+    assert(!pico_station_camera_initialize_metadata(0, true, PICO_STATION_CAMERA_METADATA_EXPOSURE, NULL));
     assert(!pico_station_camera_stream(0, false, NULL));
     assert(!pico_station_camera_pacing(1, NULL));
     assert(!pico_station_camera_status(false, NULL));
@@ -60,6 +68,6 @@ int main(void)
         assert(!pico_station_response_valid(unaligned, 40));
         unaligned[bit / 8] ^= 1U << (bit % 8);
     }
-    puts("PICO_STATION_PROTOCOL_PASS golden=6 malformed_inputs=16 corrupted_frames=320 hardware_io=0");
+    puts("PICO_STATION_PROTOCOL_PASS golden=8 corrupted_frames=320 hardware_io=0");
     return 0;
 }

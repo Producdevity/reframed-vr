@@ -11,6 +11,24 @@ static uint64_t le64(const uint8_t *p)
     return le32(p) | (uint64_t)le32(p + 4) << 32;
 }
 
+bool pico_camera_metadata_raw8(const void *row, size_t length, struct pico_camera_metadata *metadata)
+{
+    if (!row || !metadata || length < 0x53) return false;
+    const uint8_t *p = row;
+    struct pico_camera_metadata value = {
+        .exposure_lines = ((uint32_t)(p[6] & 15) << 8) | p[7], .gain = p[4],
+    };
+    if (!value.exposure_lines || !value.gain) return false;
+    switch (p[0x52] & 15) {
+    case 1: value.classification = 1; break;
+    case 2: value.classification = 0; break;
+    case 4: value.classification = 3; break;
+    default: return false;
+    }
+    *metadata = value;
+    return true;
+}
+
 static bool image_valid(const struct pico_camera_frame *f)
 {
     return f->pixels && f->width && f->width <= 4096 && f->height && f->height <= 4096 &&

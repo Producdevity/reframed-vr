@@ -24,8 +24,15 @@ static bool encode(uint8_t command, const uint8_t *payload, size_t count, uint8_
 
 bool pico_station_camera_initialize(unsigned camera, bool raw8, uint8_t *output)
 {
-    if (camera > 4) return false;
-    const uint8_t data[] = {1, (uint8_t)camera, 0, raw8 ? 1 : 0};
+    return pico_station_camera_initialize_metadata(camera, raw8, PICO_STATION_CAMERA_METADATA_NONE, output);
+}
+
+bool pico_station_camera_initialize_metadata(unsigned camera, bool raw8,
+                                              enum pico_station_camera_metadata metadata,
+                                              uint8_t *output)
+{
+    if (camera > 4 || (unsigned)metadata > PICO_STATION_CAMERA_METADATA_EXPOSURE_AND_TYPE) return false;
+    const uint8_t data[] = {1, (uint8_t)camera, (uint8_t)metadata, raw8 ? 1 : 0};
     return encode(4, data, sizeof(data), output);
 }
 

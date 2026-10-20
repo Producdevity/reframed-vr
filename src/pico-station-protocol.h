@@ -12,6 +12,16 @@
  * invalid arguments preserve it. Streaming requires a separate owner with
  * bounded shutdown handling. */
 bool pico_station_camera_initialize(unsigned camera, bool raw8, uint8_t *output);
+enum pico_station_camera_metadata {
+    PICO_STATION_CAMERA_METADATA_NONE,
+    PICO_STATION_CAMERA_METADATA_EXPOSURE,
+    PICO_STATION_CAMERA_METADATA_EXPOSURE_AND_TYPE,
+};
+/* Select stock's CameraInit, CameraInitExposureInPic or CameraInitWithReg4323.
+ * Only the last mode labels head/controller/hand frames in the embedded line. */
+bool pico_station_camera_initialize_metadata(unsigned camera, bool raw8,
+                                              enum pico_station_camera_metadata metadata,
+                                              uint8_t *output);
 bool pico_station_camera_stream(unsigned camera, bool enabled, uint8_t *output);
 /* The two stock pacing modes are wire values, not measured frame rates. */
 bool pico_station_camera_pacing(unsigned mode, uint8_t *output);

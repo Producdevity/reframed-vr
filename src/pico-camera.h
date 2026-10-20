@@ -10,6 +10,15 @@
 #define PICO_CAMERA_MAX_PIXELS (4096U * 4096U)
 #define PICO_CAMERA_MAX_SKEW_NS INT64_C(100000)
 
+struct pico_camera_metadata {
+    uint32_t exposure_lines, gain, classification;
+};
+/* Decode the first RAW8 row after MCU initialization with exposure AND type
+ * metadata. At least 83 bytes are required. Stock tags 1/2/4 become head=1,
+ * controller=0 and hand=3; unknown tags, zero exposure/gain preserve output.
+ * No pixels are modified and no timestamp or camera identity is inferred. */
+bool pico_camera_metadata_raw8(const void *row, size_t length, struct pico_camera_metadata *metadata);
+
 struct pico_camera_frame {
     uint8_t camera_id;
     uint32_t width, height, exposure_lines, gain, classification, extra;

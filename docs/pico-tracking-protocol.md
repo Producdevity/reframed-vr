@@ -1511,3 +1511,35 @@ and field offsets against the exact Pico UAPI header, then exercise its mocked
 syscalls. This establishes metadata decoding and refusal behavior, not actual
 camera presence or capture. The standalone collector is not an automatically
 started service and is not included in the existing first-boot diagnostic.
+
+
+### Embedded MCU exposure and frame type
+
+On b1977, station initialization payload byte 2 selects the stock initialization
+variant: 0 is `CameraInit`, 1 is `CameraInitExposureInPic`, and 2 is
+`CameraInitWithReg4323`. The maintained encoder exposes these explicitly;
+legacy initialization still emits mode 0. This is MCU RAM configuration, not a
+firmware update. The PR0513 firmware enables embedded output for modes 1/2 and
+frame labels only for mode 2.
+
+Native mode-2 capture with the maintained encoder/parser delivered 347 frames
+from each of four cameras in seven seconds, split into 174 head and 173 hand
+frames per camera. RAW8 metadata contains gain at byte 4, 12-bit exposure at
+bytes 6/7, and the type nibble at byte 0x52. Stock tags 1, 2 and 4 normalize to
+head classification 1, controller classification 0 and hand classification 3.
+Mode 1 left the type tag zero. The image metadata confirmed the transition from
+263-line head / 52-line hand exposures, gain 48, to 600 lines and gain 128 in both
+groups. This supersedes the earlier inconclusive single-register readbacks.
+
+The embedded-metadata path in the actual Neo3 tracking service replaces the
+metadata row with a copy of the second row before handing the image onward. Its exposure-center formula is
+`SOF - 52000 - readout_ns - line_ns * exposure_lines / 2`; the retained b1977
+constructor contains defaults 19069 ns and 133483 ns. These are source facts,
+not an optical timing measurement or permission to assume every sensor mode
+uses those values. Camera ordering and a live calibrated estimator remain
+unverified.
+
+Private evidence: `neo3-6dof-v1/native-camera-export-v26/receipt.json` and
+`neo3-6dof-v1/native-slam-export-v1/receipt.json` under the recovery output folder.
+The exported files were checked against their on-device byte counts and SHA-256
+hashes. Firmware payloads and calibration coefficients remain outside Git.

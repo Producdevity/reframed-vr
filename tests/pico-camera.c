@@ -39,9 +39,47 @@ static int decode(void)
     }
     return 0;
 }
+static void metadata_tests(void)
+{
+    uint8_t storage[85] = {0}, *row = storage + 1;
+    row[4] = 48; row[6] = 1; row[7] = 7; row[0x52] = 1;
+    struct pico_camera_metadata value = {0};
+    assert(pico_camera_metadata_raw8(row, 83, &value));
+    assert(value.exposure_lines == 263 && value.gain == 48 && value.classification == 1);
+    row[6] = 0; row[7] = 52; row[0x52] = 4;
+    assert(pico_camera_metadata_raw8(row, 83, &value));
+    assert(value.exposure_lines == 52 && value.classification == 3);
+    row[4] = 128; row[6] = 2; row[7] = 88;
+    assert(pico_camera_metadata_raw8(row, 83, &value));
+    assert(value.exposure_lines == 600 && value.gain == 128);
+    row[0x52] = 2;
+    assert(pico_camera_metadata_raw8(row, 83, &value) && value.classification == 0);
+    row[6] = 0xf2; row[0x52] = 0xf1;
+    assert(pico_camera_metadata_raw8(row, 83, &value));
+    assert(value.exposure_lines == 600 && value.classification == 1);
+    struct pico_camera_metadata saved = value;
+    for (size_t size = 0; size < 83; ++size) {
+        assert(!pico_camera_metadata_raw8(row, size, &value));
+        assert(!memcmp(&value, &saved, sizeof(value)));
+    }
+    assert(!pico_camera_metadata_raw8(NULL, 83, &value));
+    assert(!pico_camera_metadata_raw8(row, 83, NULL));
+    for (unsigned tag = 0; tag < 16; ++tag) {
+        if (tag == 1 || tag == 2 || tag == 4) continue;
+        row[0x52] = (uint8_t)tag;
+        assert(!pico_camera_metadata_raw8(row, 83, &value));
+        assert(!memcmp(&value, &saved, sizeof(value)));
+    }
+    row[0x52] = 1; row[4] = 0;
+    assert(!pico_camera_metadata_raw8(row, 83, &value));
+    row[4] = 48; row[6] = row[7] = 0;
+    assert(!pico_camera_metadata_raw8(row, 83, &value));
+    assert(!memcmp(&value, &saved, sizeof(value)));
+}
 int main(int argc, char **argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--decode")) return decode();
+    metadata_tests();
     uint8_t storage[98], *raw=storage+1; fill(raw);
     struct pico_camera_frame f;
     assert(pico_camera_decode(raw,95,&f));

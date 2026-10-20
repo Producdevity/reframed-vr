@@ -36,9 +36,49 @@ from each of all four cameras over five seconds under native Linux. Two stereo
 sessions use slots 4/5 on PHYs 2/4 and slots 2/3 on PHYs 5/3; four distinct ISP
 inputs were acquired and both groups stopped cleanly before MCU stream-off.
 The camera QTimer-to-monotonic mapping was measured against the CPU counter.
-The retained images are almost black, with no verified scene features; exposure
-control, exposure-center correction and optical camera-to-calibration ordering
+The first retained images were almost black. Enabling the MCU's dual exposure
+mode and applying both exposure groups revealed scene content in one camera;
+the other three views remained dark. This is not yet a usable four-camera VIO
+input. Exposure-center correction and optical camera-to-calibration ordering
 remain prerequisites for a usable estimator feed.
+
+The maintained station encoder now selects the stock
+`CameraInitWithReg4323` mode. Native capture verified 347 frames per camera over
+seven seconds: 174 head frames and 173 hand frames each. Embedded RAW8 metadata
+identified the alternating frame types and confirmed the requested 600-line
+exposure and gain 128. Exposure-only initialization reports a zero type tag and
+cannot distinguish these streams. `pico_camera_metadata_raw8` normalizes the
+stock type tags and rejects unknown tags and zero exposure/gain. This proves
+parameter delivery in the image; the single-register MCU reads remain
+insufficient evidence because the firmware ignores their I2C error status.
+
+## Native vendor SLAM bring-up
+
+The actual b1977 `libSlam.so` now starts under native Linux with the headset's
+Bionic loader and library dependencies in a separate process. The compute DSP
+and its default listener are running, and the algorithm successfully opens both
+`libslamDSP_skel.so` and `libpico_cv_dsp_skel.so`. No Android framework services
+are started. A private filesystem namespace supplies the original configuration
+paths, read-only copies of factory calibration, and writable maps in RAM.
+Ordinary calls work through the PicoFrame path shim, but that shim alone did
+not satisfy all of this library's filesystem operations.
+
+A live input run paired 8,444 actual accel/gyro samples at matching timestamps
+and received 8,444 result callbacks. All results had state 1 and confidence 0;
+no images were supplied and no positional tracking was established. The
+quaternion norms ranged from 0.999999935 to 1.000000114. The SSC decoder now
+retains the optional fourth component without naming its meaning. The vendor
+input uses the accelerometer's fourth value, matching the Neo3 service's
+seven-double IMU construction; host bias correction is not applied again.
+
+The Neo3 exports `update6AxisIMU` and `destroyHandle` have no meaningful integer
+return status. Their disassembly and the live callbacks ruled out treating the
+return register as an error code. `stopAlgorithm` and explicit handle destruction
+completed in the bounded live run. Unloading the vendor library afterward hung
+until the diagnostic alarm fired; the live helper therefore keeps the library
+loaded for its process lifetime and exits after explicit destruction. This is
+not proof of reusable in-process unload support or CVP image processing.
+
 
 Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
