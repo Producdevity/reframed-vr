@@ -99,6 +99,14 @@ download mode before each such test; the stock boot configuration enables it.
 
 ## Acceptance sequence
 
+A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its
+default inert tests and an enabled stock-return rehearsal. Completed stock
+Android returned in 66.702 seconds with unchanged firmware and boot state.
+The late-handler log was not recovered, so its execution remains unproved.
+RAM root required a clean stock reboot and a second Fugu attempt after the
+first restoration failed. This narrows reset preparation without establishing
+a custom-kernel handoff or guaranteed one-attempt root recovery.
+
 1. Preserve and independently hash-check the stock boot inputs and unit data;
    retain offline re-root assets and the known stock button/USB entry procedure.
 2. Build against the captured configuration and exact compiler. Verify module
