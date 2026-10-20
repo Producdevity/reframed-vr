@@ -149,6 +149,41 @@ the SDK conversion is not evidence of the correct OpenXR world frame or the
 physically calibrated head offset. Neither the oracle nor packet replay proves
 live positional tracking.
 
+### Maintained vendor input feed
+
+`pico-vendor-slam-feed` now owns the input-side behavior previously confined to
+the private diagnostic. It accepts raw SSC events, pairs only equal ticks and
+mapped times, and preserves the seven-double Neo3 input without applying host
+bias correction. Complete four-camera head sets are copied into owned RAW8
+storage, including padded rows and stock's metadata-row replacement. Camera
+calibration IDs and corrected monotonic times must be supplied explicitly.
+There are no built-in camera-order, clock-offset or exposure-center defaults.
+
+Images must follow the first delivered IMU and wait until the lower uncertainty
+bound of later IMU covers every camera center's upper bound. Sets preceding the
+available IMU history are refused. Stale input, time regressions, stream gaps and
+queue exhaustion permanently stop that feed; callbacks from older generations
+cannot affect it. Calls are serialized by its process owner. The feed starts no
+hardware or vendor algorithm and publishes no poses.
+
+PicoFrame retains pixels for asynchronous image consumption. This owner
+conservatively keeps pixel storage and vector metadata until the caller has stopped
+and destroyed the vendor backend. The owner retains at most 384 sets (about
+450 MiB of pixels) and eight pending sets. It stops at that limit. A verified
+completion/reuse contract is still needed for a continuous production session;
+elapsed time alone is not used to declare a buffer safe to overwrite.
+
+The feed passed 100 delayed-read ownership cycles and 50 failure scenarios
+under host address/undefined-behavior sanitizers and again under the actual
+stock Bionic loader in an offline ARM64 container. The next private diagnostic
+consumer compiles with this feed and the maintained result decoder. These are
+software checks with a modeled backend, not another on-headset VIO run or
+evidence of positional tracking. Run the host checks with:
+
+```sh
+python3 -B -m unittest discover -s tests -p test_pico_vendor_slam_feed.py
+```
+
 
 Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
