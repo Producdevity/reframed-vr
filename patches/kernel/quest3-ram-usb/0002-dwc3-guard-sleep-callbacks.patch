@@ -1,0 +1,32 @@
+Subject: [PATCH] usb: dwc3-msm: guard system sleep callbacks with PM_SLEEP
+
+The MSM wrapper references prepare/complete callbacks even when their
+definitions are excluded by CONFIG_PM_SLEEP. Keep runtime PM available in
+the RAM-only USB kernel without requiring system suspend support.
+
+--- a/drivers/usb/dwc3/dwc3-msm-core.c
++++ b/drivers/usb/dwc3/dwc3-msm-core.c
+@@ -5143,10 +5143,12 @@
+ { }
+ #endif
+ 
++#ifdef CONFIG_PM_SLEEP
+ static void dwc3_host_complete(struct device *dev);
+ static int dwc3_host_prepare(struct device *dev);
+ static int dwc3_core_prepare(struct device *dev);
+ static void dwc3_core_complete(struct device *dev);
++#endif
+ 
+ static void dwc3_msm_override_pm_ops(struct device *dev, struct dev_pm_ops *pm_ops,
+ 					bool is_host)
+@@ -5157,8 +5159,10 @@
+ 	}
+ 
+ 	(*pm_ops) = (*dev->driver->pm);
++#ifdef CONFIG_PM_SLEEP
+ 	pm_ops->prepare = is_host ? dwc3_host_prepare : dwc3_core_prepare;
+ 	pm_ops->complete = is_host ? dwc3_host_complete : dwc3_core_complete;
++#endif
+ 	dev->driver->pm = pm_ops;
+ }
+ 
