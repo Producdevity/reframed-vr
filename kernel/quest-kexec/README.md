@@ -171,3 +171,40 @@ The returning assembly is adapted from
 [Mac898 revision 057cb9ec](https://github.com/Mac898/quest-kexec/blob/057cb9ecf76a14d940f808a5b6d0094050a5c05a/module/transition.S).
 Cache maintenance follows Linux `arch/arm64/mm/cache.S`. Their GPL-2.0 terms
 are retained in source headers and [COPYING](COPYING).
+
+## Resident RAM payload staging
+
+`--module ram-stage` builds a separate module without a kernel jump path. Its
+default load is inert; `stage=1` retains the owned 16 MiB Image region and
+96 MiB heap using the shared `ram.c` allocator. Root can read the allocation
+inventory from `/sys/kernel/reframed_quest_ram/info` and transfer at most
+16 MiB through the mode-0600 `payload` file. The interface accepts offsets
+within that allocation only. Normal removal removes sysfs and frees every bank.
+
+The shared allocator regression passed 18 stock/source import comparisons,
+the stock-kernel VM and the physical Quest. The stager passed 28 comparisons
+and a stock-kernel VM test covering initially zeroed memory, a full patterned
+16 MiB roundtrip, boundary rejection and module removal.
+
+The physical stager then allocated its banks in 48 ms, received the actual
+Image/initramfs/prepared-DTB payload and returned all 16 MiB byte-identically.
+The payload SHA-256 was
+`3250620436180af7ea95e999eca8444df163dc3030c0103e740b81cb4a794bae`.
+It was removed afterward; those addresses are no longer reserved. Root, boot
+identity, firmware and offline state stayed unchanged.
+
+Stager module SHA-256:
+`d006ac94126cb8c024090d96c31ff43c48fbe650464bdc7320a137ace86a0950`.
+Private receipts: `ram-stage-build-v2`, `ram-stage-vm-v1`,
+`ram-stage-device-v1`, `memory-test-build-v5`, `memory-test-vm-v5` and
+`memory-test-device-v6`.
+
+The host-only [assembler](../../tools/assemble-quest-ram.py) requires a fresh
+resident allocation inventory, raw ARM64 Image, native gzip initramfs and the
+matching live DTB. It restricts RAM to the owned banks, preserves fixed
+reservations, disables dynamic reserved-memory pools, bounds the bounce
+buffer, and selects fixed high-speed USB peripheral mode. The Image's full
+declared memory extent is zero-padded before the initramfs and DTB. Eight
+regression tests cover the physical placement contract, overlaps, payload
+bounds and real FDT edits. Assembly/readback does not prove kernel entry,
+physical USB enumeration or reset from the new kernel.
