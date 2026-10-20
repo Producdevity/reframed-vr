@@ -214,19 +214,55 @@ queue exhaustion permanently stop that feed; callbacks from older generations
 cannot affect it. Calls are serialized by its process owner. The feed starts no
 hardware or vendor algorithm and publishes no poses.
 
-PicoFrame retains pixels for asynchronous image consumption. This owner
-conservatively keeps pixel storage and vector metadata until the caller has stopped
-and destroyed the vendor backend. The owner retains at most 384 sets (about
-450 MiB of pixels) and eight pending sets. It stops at that limit. A verified
-completion/reuse contract is still needed for a continuous production session;
-elapsed time alone is not used to declare a buffer safe to overwrite.
+The default lifetime policy keeps pixel storage and vector metadata until the
+caller has stopped and destroyed the vendor backend. It retains at most 384
+sets (about 450 MiB of pixels) and eight pending sets, stopping at either limit.
+
+`PICO_VENDOR_SLAM_COPY_ON_RETURN` permits continuous delivery only when the
+selected backend has a verified synchronous copy contract. In the actual b1977
+`libSlam.so` (SHA-256
+`1e3d9ee89d17cc9ddbb6939f12a289391ded15bde54121b81308a6db6f184594`),
+the `updateImage` call path copies image rows and scalar metadata into internal
+storage before returning; its image-copy dispatcher calls the copy body
+synchronously. A native guard test supplied each of 249 sets from separate
+page-aligned storage and changed both pixels and vector metadata to `PROT_NONE`
+immediately after the call. Those pages stayed protected through backend
+shutdown: 10,720 pose packets decoded, 8,148 reached confidence 1, and no late-read
+fault occurred. This evidence applies to that library build, not arbitrary
+PicoFrame, Neo3 or future vendor libraries. Elapsed time alone never establishes
+safe buffer retirement.
+
+In copy-on-return mode, the feed releases each delivered set after the call and
+keeps undelivered sets in its bounded queue. An initial longer diagnostic stopped
+at 35 seconds because its systemd service still carried the short-run time
+limit; the camera ring then filled after its consumer stopped. The corrected
+service limit allowed the intended 60-second camera run to finish normally:
+
+- All 1,499 four-camera head sets were consumed, with 61,905 decoded pose records.
+- Confidence reached 1 after 2.503 seconds and remained 1 for the other 59,342
+  records, covering 57.956 seconds. Every timestamp increased.
+- After warmup, 53 one-second process samples showed 57,436–58,160 KiB RSS and
+  15 threads. Delivered sets were not retained; the final pending count was zero.
+- The stationary position varied by at most 0.000541 vendor units from its first
+  confidence-1 pose, with at most 0.0195 degrees of orientation change.
+- Both ISP groups stopped, MCU stream-off succeeded, the MCU power reference
+  returned to zero, and the SSC producer joined without a ring overflow.
+
+The corrected run's private `soak-export.tar.gz` carrier is 9,514,181 bytes,
+SHA-256 `56dc0030fa220f46183a19f1570d2f6d4a44dd0d1aae79082e275f78007dc05f`.
+All 18 exported members match the embedded manifest. This establishes a bounded
+one-minute native tracking session, not long-session stability, measured
+position accuracy, relocalization or SteamVR pose integration.
 
 The feed passed 100 delayed-read ownership cycles and 50 failure scenarios
 under host address/undefined-behavior sanitizers and again under the actual
 stock Bionic loader in an offline ARM64 container. The private diagnostic
 consumer links this feed and the maintained result decoder; the two physical
 runs above now validate that combination against the actual vendor backend.
-The sanitizer checks themselves use a modeled backend. Run the host checks with:
+The sanitizer checks themselves use a modeled backend. The new lifetime mode
+also passed 1,000 deliveries through a two-set budget, including queued delivery
+order and cleanup with an undelivered set, under host sanitizers and the actual
+Bionic loader on the headset. Run the host checks with:
 
 ```sh
 python3 -B -m unittest discover -s tests -p test_pico_vendor_slam_feed.py
@@ -237,8 +273,9 @@ Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
 `output/pico-recovery-bringup-20261018-v1/neo3-6dof-v1/`. BOOT and DTBO readbacks
 still match the preserved originals. Native camera DMA/fence delivery and a
-positional estimator response are now established for short captures. Continuous operation, calibrated head/world
-conversion, loss/recovery and runtime pose publication remain unverified.
+positional estimator response are now established for short captures and a one-minute continuous session. Longer
+operation, calibrated head/world conversion, loss/recovery and runtime pose
+publication remain unverified.
 
 ## Build
 

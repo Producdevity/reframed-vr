@@ -27,11 +27,18 @@ struct pico_vendor_slam_camera {
     const uint8_t *pixels;
     size_t size, stride;
 };
+enum pico_vendor_slam_image_lifetime {
+    PICO_VENDOR_SLAM_RETAIN_UNTIL_STOP,
+    PICO_VENDOR_SLAM_COPY_ON_RETURN,
+};
 struct pico_vendor_slam_feed_config {
     uint64_t generation;
     int64_t max_age_ns, max_imu_gap_ns, max_camera_gap_ns;
     int64_t max_camera_skew_ns, startup_timeout_ns;
     unsigned retained_sets, pending_sets;
+    /* COPY_ON_RETURN requires a verified synchronous pixel AND metadata copy
+     * in the selected backend; it is not an age-based retirement policy. */
+    enum pico_vendor_slam_image_lifetime image_lifetime;
     void *handle;
     void (*imu)(void *handle, const struct pico_vendor_slam_vector *samples, int64_t timestamp_ns);
     void (*image)(void *handle, int kind, const struct pico_vendor_slam_vector *images);
@@ -65,9 +72,10 @@ int pico_vendor_slam_feed_camera(struct pico_vendor_slam_feed *feed, uint64_t ge
 int pico_vendor_slam_feed_poll(struct pico_vendor_slam_feed *feed, uint64_t generation, int64_t now_ns);
 void pico_vendor_slam_feed_status(const struct pico_vendor_slam_feed *feed,
                                  struct pico_vendor_slam_feed_status *status);
-/* Invalidates input, but retains all image pixels AND vector metadata. The
- * vendor consumes them asynchronously; no completion/reuse contract is proven.
- * At most 384 retained sets and 8 pending sets; exhaustion stops the feed. */
+/* Invalidates input. Default ownership retains pixels AND vector metadata
+ * through backend destruction. COPY_ON_RETURN frees delivered sets after the
+ * image call returns; undelivered sets remain owned until release. At most
+ * 384 retained sets and 8 pending sets; exhaustion stops the feed. */
 void pico_vendor_slam_feed_stop(struct pico_vendor_slam_feed *feed);
 /* Stop input, then stop/destroy the vendor handle and join its readers first.
  * Refuses a running feed; caller is responsible for backend quiescence. */

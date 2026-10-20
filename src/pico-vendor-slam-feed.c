@@ -30,6 +30,7 @@ struct pico_vendor_slam_feed {
     int64_t last_time[2], began_ns, now_ns, first_imu_upper_ns;
     struct ssc_timestamp paired, camera;
     struct retained_set *sets[MAX_RETAINED];
+    struct retained_set *queued[8];
 };
 
 static int fail(struct pico_vendor_slam_feed *f, int error)
@@ -74,6 +75,8 @@ int pico_vendor_slam_feed_create(const struct pico_vendor_slam_feed_config *c,
         c->max_camera_skew_ns < 0 || c->max_camera_skew_ns > c->max_camera_gap_ns ||
         c->startup_timeout_ns <= 0 || c->startup_timeout_ns > INT64_C(10000000000) ||
         !c->retained_sets || c->retained_sets > MAX_RETAINED ||
+        (c->image_lifetime != PICO_VENDOR_SLAM_RETAIN_UNTIL_STOP &&
+         c->image_lifetime != PICO_VENDOR_SLAM_COPY_ON_RETURN) ||
         !c->pending_sets || c->pending_sets > 8 || c->pending_sets > c->retained_sets) return -EINVAL;
     struct pico_vendor_slam_feed *f = calloc(1, sizeof(*f));
     if (!f) return -ENOMEM;
@@ -86,7 +89,7 @@ int pico_vendor_slam_feed_create(const struct pico_vendor_slam_feed_config *c,
 static int deliver(struct pico_vendor_slam_feed *f, int64_t now)
 {
     while (f->status.pending_sets) {
-        struct retained_set *s = f->sets[f->status.image_sets];
+        struct retained_set *s = f->queued[0];
         if (!fresh(s->time, now, f->config.max_age_ns))
             return fail(f, -ETIMEDOUT);
         if (f->first_imu_upper_ns && s->coverage_low_ns < f->first_imu_upper_ns)
@@ -94,8 +97,13 @@ static int deliver(struct pico_vendor_slam_feed *f, int64_t now)
         if (!f->paired.timestamp_ns ||
             s->coverage_ns > f->paired.timestamp_ns - f->paired.uncertainty_ns) break;
         f->config.image(f->config.handle, 0, &s->vector);
+        if (f->config.image_lifetime == PICO_VENDOR_SLAM_COPY_ON_RETURN) {
+            free(s);
+            --f->status.retained_sets;
+        }
         ++f->status.image_sets;
         --f->status.pending_sets;
+        memmove(f->queued, f->queued + 1, f->status.pending_sets * sizeof(f->queued[0]));
     }
     return 0;
 }
@@ -211,7 +219,10 @@ int pico_vendor_slam_feed_camera(struct pico_vendor_slam_feed *f, uint64_t gener
     s->coverage_ns = coverage;
     s->coverage_low_ns = coverage_low;
     s->time = (struct ssc_timestamp){low, uncertainty};
-    f->sets[f->status.retained_sets++] = s;
+    if (f->config.image_lifetime == PICO_VENDOR_SLAM_RETAIN_UNTIL_STOP)
+        f->sets[f->status.retained_sets] = s;
+    ++f->status.retained_sets;
+    f->queued[f->status.pending_sets] = s;
     ++f->status.pending_sets;
     f->camera = (struct ssc_timestamp){low, uncertainty};
     f->last_number = cameras[0].number;
@@ -240,7 +251,11 @@ int pico_vendor_slam_feed_release(struct pico_vendor_slam_feed **feed)
     if (!feed || !*feed) return 0;
     struct pico_vendor_slam_feed *f = *feed;
     if (!f->status.error) return -EBUSY;
-    for (unsigned i = 0; i < f->status.retained_sets; ++i) free(f->sets[i]);
+    if (f->config.image_lifetime == PICO_VENDOR_SLAM_COPY_ON_RETURN) {
+        for (unsigned i = 0; i < f->status.pending_sets; ++i) free(f->queued[i]);
+    } else {
+        for (unsigned i = 0; i < f->status.retained_sets; ++i) free(f->sets[i]);
+    }
     free(f);
     *feed = NULL;
     return 0;

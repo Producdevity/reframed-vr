@@ -44,6 +44,19 @@ static struct pico_vendor_slam_feed_config config(void)
         .max_camera_skew_ns = 100, .startup_timeout_ns = 200000000,
         .retained_sets = 8, .pending_sets = 2, .handle = &backend, .imu = imu, .image = image};
 }
+static uint8_t copied_pixels[4][640 * 480];
+static void copy_image(void *handle, int kind, const struct pico_vendor_slam_vector *v)
+{
+    struct backend *b = handle;
+    const struct pico_vendor_slam_image *images = v->begin;
+    assert(!kind && v->end == images + 4 && v->capacity == v->end);
+    for (unsigned i = 0; i < 4; ++i) {
+        assert(images[i].camera == i && images[i].number == b->sets + 1);
+        assert(images[i].center_ns <= b->last_ns);
+        memcpy(copied_pixels[i], images[i].pixels, sizeof(copied_pixels[i]));
+    }
+    ++b->sets;
+}
 static void release(void)
 {
     pico_vendor_slam_feed_stop(feed);
@@ -119,7 +132,7 @@ int main(void)
 {
     generation = 1;
     struct pico_vendor_slam_feed_config c = config();
-    for (unsigned i = 0; i < 16; ++i) {
+    for (unsigned i = 0; i < 18; ++i) {
         struct pico_vendor_slam_feed_config bad = c;
         switch (i) {
         case 0: bad.generation = 0; break;
@@ -138,6 +151,8 @@ int main(void)
         case 13: bad.handle = NULL; break;
         case 14: bad.imu = NULL; break;
         case 15: bad.image = NULL; break;
+        case 16: bad.image_lifetime = 2; break;
+        case 17: bad.image_lifetime = (enum pico_vendor_slam_image_lifetime)-1; break;
         }
         assert(pico_vendor_slam_feed_create(&bad, BASE, &feed) == -EINVAL && !feed);
     }
@@ -303,6 +318,38 @@ int main(void)
     memset(&backend, 0, sizeof(backend));
     ++generation;
     c = config();
+    c.image = copy_image;
+    c.image_lifetime = PICO_VENDOR_SLAM_COPY_ON_RETURN;
+    c.retained_sets = c.pending_sets = 2;
+    assert(!pico_vendor_slam_feed_create(&c, BASE, &feed));
+    for (unsigned cycle = 0; cycle < 500; ++cycle) {
+        int64_t t = BASE + 10000 * cycle;
+        pair(t + 80, t + 300);
+        for (unsigned j = 0; j < 2; ++j) {
+            cameras(cams, 2 * cycle + j + 1, t + 100 + 100 * j);
+            assert(!pico_vendor_slam_feed_camera(feed, generation, cams, t + 300));
+            memset(pixels, 0xaa, sizeof(pixels));
+        }
+        pico_vendor_slam_feed_status(feed, &status);
+        assert(status.pending_sets == 2 && status.retained_sets == 2);
+        assert(status.image_sets == 2 * cycle);
+        pair(t + 220, t + 300);
+        pico_vendor_slam_feed_status(feed, &status);
+        assert(!status.pending_sets && !status.retained_sets && !status.error);
+        assert(status.image_sets == 2 * cycle + 2 && backend.sets == 2 * cycle + 2);
+        for (unsigned i = 0; i < 4; ++i) for (unsigned y = 0; y < 480; ++y)
+            for (unsigned x = 0; x < 640; ++x)
+                assert(copied_pixels[i][y * 640 + x] == 20 * i + (y ? y : 1) % 17);
+    }
+    cameras(cams, 1001, BASE + 5000100);
+    assert(!pico_vendor_slam_feed_camera(feed, generation, cams, BASE + 5000300));
+    pico_vendor_slam_feed_status(feed, &status);
+    assert(status.pending_sets == 1 && status.retained_sets == 1);
+    release();
+
+    memset(&backend, 0, sizeof(backend));
+    ++generation;
+    c = config();
     assert(!pico_vendor_slam_feed_create(&c, INT64_MAX - 1000, &feed));
     cameras(cams, 1, INT64_MAX - 100);
     assert(!pico_vendor_slam_feed_camera(feed, generation, cams, INT64_MAX));
@@ -311,5 +358,6 @@ int main(void)
     assert(backend.sets == 1);
     release();
     printf("PICO_VENDOR_SLAM_FEED_PASS cycles=100 faults=%u\n", faults);
+    puts("PICO_VENDOR_SLAM_COPY_PASS delivered=1000 retained_limit=2 pending_on_stop=1");
     return 0;
 }
