@@ -144,6 +144,12 @@ restoration passed without rebooting or restarting rooted adbd. The remaining
 transition still needs the returning MMU test and a final USB halt check after
 CPU shutdown.
 
+The [returning MMU test](../kernel/quest-kexec/README.md#returning-mmu-test) has
+also passed on the Quest. It reached the expected physical scratch address with
+M/C/I clear, restored the captured translation/interrupt/shadow-stack context,
+and returned without changing the rooted boot. Resident payload staging, final
+post-shutdown USB validation and the actual replacement-kernel boot remain.
+
 A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its
 default inert tests and an enabled stock-return rehearsal. Completed stock
 Android returned in 66.702 seconds with unchanged firmware and boot state.

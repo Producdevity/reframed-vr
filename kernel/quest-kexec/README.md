@@ -139,3 +139,35 @@ Private receipts: `usb-test-build-v2`, `usb-test-device-v1` and
 `usb-shutdown-device-v1`. This establishes the observed gadget halt/rebind;
 the final loader must repeat the register checks after CPU shutdown. It does
 not yet establish a custom-kernel USB handoff or stock return from that kernel.
+
+## Returning MMU test
+
+`--module mmu-test` builds `mmu-test.c` with `transition.S`; the builder records
+the assembly input hash and verifies its additional stock imports. The default
+load is inert. `execute=1` allocates a control page and three identity-table
+pages, cleans them to PoC using the exported sanitized cache geometry and runs
+the return test on CPU 0 under `stop_machine()`.
+
+The private identity table maps only the owned 4 KiB code page. Its copied
+assembly sets the stock MMU-off SCTLR baseline, reports the physical PC and
+M/C/I flags, then returns through a BTI landing pad. The wrapper preserves x18,
+callee-saved registers and the original translation/interrupt context before
+returning to C. The test compares TTBR0, TCR, SCTLR, DAIF and the shadow call
+stack pointer, restores stock watchdog timing and frees its pages. It contains
+no replacement-kernel jump.
+
+The October 20 binary passed 23 stock/source import comparisons, the exact
+stock-kernel VM and the physical Quest. The physical return reported the
+expected PC `0x911935018`, zero M/C/I flags and restored context in 29.479 µs.
+The same boot ID, RAM root, rooted adbd process and offline state remained;
+no module or scratch allocation remained resident.
+
+Module SHA-256:
+`60970e88a9a5d20416d293a12930aa6f2fc71857ca5ad20827f6c5683b68f5c9`.
+Receipts: `mmu-test-build-v3`, `mmu-test-vm-v2`, `mmu-test-device-v1`.
+
+The returning assembly is adapted from
+[YusufOzmen01/quest-kexec](https://github.com/YusufOzmen01/quest-kexec) and
+[Mac898 revision 057cb9ec](https://github.com/Mac898/quest-kexec/blob/057cb9ecf76a14d940f808a5b6d0094050a5c05a/module/transition.S).
+Cache maintenance follows Linux `arch/arm64/mm/cache.S`. Their GPL-2.0 terms
+are retained in source headers and [COPYING](COPYING).
