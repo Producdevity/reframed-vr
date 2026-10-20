@@ -121,6 +121,25 @@ In the retained 640×480 images, only 6, 10 and 10 pixels exceeded value 16 in t
 three darkest views, respectively. Repeating this unchanged scene is not a
 tracking validation; usable scene detail and head motion remain untested.
 
+The b1977 result packet is 0x170 bytes: a little-endian nanosecond timestamp,
+three position doubles, then a quaternion in **w, x, y, z** order. The state and
+confidence bytes are at 0x40/0x41, with a 32-bit error field at 0x44. The maintained
+`pico_slam_result_decode` checks timestamp and numeric validity and exposes the
+quaternion as x, y, z, w. It preserves status values without assigning meanings
+to unknown codes, and successful decoding does not establish tracking validity.
+All 12,541 retained results decode; their error field changes from 32 to 4 while
+confidence remains zero. Those error values have not been named from evidence.
+
+This quaternion layout was checked against the actual Neo3
+`libSlamTools.pxr.so`, called by its service's `newTracker::convertSlamResult`.
+An offline ARM64 test passed eight chosen poses and 1,024 additional normalized
+quaternions through the library with prediction disabled. Its SDK conversion
+maps the quaternion vector part to (-y, x, z) and also applies an orientation-
+dependent position offset. The decoder deliberately retains the raw SLAM frame;
+the SDK conversion is not evidence of the correct OpenXR world frame or the
+physically calibrated head offset. Neither the oracle nor packet replay proves
+live positional tracking.
+
 
 Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
