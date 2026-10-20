@@ -121,6 +121,15 @@ In the retained 640×480 images, only 6, 10 and 10 pixels exceeded value 16 in t
 three darkest views, respectively. Repeating this unchanged scene is not a
 tracking validation; usable scene detail and head motion remain untested.
 
+After returning to stock b1977, its post-boot SLAM logs also showed nearly zero
+keypoints in three views. The last logged four-camera counts were 0, 134, 0, 0,
+with all four exposure values at 737 lines. Twenty-eight such frame summaries
+were retained with monotonic log timestamps and the new stock boot identity.
+This corroborates the lack of usable scene detail beyond the native capture
+path; it does not identify darkness or obstruction as the physical cause.
+Stock subsequently went to sleep and destroyed its SLAM instance. The sleeping
+service's diagnostic pose fields are not used as tracking evidence.
+
 The b1977 result packet is 0x170 bytes: a little-endian nanosecond timestamp,
 three position doubles, then a quaternion in **w, x, y, z** order. The state and
 confidence bytes are at 0x40/0x41, with a 32-bit error field at 0x44. The maintained
