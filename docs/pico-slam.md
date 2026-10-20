@@ -21,20 +21,30 @@ PHYs, queried the ISP and camera capabilities, and accepted both probe calls.
 Source inspection then established that `cam_sensor_match_id` returns success
 without reading the chip ID for tracking-camera SIDs. Probe success must not be
 used as evidence of sensor communication. The first actual initialization write
-to `e6` failed with a CCI NACK; no stream or camera frame was produced.
+to `e6` failed with a CCI NACK; that direct CCI attempt produced no stream.
 
 The stock camera path uses QuickCamera's MCU control and `cam_virtual_mono`
-bridge. That bridge is absent from the retained public kernel. The next capture
-work must implement the actual bridge/MCU path rather than repeat direct CCI
-initialization against the declared tracking-camera addresses. The native CDM
+bridge. That bridge is absent from the retained public kernel. Native capture now
+uses MCU sensor control with a bus-info-only kernel configuration packet,
+rather than direct CCI initialization against the tracking addresses. The native CDM
 context also rejects shared command memory; I/O command mapping passed that
-allocation stage before reaching the separate CCI failure.
+allocation stage before reaching the separate CCI failure. Kernel-generated CDM
+commands also require uncached allocations on this kernel.
+
+The maintained setup and shared event dispatcher have now captured 247 frames
+from each of all four cameras over five seconds under native Linux. Two stereo
+sessions use slots 4/5 on PHYs 2/4 and slots 2/3 on PHYs 5/3; four distinct ISP
+inputs were acquired and both groups stopped cleanly before MCU stream-off.
+The camera QTimer-to-monotonic mapping was measured against the CPU counter.
+The retained images are almost black, with no verified scene features; exposure
+control, exposure-center correction and optical camera-to-calibration ordering
+remain prerequisites for a usable estimator feed.
 
 Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
 `output/pico-recovery-bringup-20261018-v1/neo3-6dof-v1/`. BOOT and DTBO readbacks
-still match the preserved originals. No on-device positional pose or native
-camera-stream acceptance has been established.
+still match the preserved originals. Native camera DMA/fence delivery is now
+established for short captures. No on-device positional pose has been established.
 
 ## Build
 

@@ -136,7 +136,7 @@ static bool frame(void *opaque, uint64_t generation, const struct pico_camera_ca
 }
 static void invalid(void *opaque,uint64_t generation)
 { assert(opaque == &frames && generation == 17);++invalidations; }
-static struct pico_camera_transport *create(void)
+static struct pico_camera_transport *create_session(int32_t session)
 {
     assert(!live_buffers);next_buffer = io_calls = memory_calls = fail_io_at = fail_memory_at = 0;
     event_head[0]=event_head[1]=event_tail[0]=event_tail[1]=0;
@@ -145,13 +145,14 @@ static struct pico_camera_transport *create(void)
     struct pico_camera_transport_config c={.timeout_ns=1000};
     for(unsigned i=0;i<2;i++)c.cameras[i]=(struct pico_camera_request_config){
         .crm_fd=31,.sync_fd=33,.ion_fd=32,.sensor_fd=34+(int)i*2,.ife_fd=35+(int)i*2,
-        .session=11,.link=21+(int)i,.sensor=41+(int)i*2,.ife=42+(int)i*2,
+        .session=session,.link=21+(int)i,.sensor=41+(int)i*2,.ife=42+(int)i*2,
         .device_mmu=71,.command_mmu=72,.command_mapping=PICO_CAMERA_MEMORY_SHARED,
         .ion_heap=25,.width=65,.height=67,.stride=80,.camera_id=7+i,
         .generation=17,.request_id=UINT64_C(0x100000001),.synchronized=true};
     struct pico_camera_transport_ops ops={frame,invalid};struct pico_camera_transport *t=NULL;
     assert(!pico_camera_transport_create(&c,&ops,&frames,&t));memset(&c,0xa5,sizeof(c));return t;
 }
+static struct pico_camera_transport *create(void) { return create_session(11); }
 static void cleanup(struct pico_camera_transport **t)
 {
     fail_memory_at=fail_io_at=0;
@@ -212,6 +213,30 @@ int main(void)
     assert(pico_camera_transport_poll_clock(silent,transport_clock,&clock_calls)==-EIO && clock_calls==2);
     cleanup(&silent);
     printf("PICO_CAMERA_TRANSPORT_CLOCK_PASS cases=5 dequeues_refreshed=1 silent_timeout=1\n");
+    struct pico_camera_transport *shared[2] = {create_session(11), create_session(12)};
+    assert(!pico_camera_transport_queue(shared[0],offsets,100));
+    assert(!pico_camera_transport_queue(shared[1],offsets,100));
+    for(unsigned i=2;i<4;++i)set(events[1][i].data,0,12,4);
+    unsigned before=frames;
+    for(unsigned i=0;i<4;++i)for(unsigned source=0;source<2;++source)for(unsigned member=0;member<2;++member)
+        assert(!pico_camera_transport_event(shared[member],(enum pico_camera_event_source)source,
+                                            &events[source][i],200));
+    assert(frames==before+4 && !live_buffers);
+    assert(!pico_camera_transport_check(shared[0],200));
+    assert(!pico_camera_transport_check(shared[1],200));
+    cleanup(&shared[0]);cleanup(&shared[1]);
+    shared[0]=create_session(11);shared[1]=create_session(12);
+    struct pico_camera_event unrelated={.type=0x12345678,.sequence=9};
+    for(unsigned member=0;member<2;++member)
+        assert(!pico_camera_transport_event(shared[member],PICO_CAMERA_CRM_EVENTS,&unrelated,200));
+    unrelated.sequence++;
+    assert(!pico_camera_transport_event(shared[0],PICO_CAMERA_CRM_EVENTS,&unrelated,200));
+    unrelated.sequence++;
+    assert(!pico_camera_transport_event(shared[0],PICO_CAMERA_CRM_EVENTS,&unrelated,200));
+    assert(pico_camera_transport_event(shared[1],PICO_CAMERA_CRM_EVENTS,&unrelated,200)==-EIO);
+    assert(pico_camera_transport_check(shared[1],200)==-EIO);
+    cleanup(&shared[0]);cleanup(&shared[1]);
+    printf("PICO_CAMERA_TRANSPORT_SHARED_PASS sessions=2 frames=4 missing_foreign_event_invalidates=1\n");
     struct pico_camera_transport *t=create();assert(!pico_camera_transport_queue(t,offsets,100));
     fail_io_at=io_calls+1;assert(pico_camera_transport_poll(t,200)==-EIO);
     assert(pico_camera_transport_quiesced(t)==-EIO && live_buffers);

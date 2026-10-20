@@ -112,6 +112,19 @@ int pico_camera_transport_queue(struct pico_camera_transport *t, const int64_t o
     }
     return 0;
 }
+int pico_camera_transport_check(struct pico_camera_transport *t, int64_t now_ns)
+{
+    if (!t) return -EINVAL;
+    return pico_camera_stream_poll(t->stream, now_ns) ? 0 : fail(t, -EIO);
+}
+int pico_camera_transport_event(struct pico_camera_transport *t,
+                                 enum pico_camera_event_source source,
+                                 const struct pico_camera_event *event, int64_t now_ns)
+{
+    if (!t) return -EINVAL;
+    return pico_camera_stream_event(t->stream, source, event, now_ns) == PICO_CAMERA_CAPTURE_FAILED ?
+        fail(t, -EIO) : 0;
+}
 static int poll_events(struct pico_camera_transport *t, int64_t now_ns,
                        int64_t (*clock)(void *), void *clock_data)
 {
@@ -134,8 +147,8 @@ static int poll_events(struct pico_camera_transport *t, int64_t now_ns,
         }
         if (result == -EAGAIN) { empty[source] = true; continue; }
         ++consumed;
-        if (pico_camera_stream_event(t->stream, (enum pico_camera_event_source)source, &event, now_ns) ==
-            PICO_CAMERA_CAPTURE_FAILED) return fail(t, -EIO);
+        result = pico_camera_transport_event(t, (enum pico_camera_event_source)source, &event, now_ns);
+        if (result) return result;
     }
     return consumed;
 }

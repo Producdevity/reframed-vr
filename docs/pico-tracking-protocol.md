@@ -1335,6 +1335,21 @@ the generation. Successful fences allow synchronized CPU reads; all other pendin
 resources remain held until independently established quiescence. The caller
 retains the configured devices and exclusive subscribed, nonblocking event fds.
 
+When two sessions share those descriptors, one reader can dispatch each event
+to both transports with `pico_camera_transport_event` and enforce silent
+timeouts with `pico_camera_transport_check`. Every event must reach both owners,
+including foreign-session events, because sequence numbers belong to the
+descriptor. Tests verify interleaved sessions, foreign fences and invalidation
+when a foreign event is omitted.
+
+A native Neo3 diagnostic used this shared dispatch with slots 4/5 on PHYs 2/4
+and slots 2/3 on PHYs 5/3. Four distinct ISP resource masks (64, 32, 16, 8) each
+captured 247 mono8 frames over five seconds. Both ISP groups stopped successfully
+before MCU stream-off. A measured 19.2 MHz QTimer mapping placed sampled SOFs
+roughly 10–14 ms before CPU callbacks. These are SOF times, not verified exposure
+centres. Images remained nearly black; optical camera order, usable features,
+calibrated image/IMU delivery and positional poses remain unverified.
+
 Host and ARM64 sanitizer tests deliver 4,800 frames across queue saturation,
 request progression and sequence wrap, and exercise 44 failure scenarios including
 an uncertain fence destruction that is never retried. The maintained Basalt replay

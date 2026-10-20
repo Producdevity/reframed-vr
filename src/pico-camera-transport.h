@@ -1,6 +1,7 @@
 #ifndef REFRAMED_PICO_CAMERA_TRANSPORT_H
 #define REFRAMED_PICO_CAMERA_TRANSPORT_H
 #include "pico-camera-request.h"
+#include "pico-camera-stream.h"
 
 struct pico_camera_transport;
 struct pico_camera_transport_config {
@@ -38,6 +39,15 @@ int pico_camera_transport_poll(struct pico_camera_transport *transport, int64_t 
  * The timestamp-only variant above is for a fixed recorded event batch. */
 int pico_camera_transport_poll_clock(struct pico_camera_transport *transport,
                                      int64_t (*clock)(void *), void *clock_data);
+/* For multiple sessions sharing CRM/sync descriptors, one caller dequeues and
+ * dispatches every event, in order, to every transport. Foreign sessions/fences
+ * are ignored but still advance descriptor sequence tracking. Do not also use
+ * the dequeueing poll functions. Sample time after dequeue and call check during
+ * silence. A failed member requires stopping the whole shared capture owner. */
+int pico_camera_transport_event(struct pico_camera_transport *transport,
+                                 enum pico_camera_event_source source,
+                                 const struct pico_camera_event *event, int64_t now_ns);
+int pico_camera_transport_check(struct pico_camera_transport *transport, int64_t now_ns);
 void pico_camera_transport_stop(struct pico_camera_transport *transport);
 /* Stop scheduling/callbacks and independently establish device/DMA quiescence
  * before this call. It retires outstanding requests and borrowed reservations.
