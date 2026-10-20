@@ -1,0 +1,73 @@
+Subject: spi: tolerate an absent Neo3 RFIC IO2 line
+
+The b1977 Neo3 Pro Eye DT omits rfic-io2-gpio. Keep malformed or deferred
+properties as errors; skip only an absent line and reject its control ioctl.
+
+---
+--- a/drivers/spi/spidev.c
++++ b/drivers/spi/spidev.c
+@@ -590,6 +590,10 @@
+ 		break;
+ 	/*Add by PICO_Driver clark.tian for task55837: Ble-Mcu-52840 spi debug --start--*/
+ 	case SPI_IOC_SET_RFIC_IO2_STATUS:
++		if (!gpio_is_valid(spidev->rfic_io2_gpio)) {
++			retval = -ENODEV;
++			break;
++		}
+ 		retval = get_user(tmp, (__u32 __user *)arg);
+ 		if (retval)
+ 			break;
+@@ -909,7 +913,8 @@
+ {
+ 	free_irq(spidev->data_irq, spidev);
+ 	gpio_free(spidev->rfic_io3_gpio);
+-	gpio_free(spidev->rfic_io2_gpio);
++	if (gpio_is_valid(spidev->rfic_io2_gpio))
++		gpio_free(spidev->rfic_io2_gpio);
+ 	gpio_free(spidev->data_gpio);
+ }
+ 
+@@ -921,9 +926,14 @@
+ 	spidev->data_gpio = of_get_named_gpio(np, "gpio", 0);
+ 	if (spidev->data_gpio < 0)
+ 		return spidev->data_gpio;
+-	spidev->rfic_io2_gpio = of_get_named_gpio(np, "rfic-io2-gpio", 0);
+-	if (spidev->rfic_io2_gpio < 0)
+-		return spidev->rfic_io2_gpio;
++	/* The Neo3 stock DT can omit this RFIC control line. */
++	spidev->rfic_io2_gpio = -ENOENT;
++	if (of_find_property(np, "rfic-io2-gpio", NULL)) {
++		spidev->rfic_io2_gpio =
++			of_get_named_gpio(np, "rfic-io2-gpio", 0);
++		if (spidev->rfic_io2_gpio < 0)
++			return spidev->rfic_io2_gpio;
++	}
+ 	spidev->rfic_io3_gpio = of_get_named_gpio(np, "rfic-io3-gpio", 0);
+ 	if (spidev->rfic_io3_gpio < 0)
+ 		return spidev->rfic_io3_gpio;
+@@ -931,9 +941,12 @@
+ 	status = gpio_request_one(spidev->data_gpio, GPIOF_IN, "controller-data");
+ 	if (status)
+ 		return status;
+-	status = gpio_request_one(spidev->rfic_io2_gpio, GPIOF_OUT_INIT_LOW, "rfic_io2");
+-	if (status)
+-		goto free_data;
++	if (gpio_is_valid(spidev->rfic_io2_gpio)) {
++		status = gpio_request_one(spidev->rfic_io2_gpio,
++			GPIOF_OUT_INIT_LOW, "rfic_io2");
++		if (status)
++			goto free_data;
++	}
+ 	status = gpio_request_one(spidev->rfic_io3_gpio, GPIOF_OUT_INIT_LOW, "rfic_io3");
+ 	if (status)
+ 		goto free_io2;
+@@ -952,7 +965,8 @@
+ free_io3:
+ 	gpio_free(spidev->rfic_io3_gpio);
+ free_io2:
+-	gpio_free(spidev->rfic_io2_gpio);
++	if (gpio_is_valid(spidev->rfic_io2_gpio))
++		gpio_free(spidev->rfic_io2_gpio);
+ free_data:
+ 	gpio_free(spidev->data_gpio);
+ 	return status;

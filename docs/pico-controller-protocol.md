@@ -520,6 +520,36 @@ SSC controller data and optical tracking remain separate requirements. The new
 kernel and the previously accepted image are both retained; see
 [kernel verification](pico-firmware.md) for the artifact identity.
 
+## Native station SPI
+
+On the b1977 Neo3 Pro Eye, the stock SPI device tree supplies the data interrupt
+and RFIC IO3 line but omits `rfic-io2-gpio`. The resource-lifetime patch initially
+required all three, causing native `spidev_probe` to fail with `-ENOENT` and
+preventing `/dev/spidev0.0` from appearing.
+
+`0052-controller-optional-rfic-io2.patch` makes only an absent IO2 property
+optional. A present malformed or deferred property remains an error. Its GPIO
+control ioctl returns `-ENODEV` when the line is absent; subsequent ioctls still
+work. No substitute GPIO is selected. The actual driver functions pass 166
+sanitizer lifecycle/fault cases, including 64 concurrent removal races and a
+reproduction of the original missing-property failure.
+
+The rebuilt kernel binds this SPI device on the headset at stock mode 0, 6 MHz,
+8 bits. After acquiring one normal MCU power reference at the existing 1.8 V
+setting, native Linux receives CRC-valid firmware-version and camera-status
+responses. The absent-IO2 rejection and subsequent ioctl also pass on hardware.
+The kernel configuration, signing certificate, symbol versions and all 38
+installed modules remain byte-identical to the preceding native kernel.
+
+`pico-station-protocol` encodes bounded camera-control commands and validates
+fixed-size responses without opening a device. Its packet layout and CRC match
+70,937 cases against the exact Neo3 stock encoder; 1,310,720 single-bit-corrupted
+frames are rejected. PicoFrame's MIT `rootfs/pico-station.c` was also used as
+protocol reference; its PICO 4 GPIO and device-tree configuration were not used.
+Evidence is retained in
+`output/pico-recovery-bringup-20261018-v1/neo3-6dof-v1/`. These checks establish
+station transport, not camera capture, physical controller tracking or 6DoF.
+
 ## Verification
 
 An isolated ARM64 Linux process executed the stock CRC and key parsing functions

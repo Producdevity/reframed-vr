@@ -45,6 +45,11 @@ def main():
     with (output / "patch.log").open("w") as log:
         subprocess.run(["patch", "--batch", "--fuzz=0", "--forward", "-p1", "-i", str(patch)],
                        cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True)
+    before_optional = target.read_text()
+    optional_patch = ROOT / "patches/kernel/pico-neo3/0052-controller-optional-rfic-io2.patch"
+    with (output / "optional-line-patch.log").open("w") as log:
+        subprocess.run(["patch", "--batch", "--fuzz=0", "--forward", "-p1", "-i", str(optional_patch)],
+                       cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True)
     source = target.read_text()
     names = ("spidev_sync", "spidev_sync_write", "spidev_sync_read", "spidev_read",
              "spidev_write", "cam_spidev_write", "spidev_release", "spi_poll",
@@ -98,8 +103,35 @@ assert(state->tx_buffer == owned);""", "state->tx_buffer == owned"),
         if result.returncode == 0 or diagnostic not in result.stderr:
             raise ValueError("Original camera defect was not reproduced: " + name)
         negative[name] = {"returncode": result.returncode, "expected_diagnostic": diagnostic}
+    original_optional = fragments
+    for name in ("spidev_controller_release", "spidev_controller_setup"):
+        original_optional = original_optional.replace(function(source, name), function(before_optional, name))
+    (output / "original-optional.inc").write_text(original_optional)
+    original = (output / "test.c").read_text().replace(
+        '#include "driver-functions.inc"', '#include "original-optional.inc"')
+    original = original[:original.index("int main(void) {")]
+    original += """int main(void) {
+struct device_node node = { .present = 1 };
+struct spi_master master = { .bus_num = 0 };
+struct spi_device spi = { .dev.of_node = &node, .master = &master, .max_speed_hz = 1000000 };
+reset(); io2_present = false;
+assert(spidev_probe(&spi) == -ENOENT); clean();
+puts("PICO_CONTROLLER_MISSING_OPTIONAL_REPRODUCED"); return 0;
+}
+"""
+    original_source = output / "missing-optional.c"
+    original_source.write_text(original)
+    original_executable = output / "missing-optional"
+    build = command[:-3] + ["-Wno-unused-function", "-Wno-unused-variable",
+                            str(original_source), "-o", str(original_executable)]
+    with (output / "missing-optional-build.log").open("w") as log:
+        subprocess.run(build, stdout=log, stderr=subprocess.STDOUT, check=True)
+    with (output / "missing-optional.log").open("w") as log:
+        subprocess.run([str(original_executable)], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
     report = {"passed": True, "source_sha256": SOURCE_SHA256,
               "patch_sha256": hashlib.sha256(patch.read_bytes()).hexdigest(),
+              "optional_line_patch_sha256": hashlib.sha256(optional_patch.read_bytes()).hexdigest(),
+              "missing_optional_baseline_reproduced": True,
               "patched_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
               "compile_command": command, "extracted_functions": names, "negative_controls": negative,
               "scope": "Host fault injection of actual driver functions; no physical hardware acceptance"}

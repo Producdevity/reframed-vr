@@ -58,7 +58,7 @@ static struct completion spi_completion;
 static int operation, fail_at, failure_code, allocations, irq_count, nodes, gpio_writes, power_writes;
 static int requested[3], request_flags[3];
 static void *irq_cookie;
-static bool no_minor, copy_fault;
+static bool no_minor, copy_fault, io2_present;
 static int interrupted, transfer_error, transfers;
 static const void *expected_tx;
 static unsigned expected_count;
@@ -101,8 +101,14 @@ static void set_bit(unsigned long bit, unsigned long *bits) { *bits |= 1ul << bi
 static void clear_bit(unsigned long bit, unsigned long *bits) { *bits &= ~(1ul << bit); }
 static int of_get_named_gpio(struct device_node *np, const char *name, int index) {
     (void)np; (void)index; if (fail()) return failure_code;
+    if (!strcmp(name, "rfic-io2-gpio") && !io2_present) return -ENOENT;
     return !strcmp(name, "gpio") ? 10 : !strcmp(name, "rfic-io2-gpio") ? 11 : 12;
 }
+static void *of_find_property(struct device_node *np, const char *name, int *length) {
+    (void)np; (void)length; assert(!strcmp(name, "rfic-io2-gpio"));
+    return io2_present ? (void *)name : NULL;
+}
+static bool gpio_is_valid(int gpio) { return gpio >= 0; }
 static int gpio_request_one(int gpio, int flags, const char *name) {
     (void)name; if (fail()) return failure_code;
     assert(gpio >= 10 && gpio <= 12 && !requested[gpio-10]);
@@ -116,8 +122,8 @@ static int request_irq(int irq, int (*handler)(int, void *), int flags, const ch
     assert(irq == 27 && cookie && !irq_count);
     struct spidev_data *state = cookie;
     assert(state->spi && state->speed_hz && !state->spi_lock);
-    assert(requested[0] && requested[1] && requested[2]);
-    assert(request_flags[0] == GPIOF_IN && request_flags[1] == GPIOF_OUT_INIT_LOW && request_flags[2] == GPIOF_OUT_INIT_LOW);
+    assert(requested[0] && requested[1] == io2_present && requested[2]);
+    assert(request_flags[0] == GPIOF_IN && (!io2_present || request_flags[1] == GPIOF_OUT_INIT_LOW) && request_flags[2] == GPIOF_OUT_INIT_LOW);
     if (fail()) return failure_code;
     irq_cookie = cookie; irq_count = 1; return 0;
 }
@@ -161,6 +167,7 @@ static void clean(void) {
 }
 static void reset(void) {
     clean(); operation = 0; fail_at = -1; failure_code = -EIO;
+    io2_present = true;
     no_minor = copy_fault = false; interrupted = transfer_error = transfers = 0;
     expected_tx = NULL; block_transfer = transfer_started = allow_transfer = remove_started = remove_done = false;
 }
@@ -180,6 +187,20 @@ int main(void) {
     const int errors[] = { -EIO, -ENOMEM, -EBUSY, -517 };
     reset(); assert(!spidev_probe(&spi)); int operations = operation;
     assert(operations == 10); assert(!spidev_remove(&spi)); clean(); cases++;
+    reset(); io2_present = false; assert(!spidev_probe(&spi));
+    int absent_operations = operation;
+    assert(absent_operations == 8 && pvr_dev->rfic_io2_gpio == -ENOENT && !requested[1]);
+    unsigned optional_value = 1, before_writes = gpio_writes;
+    assert(controls(SPI_IOC_SET_RFIC_IO2_STATUS, (unsigned long)&optional_value) == -ENODEV);
+    assert(gpio_writes == before_writes && !requested[1]);
+    assert(!spidev_remove(&spi)); clean(); cases++;
+    for (unsigned e = 0; e < sizeof(errors)/sizeof(errors[0]); e++) {
+        for (int n = 0; n < absent_operations; n++) {
+            reset(); io2_present = false; fail_at = n; failure_code = errors[e];
+            assert(spidev_probe(&spi) == (n == 0 ? -ENOMEM : failure_code));
+            assert(operation == n + 1); assert(!spi.data); clean(); cases++;
+        }
+    }
     for (unsigned e = 0; e < sizeof(errors)/sizeof(errors[0]); e++) {
         for (int n = 0; n < operations; n++) {
             reset(); fail_at = n; failure_code = errors[e];
