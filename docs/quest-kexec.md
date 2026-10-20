@@ -129,6 +129,13 @@ are `usb-target-build-v2` and `usb-target-vm-v2` under the port evidence directo
 
 ## Acceptance sequence
 
+The separate [RAM ownership test](../kernel/quest-kexec/README.md#ram-ownership-test)
+now passes on the physical Quest. It uses ordinary buddy allocations rather
+than forcing the busy default CMA pool: four adjacent owned 4 MiB blocks form
+the Image region, with 96 MiB of separate heap RAM including two low DMA banks.
+All patterns and cleanup passed without losing RAM root or changing the boot.
+These allocations were released; their reported addresses are not reserved.
+
 A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its
 default inert tests and an enabled stock-return rehearsal. Completed stock
 Android returned in 66.702 seconds with unchanged firmware and boot state.

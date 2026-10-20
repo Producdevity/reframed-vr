@@ -27,7 +27,10 @@ EXPORTERS = (
 )
 ASSEMBLY_EXPORTERS = ('arch/arm64/lib/strcmp.o', 'arch/arm64/lib/memset.o')
 MODULES = {'probe': ('reframed_quest_probe', 'probe.c'),
-           'reset-test': ('reframed_quest_reset_test', 'reset-test.c')}
+           'reset-test': ('reframed_quest_reset_test', 'reset-test.c'),
+           'memory-test': ('reframed_quest_memory_test', 'memory-test.c')}
+MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
+                                  'kernel/time/timekeeping.o', 'arch/arm64/mm/init.o')}
 
 
 def sha(path):
@@ -66,6 +69,7 @@ def inside():
     out = Path('/output')
     selection = json.loads((out / 'inputs.json').read_text())['module']
     module_name, source_name = MODULES[selection]
+    exporters = EXPORTERS + MODULE_EXPORTERS.get(selection, ())
     build = out / 'kbuild'
     build.mkdir()
     requested = (out / 'requested.config').read_text()
@@ -120,11 +124,11 @@ def inside():
             raise ValueError('Unexpected generated kernel release: ' + uts)
         shutil.copyfile('/stock/Module.symvers', build / 'Module.symvers')
         run('module', make + ['-j2', 'V=1', 'M=/output/module', 'modules'])
-        run('source-exporters', make + ['-j2', 'KBUILD_SYMTYPES=1', *EXPORTERS])
+        run('source-exporters', make + ['-j2', 'KBUILD_SYMTYPES=1', *exporters])
         run('assembly-exporter', make + ['-j1', 'build-dirs=arch/arm64/lib',
                                        'KBUILD_SYMTYPES=1', *ASSEMBLY_EXPORTERS])
         generated = {}
-        for target in EXPORTERS + ASSEMBLY_EXPORTERS:
+        for target in exporters + ASSEMBLY_EXPORTERS:
             script = Path(str(build / target) + '.symversions')
             if script.is_file():
                 generated.update({name: int(value, 16) for name, value in
