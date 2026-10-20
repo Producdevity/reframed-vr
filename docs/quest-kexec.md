@@ -65,6 +65,13 @@ It reports EL1 and the bound DWC3 resource, returns deliberately without a
 resident module, and preserves the boot ID, root and offline updater state.
 This does not exercise relocation, shutdown or a kernel transition.
 
+A follow-up read-only probe passed 20 import comparisons, the stock-kernel VM
+and a physical load after the watchdog calibration. It reported no active EFI
+runtime services and identified both the bound MSM USB parent and DWC3 child.
+The stock ARM64 restart path can therefore reach the restart-handler chain in
+this boot. Device shutdown alone still does not run these drivers' remove
+callbacks; their coherent teardown needs separate validation.
+
 The fresh tree uses `qcom,gh-watchdog`; the bound driver is `gh-watchdog`.
 Its controls are on `hypervisor:qcom,gh-watchdog`, rather than the empty
 `/sys/class/watchdog`. The current command line enables minidump-to-eMMC and

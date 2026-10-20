@@ -21,6 +21,7 @@ EXPORTERS = (
     'kernel/printk/printk.o', 'kernel/locking/mutex.o',
     'drivers/of/base.o', 'drivers/base/bus.o', 'drivers/base/platform.o',
     'mm/page_alloc.o',
+    'drivers/firmware/efi/efi.o',
 )
 ASSEMBLY_EXPORTERS = ('arch/arm64/lib/strcmp.o', 'arch/arm64/lib/memset.o')
 

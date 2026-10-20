@@ -37,6 +37,15 @@ Module SHA-256:
 Private evidence lives under `output/quest-kexec-port-20261020-v1/` in
 `probe-build-v5`, `probe-vm-v1` and `probe-device-v1`.
 
+The subsequent probe also reports the typed EFI state and the MSM USB parent.
+It passed all 20 import comparisons, the stock-kernel VM and the physical Quest
+load. EFI flags were zero and runtime services inactive, so the ARM64 EFI reset
+branch does not bypass restart handlers in this boot. Both `a600000.ssusb`
+(`msm-dwc3`) and its `a600000.dwc3` child (`dwc3`) were bound. Boot identity,
+root and offline state were unchanged. This binary is
+`a42f68bbce66d70d54bff5eafef775c3686e8270e24705a1ef3793478065c2ee`;
+its receipts are `probe-build-v6`, `probe-vm-v2` and `probe-device-v2`.
+
 This validates a limited module interface. RAM staging, the transition,
 peripheral handoff, Linux USB access and reset-to-stock remain separate gates
 in [the port plan](../../docs/quest-kexec.md).
