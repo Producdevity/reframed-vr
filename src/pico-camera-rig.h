@@ -16,6 +16,7 @@ struct pico_camera_rig_config {
         uint32_t sample_pattern;
         bool configure_throttle;
         float utilization;
+        bool mcu_controlled;
     } cameras[2];
 };
 

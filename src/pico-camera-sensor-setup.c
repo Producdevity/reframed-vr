@@ -21,7 +21,7 @@ static const enum pico_camera_packet_opcode opcodes[STAGES] = {
     PICO_CAMERA_PACKET_SENSOR_STREAM_OFF,
 };
 static int prepare_stage(struct pico_camera_sensor_setup *s, unsigned stage, int crm,
-                          const struct pico_camera_sensor_table *table, size_t bytes)
+                          const struct pico_camera_sensor_table *table, size_t bytes, bool bus_only)
 {
     struct pico_camera_buffer_config c = {.kind = PICO_CAMERA_BUFFER_COMMAND,
         .mapping = PICO_CAMERA_MEMORY_CPU, .size = (bytes + 4095) & ~(size_t)4095, .cached = true};
@@ -36,7 +36,13 @@ static int prepare_stage(struct pico_camera_sensor_setup *s, unsigned stage, int
     result = pico_camera_buffer_cpu_begin(s->stages[stage].command, ION_BUFFER_WRITE);
     if (result) return result;
     memset(command.data, 0, command.size);
-    size_t encoded = pico_camera_sensor_writes(&table->bus, table->writes, table->count, command.data, command.size);
+    size_t encoded;
+    if (bus_only) {
+        uint8_t *data = command.data;
+        for (unsigned i = 0; i < 4; ++i) data[i] = (uint8_t)(table->bus.slave_address >> (8 * i));
+        data[4] = (uint8_t)table->bus.frequency; data[5] = 4;
+        encoded = 8;
+    } else encoded = pico_camera_sensor_writes(&table->bus, table->writes, table->count, command.data, command.size);
     result = pico_camera_buffer_cpu_end(s->stages[stage].command);
     if (result || encoded != bytes) return result ? result : -EINVAL;
     struct pico_camera_command_buffer reference = {.memory_handle = command.memory_handle,
@@ -61,16 +67,27 @@ int pico_camera_sensor_setup_prepare(const struct pico_camera_sensor_setup_confi
     };
     size_t sizes[STAGES] = {0};
     for (unsigned i = 0; i < STAGES; ++i) {
+        if (c->mcu_controlled) {
+            if (tables[i]->count || tables[i]->writes) return -EINVAL;
+            continue;
+        }
         if (i == SYNCHRONIZE && !tables[i]->count) continue;
         sizes[i] = pico_camera_sensor_writes_size(&tables[i]->bus, tables[i]->writes, tables[i]->count);
         if (!sizes[i]) return -EINVAL;
+    }
+    if (c->mcu_controlled) {
+        const struct pico_camera_sensor_bus *bus = &c->mode.bus;
+        if (!bus->slave_address || bus->slave_address > 254 || (bus->slave_address & 1) || bus->frequency > 3)
+            return -EINVAL;
+        /* The kernel discards NOP requests in ACQUIRE, even with MCU-owned sensors. */
+        sizes[MODE] = 8;
     }
     struct pico_camera_sensor_setup *s = calloc(1, sizeof(*s));
     if (!s) return -ENOMEM;
     *setup = s; s->fd = c->sensor_fd; s->session = c->session; s->sensor = c->sensor;
     for (unsigned i = 0; i < STAGES; ++i) {
         if (!sizes[i]) continue;
-        int result = prepare_stage(s, i, c->crm_fd, tables[i], sizes[i]);
+        int result = prepare_stage(s, i, c->crm_fd, tables[i], sizes[i], c->mcu_controlled);
         if (result) return result;
     }
     s->prepared = true;

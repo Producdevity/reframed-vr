@@ -36,8 +36,17 @@ static bool valid(const struct pico_camera_rig_config *c)
         const struct pico_camera_sensor_table *tables[] = {&c->cameras[i].initialize, &c->cameras[i].mode,
             &c->cameras[i].stream_on, &c->cameras[i].stream_off, &c->cameras[i].synchronize};
         for (unsigned j = 0; j < 5; ++j) {
+            if (c->cameras[i].mcu_controlled) {
+                if (tables[j]->count || tables[j]->writes) return false;
+                continue;
+            }
             if (j == 4 && !tables[j]->count) continue;
             if (!pico_camera_sensor_writes_size(&tables[j]->bus, tables[j]->writes, tables[j]->count)) return false;
+        }
+        if (c->cameras[i].mcu_controlled) {
+            const struct pico_camera_sensor_bus *bus = &c->cameras[i].mode.bus;
+            if (!bus->slave_address || bus->slave_address > 254 || (bus->slave_address & 1) || bus->frequency > 3)
+                return false;
         }
     }
     return true;
@@ -58,7 +67,8 @@ int pico_camera_rig_prepare(const struct pico_camera_rig_config *c,
         struct pico_camera_sensor_setup_config sensor = {.crm_fd = c->session.crm_fd,
             .sensor_fd = c->session.cameras[i].sensor_fd, .session = d->view.session, .sensor = d->view.cameras[i].sensor,
             .initialize = c->cameras[i].initialize, .mode = c->cameras[i].mode,
-            .synchronize = c->cameras[i].synchronize, .stream_on = c->cameras[i].stream_on, .stream_off = c->cameras[i].stream_off};
+            .synchronize = c->cameras[i].synchronize, .stream_on = c->cameras[i].stream_on,
+            .stream_off = c->cameras[i].stream_off, .mcu_controlled = c->cameras[i].mcu_controlled};
         result = pico_camera_sensor_setup_prepare(&sensor, &d->sensors[i]);
         if (result) return result;
         struct pico_camera_ife_setup ife = {

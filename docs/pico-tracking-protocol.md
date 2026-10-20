@@ -1108,8 +1108,8 @@ Memory tests exercise the retained CRM allocation/import/release dispatch and
 flag validators in 76 calls, with ION and MMU operations mocked. Another 50
 host/ARM64 sanitizer cases cover malformed outputs, partial errors, bounded MMU
 arrays and release ownership. A successful release does not establish hardware
-quiescence. Neither this transport nor the offline root contains proof of live
-camera capture, per-camera timing calibration or physical 6DoF accuracy.
+quiescence. The native capture result above does not establish per-camera timing
+calibration or physical 6DoF accuracy; offline tests do not establish live capture.
 
 ### Event delivery into tracking
 
@@ -1443,6 +1443,22 @@ implementations with simulated CRM memory and ioctls. Host and ARM64 sanitizer
 runs cover 200 complete lifecycles, 104 memory-operation failures, 37 control
 failures and 19 stop/release failures. Those last 19 owners stay retained.
 These tests do not establish physical camera startup or DMA quiescence.
+
+The explicit `mcu_controlled` sensor mode sends one bus-info-only
+`SENSOR_CONFIG` packet. All register tables must be empty; `mode.bus` supplies
+the slave address and frequency. The b1977 kernel otherwise leaves the sensor
+in ACQUIRE and silently discards NOP requests. This packet advances kernel state
+without CCI register transfers. The caller still owns MCU initialization,
+streaming and shutdown.
+
+On the Neo3 Pro Eye with PR0513 station firmware, one all-camera initialization
+produced an initialized mask of zero and zero per-camera initialization errors.
+Sequential single-camera initialization reset earlier cameras and left mask 7.
+Using the maintained MCU-controlled path, native Linux captured 247 frames from
+each of slots 4/5 over five seconds, then stopped the ISP before MCU stream-off;
+both stops succeeded. The retained images were almost black and did not establish
+usable scene texture. This verifies capture and kernel configuration, not camera
+ordering, exposure-center timing or positional tracking.
 
 ## Native camera node inventory
 

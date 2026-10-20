@@ -13,7 +13,7 @@ struct pico_camera_buffer { struct pico_camera_buffer_view view; bool ready, fli
 static struct pico_camera_buffer *buffers[10];
 static unsigned memory_calls, fail_memory_at, io_calls, fail_io_at, next_buffer, live;
 static unsigned stages, submitted, configurations, cycles, faults;
-static bool synchronize;
+static bool synchronize, mcu_controlled;
 static uint32_t expected_values[5];
 static uint64_t get(const void *data, unsigned offset, unsigned size)
 {
@@ -63,7 +63,8 @@ int ioctl(int fd, unsigned long request, ...)
     unsigned packet_id = (unsigned)get(config, 16, 8) - 100;
     assert(packet_id < 10 && packet_id % 2 && buffers[packet_id]->flight && buffers[packet_id - 1]->flight);
     const void *packet = buffers[packet_id]->view.data;
-    unsigned stage = submitted; if (!synchronize && stage >= 2) ++stage;
+    unsigned stage = mcu_controlled ? 1 : submitted;
+    if (!mcu_controlled && !synchronize && stage >= 2) ++stage;
     const unsigned expected_opcode[] = {0x1000002, 0x1000004, 0x1000004, 0x1000000, 0x1000005};
     assert(get(packet, 0, 4) == expected_opcode[stage] && get(packet, 4, 4) == 80);
     assert(!get(packet, 8, 8) && get(packet, 28, 4) == 1 && !get(packet, 36, 4));
@@ -73,16 +74,20 @@ int ioctl(int fd, unsigned long request, ...)
     uint8_t expected[128];
     struct pico_camera_sensor_bus bus = {2, 1, 1, true, 0xe0};
     struct pico_camera_sensor_write write = {0x100 + stage, expected_values[stage], stage * 1000};
-    size_t size = pico_camera_sensor_writes(&bus, &write, 1, expected, sizeof(expected));
+    size_t size;
+    if (mcu_controlled) {
+        const uint8_t bus_only[8] = {0xe0, 0, 0, 0, 1, 4, 0, 0};
+        memcpy(expected, bus_only, sizeof(bus_only)); size = sizeof(bus_only);
+    } else size = pico_camera_sensor_writes(&bus, &write, 1, expected, sizeof(expected));
     assert(size && get(packet, 68, 4) == size);
     assert(!memcmp(buffers[packet_id - 1]->view.data, expected, size));
     ++submitted; ++configurations;
     if (++io_calls == fail_io_at) { errno = EINTR; return -1; }
     return 0;
 }
-static void run(bool sync, unsigned memory_error, unsigned io_error)
+static void run(bool sync, bool mcu, unsigned memory_error, unsigned io_error)
 {
-    assert(!live); synchronize = sync; stages = sync ? 5 : 4;
+    assert(!live); synchronize = sync; mcu_controlled = mcu; stages = mcu ? 1 : sync ? 5 : 4;
     memory_calls = io_calls = next_buffer = submitted = 0;
     fail_memory_at = memory_error; fail_io_at = io_error;
     struct pico_camera_sensor_write writes[5];
@@ -93,7 +98,13 @@ static void run(bool sync, unsigned memory_error, unsigned io_error)
         tables[i] = (struct pico_camera_sensor_table){{2, 1, 1, true, 0xe0}, writes + i, 1};
     }
     if (!sync) tables[2].count = 0;
-    struct pico_camera_sensor_setup_config c = {31, 32, 41, 42, tables[0], tables[1], tables[2], tables[3], tables[4]};
+    struct pico_camera_sensor_setup_config c = {.crm_fd = 31, .sensor_fd = 32, .session = 41, .sensor = 42,
+        .initialize = tables[0], .mode = tables[1], .synchronize = tables[2],
+        .stream_on = tables[3], .stream_off = tables[4]};
+    if (mcu) {
+        c = (struct pico_camera_sensor_setup_config){.crm_fd = 31, .sensor_fd = 32, .session = 41, .sensor = 42,
+            .mode = {.bus = {.slave_address = 0xe0, .frequency = 1}}, .mcu_controlled = true};
+    }
     struct pico_camera_sensor_setup *s = NULL;
     int result = pico_camera_sensor_setup_prepare(&c, &s);
     assert(s);
@@ -118,12 +129,28 @@ static void run(bool sync, unsigned memory_error, unsigned io_error)
 }
 int main(void)
 {
-    for (unsigned i = 0; i < 400; ++i) run(i % 2, 0, 0);
-    for (unsigned sync = 0; sync < 2; ++sync) {
-        unsigned count = sync ? 5 : 4;
-        for (unsigned i = 1; i <= count * 8; ++i) run(sync, i, 0);
-        for (unsigned i = 1; i <= count; ++i) run(sync, 0, i);
+    for (unsigned i = 0; i < 400; ++i) run(i % 2, i % 3 == 0, 0, 0);
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        bool mcu = mode == 2, sync = mode == 1;
+        unsigned count = mcu ? 1 : sync ? 5 : 4;
+        for (unsigned i = 1; i <= count * 8; ++i) run(sync, mcu, i, 0);
+        for (unsigned i = 1; i <= count; ++i) run(sync, mcu, 0, i);
     }
+    struct pico_camera_sensor_setup_config c = {.crm_fd = 31, .sensor_fd = 32, .session = 41, .sensor = 42,
+        .mode = {.bus = {.slave_address = 0xe0, .frequency = 1}}, .mcu_controlled = true};
+    struct pico_camera_sensor_setup *s = NULL;
+    const uint32_t invalid_addresses[] = {0, 1, 0xe1, 256, UINT32_MAX};
+    for (unsigned i = 0; i < sizeof(invalid_addresses) / sizeof(*invalid_addresses); ++i) {
+        c.mode.bus.slave_address = invalid_addresses[i];
+        assert(pico_camera_sensor_setup_prepare(&c, &s) == -EINVAL && !s);
+    }
+    c.mode.bus.slave_address = 0xe0; c.mode.bus.frequency = 4;
+    assert(pico_camera_sensor_setup_prepare(&c, &s) == -EINVAL && !s);
+    c.mode.bus.frequency = 1;
+    c.stream_on.count = 1;
+    assert(pico_camera_sensor_setup_prepare(&c, &s) == -EINVAL && !s);
+    c.stream_on.count = 0; c.initialize.writes = (void *)(uintptr_t)1;
+    assert(pico_camera_sensor_setup_prepare(&c, &s) == -EINVAL && !s);
     assert(pico_camera_sensor_setup_prepare(NULL, NULL) == -EINVAL);
     assert(pico_camera_sensor_setup_submit(NULL) == -EINVAL);
     assert(pico_camera_sensor_setup_quiesced(NULL) == -EINVAL);

@@ -12,11 +12,15 @@ struct pico_camera_sensor_setup_config {
     int crm_fd, sensor_fd;
     int32_t session, sensor;
     struct pico_camera_sensor_table initialize, mode, synchronize, stream_on, stream_off;
+    bool mcu_controlled;
 };
 
 /* Copies explicit sensor tables into owned CRM command/packet allocations.
  * The sensor must already be probed and acquired. Descriptors are borrowed;
- * table storage is borrowed only during this call. Only synchronize may be empty.
+ * table storage is borrowed only during this call. Only synchronize may be empty
+ * unless mcu_controlled: then all tables must be empty and mode.bus supplies only
+ * the slave address and frequency. That mode configures kernel state without
+ * transferring sensor registers; the caller owns MCU initialization/streaming.
  * No module, mode, synchronization role or physical wiring is inferred.
  * A nonnull owner must be released even when preparation fails. */
 int pico_camera_sensor_setup_prepare(const struct pico_camera_sensor_setup_config *config,
