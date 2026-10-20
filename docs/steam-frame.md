@@ -1,5 +1,25 @@
 # Steam Frame software reuse in Reframed VR
 
+## October 20 base-system decision
+
+Use Steam Frame's ARM64 SteamOS userspace as the base for both Pico Neo3 Pro Eye
+and Quest 3. Keep a separate kernel, device tree, firmware, calibration and
+hardware-provider layer for each headset. The existing Fedora-derived Pico
+diagnostic root remains a bring-up fixture; it has not become the complete
+Frame userspace through the addition of individual Steam components.
+
+The first milestone is a Quest 3 RAM-only Linux USB shell and a verified return
+to unchanged stock firmware. Integrate the Frame root filesystem only after
+that milestone. The locked Quest bootloader and its stock partitions remain
+the cold-boot path; kexec changes the running kernel rather than unlocking that
+bootloader. See the [Quest kexec port](quest-kexec.md) for the current gates.
+
+Retain the acquired `20260922.5153644-0.3.0` recovery image as the initial pinned
+userspace source. Adapt its startup, storage and update integration to our
+headsets. Valve's Frame partition layout, hardware services and OS update
+installation are not the Reframed update contract. Keep device-specific support
+in our image builds and verify update recovery before enabling OS updates.
+
 For the October 8 update and current implementation priorities, see
 [device installation requirements](device-installation.md). The findings below
 retain their original investigation dates.
