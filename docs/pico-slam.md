@@ -112,6 +112,15 @@ Three retained camera views remain almost black; a well-lit, uncovered view and
 physical motion validation are still needed. The diagnostic does not publish
 positional poses to a VR runtime.
 
+A second combined run explicitly withheld images until the IMU input covered
+their corrected timestamps. All 249 sets were already covered by 12.1–18.4 ms;
+none needed to wait. It delivered 12,541 IMU pairs and callbacks, again with
+confidence 0, and stopped cleanly. This rules out images arriving ahead of the
+IMU in that run, but does not physically validate the exposure-center constants.
+In the retained 640×480 images, only 6, 10 and 10 pixels exceeded value 16 in the
+three darkest views, respectively. Repeating this unchanged scene is not a
+tracking validation; usable scene detail and head motion remain untested.
+
 
 Evidence, private calibration hashes, exact library versions, diagnostic sources
 and native logs are retained under
