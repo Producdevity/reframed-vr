@@ -26,7 +26,7 @@ int ioctl(int fd, unsigned long request, ...)
         assert(words[0] == 0x08000000 && words[1] == event_id);
         for (unsigned i = 2; i < 8; ++i) assert(!words[i]);
     }
-    if (failure) { errno = failure == 1 ? EAGAIN : EINTR; return -1; }
+    if (failure) { errno = failure; return -1; }
     return 0;
 }
 int main(void)
@@ -41,11 +41,18 @@ int main(void)
     }
     event_id = 0; struct pico_camera_event event, original;
     memset(&event, 0x5a, sizeof(event)); original = event;
-    for (failure = 1; failure <= 2; ++failure) {
+    const unsigned failures[] = {EAGAIN, ENOENT, EINTR, EIO};
+    for (unsigned i = 0; i < sizeof(failures) / sizeof(failures[0]); ++i) {
+        failure = failures[i];
         unsigned before = calls;
-        assert(pico_camera_event_dequeue(31, &event) == (failure == 1 ? -EAGAIN : -EINTR));
+        int expected = failure == ENOENT ? -EAGAIN : -(int)failure;
+        assert(pico_camera_event_dequeue(31, &event) == expected);
         assert(calls == before + 1 && !memcmp(&event, &original, sizeof(event)));
     }
+    failure = ENOENT;
+    enabled = true;
+    assert(pico_camera_event_subscribe(31, event_id, true) == -ENOENT);
+    failure = 0;
     unsigned before = calls;
     assert(pico_camera_event_subscribe(31, 2, true) == -EINVAL);
     assert(pico_camera_event_subscribe(-1, 0, true) == -EINVAL);

@@ -1108,6 +1108,12 @@ nonblocking descriptors. Its ARM64 event layout is checked against Linux headers
 It preserves sequence counters and returns `EAGAIN` without altering the output;
 the wrapper's timestamp is not used as camera time.
 
+The b1977 kernel returns `ENOENT` for an empty nonblocking event queue. Native
+capture exposed this on the headset; the retained `v4l2-event.c` confirms the
+behavior. Only dequeue normalizes that result to `EAGAIN`, so an empty queue no
+longer invalidates capture. Subscription errors and other dequeue errors retain
+their original errno. This correction does not establish camera frame delivery.
+
 `pico_camera_stream` binds a capture generation to explicit camera/link pairs.
 It routes sync cookies and QTimer SOFs, requires a per-request calibrated
 SOF-to-exposure-center offset, and rejects sequence gaps or duplicate events.

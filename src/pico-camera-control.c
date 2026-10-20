@@ -336,7 +336,8 @@ int pico_camera_event_dequeue(int fd, struct pico_camera_event *event)
     _Static_assert(sizeof(data) == 136, "Linux AArch64 V4L2 event ABI");
     _Static_assert(offsetof(struct pico_camera_event, data) == 16, "event payload layout");
     int result = ioctl(fd, 0x80885659UL, &data);
-    if (result < 0) return -errno;
+    /* b1977's nonblocking V4L2 dequeue reports an empty queue as ENOENT. */
+    if (result < 0) return errno == ENOENT ? -EAGAIN : -errno;
     if (result) return -EPROTO;
     event->type = data.type; event->id = data.id;
     event->sequence = data.sequence; event->pending = data.pending;
