@@ -14,7 +14,7 @@ and IMU files match the retained backup hashes. Stock declares its four tracking
 cameras as OV7251 devices in slots 2–5, with 8-bit bus addresses `e2/e4/e6/e8`;
 the corresponding camera module files match the previously decoded firmware.
 These declarations do not establish a successful silicon-ID read or the mapping
-from physical slots to SLAM camera indices.
+from physical slots to SLAM camera indices on their own.
 
 Native Linux matched 134 stock device-tree properties for slots 4/5 and their
 PHYs, queried the ISP and camera capabilities, and accepted both probe calls.
@@ -52,6 +52,27 @@ stock type tags and rejects unknown tags and zero exposure/gain. This proves
 parameter delivery in the image; the single-register MCU reads remain
 insufficient evidence because the firmware ignores their I2C error status.
 
+The module inspector now retains each configuration's 16-bit `camera_id`.
+An offline ARM64 oracle loaded the actual Neo3 CamX module parser and called
+`ImageSensorModuleData::GetCameraId`; all four results match the inspector:
+
+| Module | Bus address | CamX ID | Expected aggregate SLAM index |
+| --- | --- | --- | --- |
+| `pico_ov7251_left` | `e2` | 2 | 0 |
+| `pico_ov7251_right` | `e4` | 3 | 1 |
+| `ov7251_slave` | `e6` | 4 | 2 |
+| `ov7251_master` | `e8` | 5 | 3 |
+
+The expected final column follows the Neo3 library path: QuickCamera retains
+the module IDs; `PvrCameraManager` traverses its camera map in key order and
+collects the tracking module types; aggregate `PvrQuickCamera` assigns successive
+native IDs when constructing those devices. Its frame callback writes that
+native ID into the frame item. This supports the diagnostic's slot-minus-two
+mapping; it is a source-derived mapping, not a physical calibration check.
+Individual-camera opens take a different path and must not be assumed to apply
+the aggregate remapping. Retained Ghidra addresses from another CamX build were
+not used for the oracle; its entry points came from this ELF's symbols.
+
 ## Native vendor SLAM bring-up
 
 The actual b1977 `libSlam.so` now starts under native Linux with the headset's
@@ -78,6 +99,18 @@ completed in the bounded live run. Unloading the vendor library afterward hung
 until the diagnostic alarm fired; the live helper therefore keeps the library
 loaded for its process lifetime and exits after explicit destruction. This is
 not proof of reusable in-process unload support or CVP image processing.
+
+The first combined native run delivered 249 synchronized four-camera head-frame
+sets and 12,540 matched IMU pairs to the vendor algorithm. It reported nonzero
+image feature counts, but every pose callback still had confidence 0. Both ISP
+groups stopped cleanly, the MCU stream stopped and its power reference was
+released, and the SSC producer joined without overflowing its ring. Missing
+library messages were traced to system performance reporting and PXR
+notifications; they are not evidence of a missing image-processing dependency.
+No Android framework services were started to satisfy those optional paths.
+Three retained camera views remain almost black; a well-lit, uncovered view and
+physical motion validation are still needed. The diagnostic does not publish
+positional poses to a VR runtime.
 
 
 Evidence, private calibration hashes, exact library versions, diagnostic sources

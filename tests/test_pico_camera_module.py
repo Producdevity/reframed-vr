@@ -167,8 +167,27 @@ class CameraModuleTests(unittest.TestCase):
         self.assertEqual(result['power_up'], [{'sequence_type': 8, 'value': 0, 'delay_ms': 1},
                                             {'sequence_type': 0, 'value': 24000000, 'delay_ms': 18}])
         self.assertEqual(result['power_down'], [{'sequence_type': 8, 'value': 1, 'delay_ms': 2}])
-        self.assertEqual(result['configurations'], [{'index': 0, 'sensor_name': 'ov-test',
+        self.assertEqual(result['configurations'], [{'index': 0, 'camera_id': 0, 'sensor_name': 'ov-test',
             'slave_address': 0xe2, 'frequency': 1, 'lane_assign': 0x3210, 'combo': 0}])
+
+    def test_camera_id_width_and_configuration_order(self):
+        symbols = fixture()
+        first = symbols[14][4]
+        second = bytearray(first)
+        struct.pack_into('<Q', first, 0, 5)
+        struct.pack_into('<Q', second, 0, 2)
+        symbols[14][4] = first + second
+        symbols[13][4] = words(1, 0, 0, 2, 15)
+        rows = camera.Module(encode(symbols)).inspect()['configurations']
+        self.assertEqual([(row['index'], row['camera_id']) for row in rows], [(0, 5), (1, 2)])
+        for value in (65535, 65536, 1 << 32):
+            symbols = fixture()
+            struct.pack_into('<Q', symbols[14][4], 0, value)
+            if value == 65535:
+                self.assertEqual(camera.Module(encode(symbols)).inspect()['configurations'][0]['camera_id'], value)
+            else:
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    camera.Module(encode(symbols)).inspect()
 
     def test_probe_pipeline_delay_selection(self):
         result = camera.Module(encode(fixture())).inspect()

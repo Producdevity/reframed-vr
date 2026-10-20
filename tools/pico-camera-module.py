@@ -125,7 +125,8 @@ class Module:
         result = []
         for offset in range(0, len(data), 360):
             row = [integer(data, offset + i * 8) for i in range(31)]
-            result.append({'index': offset // 360, 'sensor_name': self.sensor_name(row[3], row[4]),
+            result.append({'index': offset // 360, 'camera_id': integer(data, offset, 16),
+                           'sensor_name': self.sensor_name(row[3], row[4]),
                            'slave_address': self.optional(row[6], 'sensorSlaveAddress', row[5], 16),
                            'frequency': self.optional(row[8], 'sensorI2CFrequencyMode', row[7]),
                            'lane_assign': self.optional(row[28], 'laneAssign', row[27], 16),
