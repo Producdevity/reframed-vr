@@ -3,7 +3,7 @@
 The first target is a native Linux USB shell followed by a verified return to
 the unchanged stock Quest firmware. Steam Frame's ARM64 userspace is the
 subsequent OS base, as recorded in the [base-system decision](steam-frame.md).
-No Quest 3 kernel handoff or return from a custom kernel has passed yet.
+No physical Quest 3 kernel handoff or return from a custom kernel has passed yet.
 
 ## Current verified inputs
 
@@ -154,10 +154,18 @@ has also passed its stock-kernel VM and physical readback test. The actual
 module removal freed all banks. This validates staging, not execution. Final
 post-shutdown USB validation and the actual replacement-kernel boot remain.
 
+The [explicit boot module](../kernel/quest-kexec/README.md#explicit-ram-boot-module)
+now passes its complete diskless VM handoff: stock kernel → owned RAM payload
+→ separate native kernel/userspace → reboot. An incorrect payload hash is
+rejected before restart. Physical staging/readback and cleanup also pass on
+the Quest. These tests do not yet establish physical USB enumeration or stock
+return from the replacement kernel.
+
 The owner permits ending the current rooted session for that handoff, provided
 the existing RAM-root route remains usable afterward. Keep firmware unchanged
 and offline; verify root again after stock return using the pinned existing
-offline procedure. No exploit development is part of this port.
+offline binary unchanged, leaving its sources and build untouched. No exploit
+development is part of this port.
 
 A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its
 default inert tests and an enabled stock-return rehearsal. Completed stock

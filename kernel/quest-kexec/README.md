@@ -76,7 +76,7 @@ cleared its partial cache changes; after boot settled, the pinned Fugu tool
 restored root and `update_engine` was stopped again. The cause of the first
 failure is unproved. Receipts are `reset-test-vm-v1`,
 `reset-test-device-inert-v1` and `restart-handler-return-v1` under the private
-port evidence directory. No custom kernel has executed.
+port evidence directory. That rehearsal did not execute a custom kernel.
 
 ## RAM ownership test
 
@@ -208,3 +208,43 @@ declared memory extent is zero-padded before the initramfs and DTB. Eight
 regression tests cover the physical placement contract, overlaps, payload
 bounds and real FDT edits. Assembly/readback does not prove kernel entry,
 physical USB enumeration or reset from the new kernel.
+
+## Explicit RAM boot module
+
+`--module boot` builds `boot.c`, shared staging code and the one-way assembly
+entry. Its default load remains inert. `stage=1` creates the same bounded
+payload interface and additionally takes typed runtime-PM references on the
+existing USB parent and child. It does not launch a kernel on module load.
+The staging-only module remains a separate build with no jump path.
+
+The root-only `status` file reports the USB halt and launch state. Writing a
+hexadecimal DTB offset and full payload SHA-256 to `launch` requires halted
+device-mode USB, valid bounded ARM64/FDT headers and a matching hash over all
+16 MiB. It seals payload writes and enters normal `kernel_restart()`. The
+command-specific late restart handler requires CPU 0 alone online, interrupts
+disabled and USB still halted. A refused gate leaves stock reset handlers
+available. A successful gate refreshes the 45-second GH deadline, cleans all
+owned target banks and control tables to PoC, and enters the Image with the
+physical DTB in x0 and x1–x3 zero.
+
+The October 20 build passed 56 stock/source import comparisons. The diskless
+stock-kernel VM rejected an incorrect payload hash, passed the late gate,
+entered the separate minimal kernel, ran static native ARM64 userspace and
+rebooted. The physical Quest passed inert loading, staging/readback, removal
+and root/boot preservation; no physical kernel launch is established by those
+staging tests. Module SHA-256:
+`162778c9d1b77fbbab21c46ae102f21b97e3a57930b8fac631ef8958620d7ee1`.
+Private receipts: `boot-build-v3`, `boot-vm-v2` and `boot-device-stage-v1`.
+
+The shared staging-only refactor separately passed `ram-stage-build-v3` and
+`ram-stage-vm-v2`, retaining its full payload/bounds/removal regression.
+
+Build the native USB initramfs with
+`tools/build-quest-ram-initramfs.py`, supplying a hash-verified static ARM64
+BusyBox. Its [init script](../../system/quest/ram-usb-init) mounts only kernel
+and RAM filesystems, binds a normal ACM gadget and starts a serial shell. It
+requires `reframed.ram_usb=1`, does not pet the inherited watchdog, and requests
+a reboot on setup failure or shell exit. The maintained builder reproduces the
+previously checked initramfs byte-for-byte. `boot-usb-init-vm-v1` verified this
+exact archive's startup and bounded reboot when the VM has no UDC. Physical
+enumeration and stock return remain separate acceptance gates.
