@@ -97,6 +97,36 @@ It does not yet prove a preserved watchdog deadline, successful USB shell or
 stock return after our loader changes CPU/peripheral state. Recheck and clear
 download mode before each such test; the stock boot configuration enables it.
 
+## Minimal USB target kernel
+
+The separate `ram-usb` configuration now compiles from the pinned Meta source:
+
+```sh
+bash tools/build-kernel.sh quest3 output/kernel/quest3/ram-usb-build ram-usb
+```
+
+This seeds `allnoconfig` rather than the full vendor configuration. It retains
+strict CFI and shadow call stacks, includes the USB gadget and required
+clock/regulator/IOMMU providers, and excludes block support, system suspend,
+CPU hotplug and the watchdog driver. The first target must not pet the inherited
+watchdog deadline. Its configuration does not establish safe inherited hardware
+state or complete device-tree preparation.
+
+Three narrow source fixes give disabled WALT stubs internal linkage, guard
+sleep-only USB callbacks and preserve the function body needed by the MSM
+connection-done kretprobe. The existing ARM64 unwind-layout fix is also applied.
+The initial VM run caught that missing functional USB hook; the corrected build
+registers all hooks without the earlier error.
+
+The October 20 clean build passed configuration resolution and Image layout
+validation: all 21 allocated ELF sections fit its 13,893,632-byte declared
+memory extent. Image SHA-256:
+`a318f9cd69a4551851c0b1f78a29ce26c4eaa8304632bb61b36f54010abc7d22`.
+A diskless VM using a synthetic board tree reached native static ARM64
+userspace, created ACM and ECM configfs functions, and rebooted. This proves
+neither physical USB enumeration nor a Quest kexec transition. Private receipts
+are `usb-target-build-v2` and `usb-target-vm-v2` under the port evidence directory.
+
 ## Acceptance sequence
 
 A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its

@@ -176,7 +176,13 @@ def prepare_pico_audio(source, cache):
     return directory
 
 
-def build_inputs(profile, linux_userspace, qemu_abi):
+def build_inputs(profile, linux_userspace, qemu_abi, ram_usb=False):
+    if ram_usb:
+        if profile["repository"] != "facebookincubator/oculus-linux-kernel" or linux_userspace or qemu_abi:
+            raise ValueError("RAM USB is a separate Quest kernel configuration")
+        return ([sources.ROOT / "profiles/kernel/quest3-ram-usb.config"],
+                [sources.ROOT / "patches/kernel/linux-userspace/0003-arm64-place-cfi-unwind-data.patch",
+                 *sorted((sources.ROOT / "patches/kernel/quest3-ram-usb").glob("*.patch"))])
     if qemu_abi and not linux_userspace:
         raise ValueError("QEMU transports require the Linux userspace configuration")
     pico = profile["repository"] == "bytedance/neo3-kernel"
@@ -216,14 +222,14 @@ def require_build_memory(profile, linux_userspace, configure_only, limit):
         raise ValueError("Quest Linux BTF generation requires at least 6 GiB of container memory")
 
 
-def build(profile, workspace, output, archive, linux_userspace=False, configure_only=False, qemu_abi=False):
+def build(profile, workspace, output, archive, linux_userspace=False, configure_only=False, qemu_abi=False, ram_usb=False):
     if sys.platform != "linux":
         raise ValueError("Use the Linux container workflow: just build-vendor-kernel")
     memory_limit = cgroup_memory_limit()
     require_build_memory(profile, linux_userspace, configure_only, memory_limit)
-    extensions, patches = build_inputs(profile, linux_userspace, qemu_abi)
-    targets = profile.get("build_targets", ["Image", "modules", "dtbs"])
-    if targets not in (["Image", "modules"], ["Image", "modules", "dtbs"]):
+    extensions, patches = build_inputs(profile, linux_userspace, qemu_abi, ram_usb)
+    targets = ["Image"] if ram_usb else profile.get("build_targets", ["Image", "modules", "dtbs"])
+    if targets not in (["Image"], ["Image", "modules"], ["Image", "modules", "dtbs"]):
         raise ValueError("Unsupported kernel build targets")
     if output.exists() and any(output.iterdir()):
         raise ValueError("Output exists; choose a new report directory")
@@ -231,14 +237,14 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
     workspace.mkdir(parents=True, exist_ok=True)
     sources.require_case_sensitive(workspace)
     source = workspace / "source"
-    cache = workspace / "linux-userspace" if linux_userspace else workspace
+    cache = workspace / "ram-usb" if ram_usb else workspace / "linux-userspace" if linux_userspace else workspace
     cache.mkdir(exist_ok=True)
     build_dir = cache / "build"
     report = {"schema_version": 1, "purpose": "vendor kernel compilation baseline",
               "repository": profile["repository"], "commit": profile["commit"],
               "hardware_boot_verified": False, "flash_image": False,
               "stock_toolchain_reproduction": False, "status": "started", "commands": [], "artifacts": [],
-              "variant": "qemu-abi" if qemu_abi else "linux-userspace" if linux_userspace else "vendor",
+              "variant": "ram-usb" if ram_usb else "qemu-abi" if qemu_abi else "linux-userspace" if linux_userspace else "vendor",
               "qemu_transports": qemu_abi,
               "build_targets": targets, "device_trees_compiled": False,
               "limits": {"memory": os.environ.get("KERNEL_BUILD_MEMORY", "external"), "cgroup_memory_bytes": memory_limit, "make_jobs": 2,
@@ -272,6 +278,8 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
         identity = {"profile_sha256": hashlib.sha256(json.dumps(profile, sort_keys=True).encode()).hexdigest(),
                     "compiler": report["compiler"], "container_image": report["container_image"],
                     "config_fragments": profile["config_fragments"]}
+        if ram_usb:
+            identity.update(config_fragments=[], config_mode="allnoconfig")
         pico_make_options = []
         if profile["repository"] == "bytedance/neo3-kernel":
             pico_make_options = ["REAL_CC=clang", "CLANG_TRIPLE=aarch64-linux-gnu-",
@@ -287,10 +295,10 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
             }
         if patches:
             identity["patches"] = {str(path.relative_to(sources.ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in patches}
-        if linux_userspace:
+        if linux_userspace or ram_usb:
             identity["config_extensions"] = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in extensions}
         if linux_userspace or patches:
-            if not linux_userspace:
+            if not linux_userspace and not ram_usb:
                 cache = workspace / "vendor"
                 cache.mkdir(exist_ok=True)
             cache = cache / hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
@@ -303,7 +311,7 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
             raise ValueError("Cached build identity differs; use a new Linux volume")
         build_dir.mkdir(exist_ok=True)
         stamp.write_text(json.dumps(identity, indent=2) + "\n")
-        fragments = [str(sources.source_path(source, name)) for name in profile["config_fragments"]]
+        fragments = [] if ram_usb else [str(sources.source_path(source, name)) for name in profile["config_fragments"]]
         fragments.extend(str(path) for path in extensions)
         report["identity"] = identity
         config_dir = cache / "config"
@@ -325,11 +333,13 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
                 "LD=ld.lld --threads=1 --lto-partitions=1",
                 "PAHOLE_FLAGS=--skip_encoding_btf_enum64 --jobs=1"]
         make.extend(pico_make_options)
-        run([*make, "olddefconfig"], "config-resolve.log")
+        if ram_usb:
+            env["KCONFIG_ALLCONFIG"] = str(output / "requested.config")
+        run([*make, "allnoconfig" if ram_usb else "olddefconfig"], "config-resolve.log")
         shutil.copyfile(config, output / "resolved.config")
         shutil.copyfile(config, resolved_stamp)
         report["config_changes"] = config_changes(output / "requested.config", config)
-        if linux_userspace:
+        if linux_userspace or ram_usb:
             report["unresolved_userspace_options"] = [change for path in extensions for change in config_changes(path, config)]
             if report["unresolved_userspace_options"]:
                 raise ValueError("Kconfig rejected Linux userspace options; see build.json")
@@ -343,7 +353,10 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
         # GNU timeout terminates make's complete process group, including compiler children.
         run(["timeout", "--kill-after=15", "2700", *make, "-j2", *targets], "compile.log", 2760)
         report["image_layout"] = validate_image_layout(build_dir / "vmlinux", build_dir / "arch/arm64/boot/Image")
-        for relative in ("arch/arm64/boot/Image", "System.map", "Module.symvers", ".config", "modules.order", "modules.builtin"):
+        copied = ["arch/arm64/boot/Image", "System.map", ".config"]
+        if "modules" in targets:
+            copied.extend(("Module.symvers", "modules.order", "modules.builtin"))
+        for relative in copied:
             shutil.copyfile(build_dir / relative, output / Path(relative).name)
         dt_dir = output / "device-trees"
         dt_dir.mkdir()
@@ -366,26 +379,27 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
             run(["timeout", "--kill-after=15", "900", *audio_make, "-j2", "modules"],
                 "audio-compile.log", 930)
             shutil.copyfile(audio / "Module.symvers", output / "audio-Module.symvers")
-        staging = cache / "modules"
-        if staging.exists():
-            shutil.rmtree(staging)
-        run([*make, f"INSTALL_MOD_PATH={staging}", "INSTALL_MOD_STRIP=1", "modules_install"], "modules-install.log", 300)
-        if audio_make is not None:
-            run([*audio_make, f"INSTALL_MOD_PATH={staging}", "INSTALL_MOD_DIR=extra/pico-audio",
-                 "INSTALL_MOD_STRIP=1", "modules_install"], "audio-install.log", 300)
-        for path in staging.glob("lib/modules/*/*"):
-            if path.name in ("build", "source") and path.is_symlink():
-                path.unlink()
-        modules = []
-        for path in sorted(staging.rglob("*.ko")):
-            metadata = subprocess.check_output(["modinfo", "-0", str(path)]).decode()
-            item = file_record(path, staging)
-            item.update(module_metadata(metadata))
-            modules.append(item)
-        (output / "modules.json").write_text(json.dumps(modules, indent=2) + "\n")
-        with tarfile.open(output / "modules.tar.gz", "w:gz") as stream:
-            stream.add(staging / "lib", arcname="lib")
-        report["module_count"] = len(modules)
+        if "modules" in targets:
+            staging = cache / "modules"
+            if staging.exists():
+                shutil.rmtree(staging)
+            run([*make, f"INSTALL_MOD_PATH={staging}", "INSTALL_MOD_STRIP=1", "modules_install"], "modules-install.log", 300)
+            if audio_make is not None:
+                run([*audio_make, f"INSTALL_MOD_PATH={staging}", "INSTALL_MOD_DIR=extra/pico-audio",
+                     "INSTALL_MOD_STRIP=1", "modules_install"], "audio-install.log", 300)
+            for path in staging.glob("lib/modules/*/*"):
+                if path.name in ("build", "source") and path.is_symlink():
+                    path.unlink()
+            modules = []
+            for path in sorted(staging.rglob("*.ko")):
+                metadata = subprocess.check_output(["modinfo", "-0", str(path)]).decode()
+                item = file_record(path, staging)
+                item.update(module_metadata(metadata))
+                modules.append(item)
+            (output / "modules.json").write_text(json.dumps(modules, indent=2) + "\n")
+            with tarfile.open(output / "modules.tar.gz", "w:gz") as stream:
+                stream.add(staging / "lib", arcname="lib")
+            report["module_count"] = len(modules)
         if patches:
             report["patched_source_after_build_sha256"] = tree_digest(source)
             if report["patched_source_after_build_sha256"] != report["patched_source_sha256"]:
@@ -416,10 +430,11 @@ def main():
     parser.add_argument("--linux-userspace", action="store_true")
     parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--qemu-abi", action="store_true", help="Add virtual transports for userspace ABI tests")
+    parser.add_argument("--ram-usb", action="store_true", help="Build the separate minimal Quest RAM-only USB kernel")
     args = parser.parse_args()
     try:
         result = build(sources.read_profile(args.profile), args.workspace.resolve(), args.output.resolve(), args.archive.resolve(),
-                       args.linux_userspace or args.qemu_abi, args.configure_only, args.qemu_abi)
+                       args.linux_userspace or args.qemu_abi, args.configure_only, args.qemu_abi, args.ram_usb)
         print(f"Kernel baseline {result['status']}; no headset boot verified")
     except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as error:
         parser.exit(1, f"{error}\n")

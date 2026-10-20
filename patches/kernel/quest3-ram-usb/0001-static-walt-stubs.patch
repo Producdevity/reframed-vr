@@ -1,0 +1,22 @@
+Subject: [PATCH] sched: give disabled WALT header stubs internal linkage
+
+With CONFIG_SCHED_WALT disabled, ThinLTO emits the two externally linked
+inline definitions from multiple translation units. Match the neighboring
+disabled-feature stubs so a minimal kernel links without WALT.
+
+--- a/include/linux/sched/walt.h
++++ b/include/linux/sched/walt.h
+@@ -191,11 +191,11 @@
+ {
+ }
+ 
+-inline int walt_pause_cpus(struct cpumask *cpus)
++static inline int walt_pause_cpus(struct cpumask *cpus)
+ {
+ 	return 0;
+ }
+-inline int walt_resume_cpus(struct cpumask *cpus)
++static inline int walt_resume_cpus(struct cpumask *cpus)
+ {
+ 	return 0;
+ }

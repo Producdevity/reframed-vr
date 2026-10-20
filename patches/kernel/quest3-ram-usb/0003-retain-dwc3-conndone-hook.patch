@@ -1,0 +1,17 @@
+Subject: [PATCH] usb: dwc3: retain the downstream connection-done probe target
+
+The MSM wrapper installs a functional kretprobe on this callback by name.
+ThinLTO inlines its only call in the minimal configuration, leaving that
+probe unable to register. Keep a callable body for the downstream hook.
+
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -4009,7 +4009,7 @@
+ 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
+ }
+ 
+-static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
++static noinline void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
+ {
+ 	struct dwc3_ep		*dep;
+ 	int			ret;
