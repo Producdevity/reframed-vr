@@ -191,6 +191,35 @@ establish a completed return, measured scale, axis alignment or loop closure.
 It establishes a live positional response under native Linux, independently of
 an Android framework session. No positional pose is published to SteamVR yet.
 
+### Runtime pose conversion
+
+`pico-slam-pose` converts the decoded result to an explicitly configured head
+frame without depending on Monado or OpenVR. The caller supplies the raw pose's
+transform direction, metres per vendor unit, `T_world_slam`, `T_body_head` and
+current monotonic clock uncertainty. It composes the complete transforms,
+including the rotating head lever arm; an inverse pose inverts translation as
+well as orientation. It does not infer an axis convention, metric scale,
+head offset or world origin from a plausible-looking quaternion.
+
+Only the observed b1977 state 1 / confidence 1 combination passes. Unknown
+statuses, non-finite or malformed transforms, future/stale times and excessive
+uncertainty are refused without changing the caller's output. The opaque
+vendor error field is preserved by the decoder and does not become a guessed
+failure code. A fresh stationary position at exactly zero remains valid.
+
+Synthetic transform and validity cases pass address/undefined-behavior
+sanitizers. Replay of the retained one-minute capture passes all 61,905 records
+on the host and under the actual Pico Bionic loader in an isolated ARM64 Linux
+container; exactly 59,342 confidence-1 records pass the gate. That replay uses
+explicit identity test transforms and does not establish physical OpenXR axes,
+metric scale, head extrinsics or live runtime publication. Private build and
+replay evidence is retained in `output/pico-pose-runtime-20261021-v1/`.
+
+PicoFrame's separate Bionic SLAM process and SteamVR consumer are useful
+architectural references. Its PICO 4 `SlamTracker` uses a different pose contract
+and estimates orientation conventions; those guesses and hardware constants
+are not used as Neo3 calibration.
+
 The carrier archive in `live-20261020-v1/vio-export.tar.gz` is 4,198,518 bytes,
 SHA-256 `75014c026bf06cc067c45acd93b344d559599b4bace093e08412e87ccba1545d`.
 Its embedded manifest verifies all 20 exported members, including both complete
