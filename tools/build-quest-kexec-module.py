@@ -30,7 +30,8 @@ MODULES = {'probe': ('reframed_quest_probe', 'probe.c'),
            'reset-test': ('reframed_quest_reset_test', 'reset-test.c'),
            'memory-test': ('reframed_quest_memory_test', 'memory-test.c'),
            'usb-test': ('reframed_quest_usb_test', 'usb-test.c'),
-           'mmu-test': ('reframed_quest_mmu_test', 'mmu-test.c')}
+           'mmu-test': ('reframed_quest_mmu_test', 'mmu-test.c'),
+           'ram-stage': ('reframed_quest_ram_stage', 'ram-stage.c')}
 MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
                                   'kernel/time/timekeeping.o', 'arch/arm64/mm/init.o'),
                     'usb-test': ('drivers/base/core.o', 'drivers/base/power/runtime.o',
@@ -39,8 +40,13 @@ MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
                                  'lib/vsprintf.o'),
                     'mmu-test': ('arch/arm64/mm/init.o', 'kernel/stop_machine.o',
                                  'kernel/time/hrtimer.o', 'kernel/time/timekeeping.o',
-                                 'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o')}
-MODULE_EXTRA_FILES = {'mmu-test': ('transition.S',)}
+                                 'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o'),
+                    'ram-stage': ('arch/arm64/mm/init.o', 'kernel/time/hrtimer.o',
+                                  'kernel/ksysfs.o', 'lib/kobject.o',
+                                  'fs/sysfs/file.o', 'lib/vsprintf.o')}
+MODULE_EXTRA_FILES = {'mmu-test': ('transition.S',),
+                      'memory-test': ('ram.c', 'ram.h'),
+                      'ram-stage': ('ram.c', 'ram.h')}
 
 
 def sha(path):
@@ -81,7 +87,7 @@ def inside():
     module_name, source_name = MODULES[selection]
     exporters = EXPORTERS + MODULE_EXPORTERS.get(selection, ())
     assembly_exporters = ASSEMBLY_EXPORTERS + (('arch/arm64/lib/memcpy.o',)
-                                               if selection == 'mmu-test' else ())
+                                               if selection in ('mmu-test', 'ram-stage') else ())
     build = out / 'kbuild'
     build.mkdir()
     requested = (out / 'requested.config').read_text()

@@ -8,17 +8,12 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/reboot.h>
-#include <linux/sched/mm.h>
 #include <linux/sizes.h>
 #include <linux/string.h>
 #include <linux/utsname.h>
 
 #define PREFIX "REFRAMED_QUEST_MEMORY_TEST "
-#define IMAGE_BYTES (16 * SZ_1M)
-#define HEAP_BANKS 24
-#define HEAP_ORDER 10
-#define MAX_BANKS 64
-#define IMAGE_BANKS 4
+#include "ram.h"
 #define GH_CALL(function) ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, \
 	ARM_SMCCC_SMC_32, ARM_SMCCC_OWNER_VENDOR_HYP, function)
 
@@ -26,8 +21,7 @@ static bool execute;
 module_param(execute, bool, 0400);
 static bool fixture;
 module_param(fixture, bool, 0400);
-static struct page *banks[MAX_BANKS];
-static struct page *dma_banks[2];
+static struct reframed_ram ram;
 static struct hrtimer deadline;
 static atomic_t expired = ATOMIC_INIT(0);
 
@@ -78,101 +72,31 @@ static int check_owned(struct page *pages, unsigned long count)
 
 static int allocate_and_release(void)
 {
-	unsigned long noio;
 	phys_addr_t base;
-	unsigned int index, other, count = 0, image = MAX_BANKS, kept = 0;
-	bool selected[MAX_BANKS] = { false };
-	int rc = -ENOMEM;
+	unsigned int index;
+	int rc = reframed_ram_allocate(&ram);
 
-	noio = memalloc_noio_save();
-	for (index = 0; index < ARRAY_SIZE(dma_banks); ++index) {
-		dma_banks[index] = alloc_pages(GFP_KERNEL | GFP_DMA32 |
-				__GFP_NORETRY | __GFP_NOWARN, HEAP_ORDER);
-		if (!dma_banks[index])
-			goto out;
-		if (page_to_phys(dma_banks[index]) +
-		    (PAGE_SIZE << HEAP_ORDER) > (1ULL << 32)) {
-			rc = -ERANGE;
-			goto out;
-		}
-	}
-	for (count = 0; count < MAX_BANKS; ++count) {
-		banks[count] = alloc_pages(GFP_KERNEL | __GFP_NORETRY |
-					  __GFP_NOWARN, HEAP_ORDER);
-		if (!banks[count])
-			break;
-	}
-	for (index = 1; index < count; ++index) {
-		struct page *page = banks[index];
-
-		other = index;
-		while (other && page_to_phys(banks[other - 1]) > page_to_phys(page)) {
-			banks[other] = banks[other - 1];
-			--other;
-		}
-		banks[other] = page;
-	}
-	pr_info(PREFIX "acquired_banks=%u bank_bytes=%lu\n",
-		count, PAGE_SIZE << HEAP_ORDER);
-	if (count < IMAGE_BANKS + HEAP_BANKS - ARRAY_SIZE(dma_banks))
-		goto out;
-	for (index = 0; index + IMAGE_BANKS <= count; ++index) {
-		base = page_to_phys(banks[index]);
-		for (other = 1; other < IMAGE_BANKS; ++other)
-			if (page_to_phys(banks[index + other]) !=
-			    base + other * (PAGE_SIZE << HEAP_ORDER))
-				break;
-		if (other == IMAGE_BANKS) {
-			image = index;
-			break;
-		}
-	}
-	if (image == MAX_BANKS)
-		goto out;
-	for (index = image; index < image + IMAGE_BANKS; ++index)
-		selected[index] = true;
-	for (index = 0; index < count; ++index) {
-		if (!selected[index] && kept < HEAP_BANKS - ARRAY_SIZE(dma_banks)) {
-			selected[index] = true;
-			++kept;
-		}
-		if (!selected[index]) {
-			__free_pages(banks[index], HEAP_ORDER);
-			banks[index] = NULL;
-		}
-	}
-	base = page_to_phys(banks[image]);
+	if (rc)
+		return rc;
+	base = page_to_phys(ram.image[0]);
 	pr_info(PREFIX "image start=%pa bytes=%u adjacent_owned_blocks=%u\n",
-		&base, IMAGE_BYTES, IMAGE_BANKS);
-	for (index = 0; index < count; ++index) {
-		if (!banks[index])
-			continue;
-		rc = check_owned(banks[index], 1UL << HEAP_ORDER);
+		&base, REFRAMED_RAM_IMAGE_BYTES, REFRAMED_RAM_IMAGE_BANKS);
+	for (index = 0; index < ARRAY_SIZE(ram.image); ++index) {
+		rc = check_owned(ram.image[index], 1UL << REFRAMED_RAM_ORDER);
 		if (rc)
 			goto out;
 	}
-	for (index = 0; index < ARRAY_SIZE(dma_banks); ++index) {
-		rc = check_owned(dma_banks[index], 1UL << HEAP_ORDER);
+	for (index = 0; index < ARRAY_SIZE(ram.heap); ++index) {
+		rc = check_owned(ram.heap[index], 1UL << REFRAMED_RAM_ORDER);
 		if (rc)
 			goto out;
 	}
-	pr_info(PREFIX "validated image_bytes=%u heap_bytes=%lu dma_bytes=%lu\n",
-		IMAGE_BYTES, HEAP_BANKS * (PAGE_SIZE << HEAP_ORDER),
-		ARRAY_SIZE(dma_banks) * (PAGE_SIZE << HEAP_ORDER));
+	pr_info(PREFIX "validated image_bytes=%u heap_bytes=%u dma_bytes=%u\n",
+		REFRAMED_RAM_IMAGE_BYTES,
+		REFRAMED_RAM_HEAP_BANKS * REFRAMED_RAM_BANK_BYTES,
+		2 * REFRAMED_RAM_BANK_BYTES);
 out:
-	for (index = 0; index < MAX_BANKS; ++index) {
-		if (banks[index]) {
-			__free_pages(banks[index], HEAP_ORDER);
-			banks[index] = NULL;
-		}
-	}
-	for (index = 0; index < ARRAY_SIZE(dma_banks); ++index) {
-		if (dma_banks[index]) {
-			__free_pages(dma_banks[index], HEAP_ORDER);
-			dma_banks[index] = NULL;
-		}
-	}
-	memalloc_noio_restore(noio);
+	reframed_ram_release(&ram);
 	pr_info(PREFIX "released rc=%d\n", rc);
 	return rc;
 }

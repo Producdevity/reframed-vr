@@ -141,14 +141,23 @@ also passed the physical configfs gadget shutdown/rebind check. Five register
 samples confirmed device-mode hardware halt with event interrupts disabled;
 both platform drivers stayed bound. Rebinding, module cleanup and watchdog
 restoration passed without rebooting or restarting rooted adbd. The remaining
-transition still needs the returning MMU test and a final USB halt check after
-CPU shutdown.
+transition still needs a final USB halt check after CPU shutdown.
 
 The [returning MMU test](../kernel/quest-kexec/README.md#returning-mmu-test) has
 also passed on the Quest. It reached the expected physical scratch address with
 M/C/I clear, restored the captured translation/interrupt/shadow-stack context,
-and returned without changing the rooted boot. Resident payload staging, final
+and returned without changing the rooted boot.
+
+The separate [resident RAM stager](../kernel/quest-kexec/README.md#resident-ram-payload-staging)
+has also passed its stock-kernel VM and physical readback test. The actual
+16 MiB Image/initramfs/prepared-DTB payload read back byte-identically; normal
+module removal freed all banks. This validates staging, not execution. Final
 post-shutdown USB validation and the actual replacement-kernel boot remain.
+
+The owner permits ending the current rooted session for that handoff, provided
+the existing RAM-root route remains usable afterward. Keep firmware unchanged
+and offline; verify root again after stock return using the pinned existing
+offline procedure. No exploit development is part of this port.
 
 A separate [no-jump reset module](../kernel/quest-kexec/README.md) passed its
 default inert tests and an enabled stock-return rehearsal. Completed stock
