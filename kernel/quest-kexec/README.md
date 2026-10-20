@@ -110,3 +110,32 @@ The image region may be above 4 GiB; the current target Image declares support
 for arbitrary physical placement. An actual loader must allocate again, use
 the newly returned addresses and keep those allocations alive through handoff.
 The successful test freed its pages and reserves no future staging address.
+
+## USB halt and rebind observer
+
+Build with `--module usb-test`. Its default mode validates the bound MSM parent,
+DWC3 child and register resource, then returns `-ECANCELED` without MMIO access.
+`execute=1` takes runtime-PM references on both devices, maps the existing USB
+registers for reads and arms the bounded GH/timer fallback. It leaves both
+platform drivers bound and pins the module until a verified rebind.
+
+The read-only `snapshot` parameter reports GCTL, DCTL, DEVTEN and DSTS. It marks
+`halted=1` only in device mode with RUN_STOP clear, DEVTEN zero and DEVCTRLHLT
+set. After the gadget runs again, writing `1` to `finish` verifies those running
+conditions, cancels the deadline, restores stock watchdog timing and permits
+normal module removal. No controller register is forcibly written by the test.
+
+On October 20 the binary passed all 31 stock/source import comparisons, its
+inert physical load and a reversible physical shutdown/rebind test. A detached
+root shell briefly paused the existing USB gadget HAL, unbound only configfs
+gadget `g1`, captured five halted samples, rebound the same gadget and resumed
+the HAL. Both kernel drivers remained bound. The test completed in 1.755 s,
+unloaded the module and retained the same boot ID, rooted adbd PID, firmware
+and offline state. No reset or root reacquisition occurred.
+
+Module SHA-256:
+`e8f2d3a09299223ca34a11c61c3ca9d5d5121b9c7baa14c7405a8167a7ff957e`.
+Private receipts: `usb-test-build-v2`, `usb-test-device-v1` and
+`usb-shutdown-device-v1`. This establishes the observed gadget halt/rebind;
+the final loader must repeat the register checks after CPU shutdown. It does
+not yet establish a custom-kernel USB handoff or stock return from that kernel.
