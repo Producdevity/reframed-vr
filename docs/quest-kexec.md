@@ -56,6 +56,23 @@ The source cannot run unchanged on Eureka/Anorak:
 The detailed source audit and exact pins are in the private
 `output/quest-kexec-port-20261020-v1/` evidence directory.
 
+## Read-only module acceptance
+
+The [separate probe](../kernel/quest-kexec/README.md) now passes exact-compiler
+build checks, all 19 stock/source import-version comparisons, an isolated test
+on the authenticated stock kernel and a physical load on the development Quest.
+It reports EL1 and the bound DWC3 resource, returns deliberately without a
+resident module, and preserves the boot ID, root and offline updater state.
+This does not exercise relocation, shutdown or a kernel transition.
+
+The fresh tree uses `qcom,gh-watchdog`; the bound driver is `gh-watchdog`.
+Its controls are on `hypervisor:qcom,gh-watchdog`, rather than the empty
+`/sys/class/watchdog`. The current command line enables minidump-to-eMMC and
+`qcom_dload_mode.download_mode=1`. A watchdog bite bypasses the normal clean
+reboot path, so a source-level watchdog recipe alone cannot promise a return
+to stock. Download-mode control, a bounded timeout and the actual reset outcome
+must be checked before relying on that path for an unattended kernel jump.
+
 ## Acceptance sequence
 
 1. Preserve and independently hash-check the stock boot inputs and unit data;
