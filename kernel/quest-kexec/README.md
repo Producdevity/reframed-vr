@@ -77,3 +77,36 @@ restored root and `update_engine` was stopped again. The cause of the first
 failure is unproved. Receipts are `reset-test-vm-v1`,
 `reset-test-device-inert-v1` and `restart-handler-return-v1` under the private
 port evidence directory. No custom kernel has executed.
+
+## RAM ownership test
+
+The builder also accepts `--module memory-test`. The default mode only checks
+the board, kernel, credentials and fixture/watchdog topology, then deliberately
+returns `-ECANCELED`. `execute=1` allocates up to 64 ordinary 4 MiB buddy blocks
+and two additional blocks below 4 GiB. It selects four physically adjacent
+owned blocks for the 16 MiB Image region and retains 96 MiB for the target heap,
+including the two low DMA blocks. It checks page patterns and releases every
+allocation before returning. It never scans or writes unallocated RAM.
+
+The temporary 20-second allocation deadline and 45-second GH fallback require
+runtime download mode `0` before physical execution. A clean return restores
+the stock 11/14-second bark/bite settings. `fixture=1` omits physical watchdog
+calls only on a synthetic `linux,dummy-virt` tree without a GH watchdog node.
+
+The earlier 20 MiB and 16 MiB requests through the default CMA pool failed
+cleanly. A scoped CMA trace reported isolation-test failures; those failures
+must not be treated as ownership or bypassed by forcing CMA page flags.
+The buddy-only implementation passed all 17 stock/source import comparisons,
+the diskless stock-kernel VM, and the physical Quest on October 20. It held
+112 MiB, passed all 28 block-pattern checks, then released all allocations in
+12.109 ms in-kernel. The boot ID, root and offline state stayed unchanged.
+
+Module SHA-256:
+`711dfeeb2f77aa5b3a3d445d445ca9e9695d9c5ac2ab0e75136c012f5b76749b`.
+Receipts are `memory-test-build-v4`, `memory-test-vm-v4` and
+`memory-test-device-v5` under the private port evidence directory.
+
+The image region may be above 4 GiB; the current target Image declares support
+for arbitrary physical placement. An actual loader must allocate again, use
+the newly returned addresses and keep those allocations alive through handoff.
+The successful test freed its pages and reserves no future staging address.
