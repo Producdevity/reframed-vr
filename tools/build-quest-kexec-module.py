@@ -29,13 +29,18 @@ ASSEMBLY_EXPORTERS = ('arch/arm64/lib/strcmp.o', 'arch/arm64/lib/memset.o')
 MODULES = {'probe': ('reframed_quest_probe', 'probe.c'),
            'reset-test': ('reframed_quest_reset_test', 'reset-test.c'),
            'memory-test': ('reframed_quest_memory_test', 'memory-test.c'),
-           'usb-test': ('reframed_quest_usb_test', 'usb-test.c')}
+           'usb-test': ('reframed_quest_usb_test', 'usb-test.c'),
+           'mmu-test': ('reframed_quest_mmu_test', 'mmu-test.c')}
 MODULE_EXPORTERS = {'memory-test': ('kernel/time/hrtimer.o',
                                   'kernel/time/timekeeping.o', 'arch/arm64/mm/init.o'),
                     'usb-test': ('drivers/base/core.o', 'drivers/base/power/runtime.o',
                                  'arch/arm64/mm/ioremap.o', 'kernel/time/hrtimer.o',
                                  'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o',
-                                 'lib/vsprintf.o')}
+                                 'lib/vsprintf.o'),
+                    'mmu-test': ('arch/arm64/mm/init.o', 'kernel/stop_machine.o',
+                                 'kernel/time/hrtimer.o', 'kernel/time/timekeeping.o',
+                                 'arch/arm64/kernel/cpufeature.o', 'arch/arm64/mm/mmu.o')}
+MODULE_EXTRA_FILES = {'mmu-test': ('transition.S',)}
 
 
 def sha(path):
@@ -75,6 +80,8 @@ def inside():
     selection = json.loads((out / 'inputs.json').read_text())['module']
     module_name, source_name = MODULES[selection]
     exporters = EXPORTERS + MODULE_EXPORTERS.get(selection, ())
+    assembly_exporters = ASSEMBLY_EXPORTERS + (('arch/arm64/lib/memcpy.o',)
+                                               if selection == 'mmu-test' else ())
     build = out / 'kbuild'
     build.mkdir()
     requested = (out / 'requested.config').read_text()
@@ -131,15 +138,15 @@ def inside():
         run('module', make + ['-j2', 'V=1', 'M=/output/module', 'modules'])
         run('source-exporters', make + ['-j2', 'KBUILD_SYMTYPES=1', *exporters])
         run('assembly-exporter', make + ['-j1', 'build-dirs=arch/arm64/lib',
-                                       'KBUILD_SYMTYPES=1', *ASSEMBLY_EXPORTERS])
+                                       'KBUILD_SYMTYPES=1', *assembly_exporters])
         generated = {}
-        for target in exporters + ASSEMBLY_EXPORTERS:
+        for target in exporters + assembly_exporters:
             script = Path(str(build / target) + '.symversions')
             if script.is_file():
                 generated.update({name: int(value, 16) for name, value in
                                   re.findall(r'__crc_(\w+) = (0x[0-9a-f]+);', script.read_text())})
         # Assembly Kbuild links CRCs into absolute symbols and removes its temporary script.
-        for target in ASSEMBLY_EXPORTERS:
+        for target in assembly_exporters:
             symbols = subprocess.check_output(
                 ['/toolchain/bin/llvm-nm', '--defined-only', str(build / target)], text=True)
             generated.update({name: int(value, 16) for value, name in
@@ -198,7 +205,8 @@ def main():
     out.mkdir(parents=True)
     module = out / 'module'
     module.mkdir()
-    for name in ('Makefile', MODULES[args.module][1]):
+    extra = MODULE_EXTRA_FILES.get(args.module, ())
+    for name in ('Makefile', MODULES[args.module][1], *extra):
         shutil.copyfile(ROOT / 'kernel/quest-kexec' / name, module / name)
     config = args.config.read_bytes()
     if config.startswith(b'\x1f\x8b'):
@@ -210,6 +218,7 @@ def main():
               'module_source_sha256': sha(module / MODULES[args.module][1]), 'makefile_sha256': sha(module / 'Makefile'),
               'builder_sha256': sha(Path(__file__)), 'container_image': IMAGE,
               'compiler_sha256': sha(args.toolchain / 'bin/clang-14')}
+    inputs['extra_sources'] = {name: sha(module / name) for name in extra}
     (out / 'inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
     command = ['docker', 'run', '--rm', '--network', 'none', '--platform', 'linux/amd64',
                '--cpus', '2', '--memory', '4g', '--pids-limit', '256',
