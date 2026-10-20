@@ -6,6 +6,36 @@ pinned in `profiles/basalt.json`. This backend is not enabled automatically on
 a headset: camera capture, active calibration, sensor axes and clock alignment
 must be established first.
 
+## Physical Neo3 capture status
+
+The 2026-10-20 investigation captured all four camera calibration files and the
+IMU calibration privately from the Neo3 Pro Eye running b1977. The current cam0
+and IMU files match the retained backup hashes. Stock declares its four tracking
+cameras as OV7251 devices in slots 2–5, with 8-bit bus addresses `e2/e4/e6/e8`;
+the corresponding camera module files match the previously decoded firmware.
+These declarations do not establish a successful silicon-ID read or the mapping
+from physical slots to SLAM camera indices.
+
+Native Linux matched 134 stock device-tree properties for slots 4/5 and their
+PHYs, queried the ISP and camera capabilities, and accepted both probe calls.
+Source inspection then established that `cam_sensor_match_id` returns success
+without reading the chip ID for tracking-camera SIDs. Probe success must not be
+used as evidence of sensor communication. The first actual initialization write
+to `e6` failed with a CCI NACK; no stream or camera frame was produced.
+
+The stock camera path uses QuickCamera's MCU control and `cam_virtual_mono`
+bridge. That bridge is absent from the retained public kernel. The next capture
+work must implement the actual bridge/MCU path rather than repeat direct CCI
+initialization against the declared tracking-camera addresses. The native CDM
+context also rejects shared command memory; I/O command mapping passed that
+allocation stage before reaching the separate CCI failure.
+
+Evidence, private calibration hashes, exact library versions, diagnostic sources
+and native logs are retained under
+`output/pico-recovery-bringup-20261018-v1/neo3-6dof-v1/`. BOOT and DTBO readbacks
+still match the preserved originals. No on-device positional pose or native
+camera-stream acceptance has been established.
+
 ## Build
 
 Build an ARM64 compiler image from the project's Monado tools image, then pass

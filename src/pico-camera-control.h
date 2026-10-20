@@ -51,7 +51,9 @@ int pico_camera_phy_query(int phy_fd, struct pico_camera_phy_capabilities *caps)
 int pico_camera_ife_query(int ife_fd, struct pico_camera_ife_capabilities *caps);
 
 /* Probe uses a packet at offset zero with kernel-mapped command buffers.
- * Probing powers the sensor; this is not a read-only device operation. */
+ * Probing powers the sensor; this is not a read-only device operation.
+ * The retained vendor driver bypasses chip-ID reads for tracking-camera SIDs,
+ * so a successful ioctl does not verify the fitted sensor or I2C connectivity. */
 int pico_camera_sensor_probe_submit(int sensor_fd, int32_t packet);
 
 /* Acquisition outputs start at zero. A returned positive handle is preserved
