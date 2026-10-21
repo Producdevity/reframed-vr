@@ -611,10 +611,18 @@ complete decoder/conversion/publication/OpenVR chain processes all 61,905
 retained packets and publishes exactly 59,342 tracked poses; the remaining
 startup packets stay invalid. Bionic and glibc result-owner replays agree.
 Replay uses explicit identity test transforms, not verified head calibration.
-These are transport and API tests: live publication has not yet been tested,
-and the existing `steamvr-headset.h` remains a simulator.
-A physical Neo3 driver, calibrated frame binding and actual compositor
-presentation still require integration and device validation.
+The 2026-10-21 native Pico run subsequently publishes 8,148 live tracked poses
+from 10,821 callbacks into the channel. An independent native OpenVR-structure
+observer receives them and verifies terminal invalidation. Both camera groups
+stop, the IMU worker joins and MCU power references return to zero. This run
+uses explicit identity diagnostic transforms; it does not establish calibrated
+head poses or a connection through SteamVR's server.
+
+The [physical Neo3 SteamVR driver](pico-steamvr.md) now builds against the pinned
+SDK and uses the same private optics contract. The existing `steamvr-headset.h`
+remains a simulator. Firmware-derived head-frame binding, actual server/client
+publication, compositor presentation and physical acceptance remain separate
+integration gates.
 
 ## Remaining integration
 
