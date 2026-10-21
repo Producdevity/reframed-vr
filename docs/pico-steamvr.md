@@ -62,6 +62,14 @@ The isolated Bionic filesystem namespace must bind the executable, dependencies
 and shared mapping paths explicitly. Never truncate or reuse a mapping held by
 an existing driver.
 
+The Pico display rules installed by `PicoDisplayHandoff` grant the `video` group
+access to `kgsl-3d0` and `ion`. The SteamVR user also needs the DRM primary and
+render nodes. A 2026-10-21 native check confirmed that missing KGSL access hides
+the GPU, while missing ION access prevents external-memory support. Giving the
+session user those two device permissions makes binary OPAQUE_FD semaphore and
+4 MiB buffer round trips pass across exec, for both exportable and import-only
+receivers. External timeline semaphores remain unsupported on this kernel.
+
 The Pico display additionally needs the verified Turnip/KGSL direct-display path
 with both DMA planes, rather than the single-plane bootstrap path. See the
 [display investigation](pico-display-research-20261019.md). Building this driver
@@ -90,6 +98,20 @@ firmware SDK conversion, not physical metric accuracy, the active room origin
 or completed head/lens acceptance. Private coefficients and evidence remain
 under `output/pico-live-steamvr-20261021-v1/`.
 
-SteamVR activation, live HMD queries, compositor presentation, clean lens output,
-measured motion scale/direction and usable Steam UI remain hardware acceptance
-steps. The default configuration remains disabled until explicitly supplied.
+A subsequent 30-second native capture publishes 28,627 tracked poses from 31,250
+vendor callbacks and consumes 749 synchronized head-camera sets. Valve's actual
+ARM64 `vrserver` loads `reframed_pico`; the physical client receives 300 tracked
+HMD samples with no invalid samples. Capture and SLAM stop cleanly afterward.
+This establishes live server integration using the firmware-derived SDK head
+transform; it does not establish physical motion accuracy or presentation.
+
+The compositor finds the panel and selects 90 Hz, but its first swapchain fails
+with `VK_ERROR_DEVICE_LOST`. The same direct GPU probe fails as the SteamVR user
+and presents 64 frames using both DMA planes as root. A libdrm check confirms
+the vendor kernel denies unprivileged `DROP_MASTER` and `SET_MASTER`, even while
+the file already holds master. The held-master WSI patch addresses that redundant
+reacquisition; hardware verification of the rebuilt library is still required.
+
+Compositor presentation, clean lens output, measured motion scale/direction and
+usable Steam UI remain hardware acceptance steps. The default configuration
+remains disabled until explicitly supplied.
