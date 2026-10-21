@@ -58,6 +58,25 @@ the Frame sensor driver and motion smoothing. Provide all of:
 | `PICO_STEAMVR_GENERATION` | Nonzero estimator generation, 16 lowercase hex digits |
 | `PICO_STEAMVR_MAX_AGE_NS` | Explicit maximum pose age, at most 100 ms |
 
+The bundle also includes `compositor.conf`, an opt-in systemd drop-in for the
+compositor unit. At the documented runtime location `/opt/reframed-vr/steamvr`,
+it hides `drivers/cv/bin/linuxarm64/libArcturusPerception.so` in that process's
+mount namespace. For a transient unit, pass its equivalent
+`--property=InaccessiblePaths=/opt/reframed-vr/steamvr/drivers/cv/bin/linuxarm64/libArcturusPerception.so`
+to `systemd-run`. Preserve the original runtime. Disabling `driver_cv` alone
+does not prevent the compositor from loading this optional motion-estimation
+library. It rejects the Neo3's `kona-iot MTP` platform during initialization.
+This isolation does not hide the separate vendor SLAM library or change the
+board model, optical profile or firmware.
+
+The compatibility approach follows Florian Reintgen's
+[PicoFrame change `dd8a402`](https://github.com/TheReal-Flo/PicoFrame/commit/dd8a402ba14d67d58f0b9d13ced61c3f169b8e33),
+verified at PicoFrame `3affbc11ecaae56c56b7bd3eb13344c73a7a03da`.
+Its `frame-session.sh` sets the same optional library aside, documenting an
+unsupported ARMv8.4 instruction on Kryo 585. Namespace isolation here avoids
+modifying the preserved Frame runtime. This omits CVP motion estimation;
+asynchronous reprojection and live head tracking require their own validation.
+
 Use an unprivileged SteamVR user with the required DRM/KGSL access. A root-owned
 producer can share its mapping read-only with that user's group. Its private
 directory must permit traversal without exposing calibration to other users.
@@ -71,7 +90,9 @@ render nodes. A 2026-10-21 native check confirmed that missing KGSL access hides
 the GPU, while missing ION access prevents external-memory support. Giving the
 session user those two device permissions makes binary OPAQUE_FD semaphore and
 4 MiB buffer round trips pass across exec, for both exportable and import-only
-receivers. External timeline semaphores remain unsupported on this kernel.
+receivers. That kernel lacked external timeline semaphores; the subsequent
+[DRM timeline backport](pico-drm-timeline-backport.md) passes all four physical
+GPU buffer round trips, including timeline OPAQUE_FD sharing.
 
 The Pico display additionally needs the verified Turnip/KGSL direct-display path
 with both DMA planes, rather than the single-plane bootstrap path. See the
@@ -148,6 +169,34 @@ All camera/IMU/SLAM and SteamVR processes then stop, MCU references return to
 zero and both DSPs go offline. Full BOOT/DTBO readbacks match the backups, and
 the device returns to stock b1977 with Wi-Fi off and the updater disabled.
 
-Compositor presentation, clean lens output, measured motion scale/direction and
-usable Steam UI remain hardware acceptance steps. The default configuration
+With the matching timeline kernel, the compositor passes that resource creation
+and then terminates in Frame's optional perception library on its platform-name
+check. The compositor-only namespace isolation above removes this fatal error:
+the log records the unavailable CVP motion estimator and continues through
+`Startup Complete`. The actual SteamVR client again receives 300 valid HMD
+samples and no invalid samples. The native vendor process publishes 90,064
+tracked poses, consumes 2,249 synchronized head-camera sets and stops cleanly,
+with MCU references returning to zero.
+
+A read-only, DMA-buffer-synchronized capture finds both DMA planes using the
+same linear 1920×3664 framebuffer. Its stored pixels contain two optically
+distorted views of SteamVR's skybox. This establishes compositor rendering into
+the physical scanout buffer; it does not establish clean lens output, a coherent
+single-frame capture, sustained presentation rate or measured head alignment.
+The original Frame perception library retains SHA-256
+`44ca80763343d6588798bb52418611304fd50e2fd7de6ddfce5cbd31989e1984`.
+The hash-verified evidence is in
+`output/pico-steamvr-session-20261021-v3/export-isolated.tar.gz`
+(SHA-256 `9933b940527ab3e446639ef09e6eec12f9b1fa8872eae8156ce158ad039053fa`).
+
+The next Steam launch passes its initial missing data-link failure after creating
+the required owned `~/.steam/steam` and `~/.steam/root` links to the client, with
+`sdkarm64` selecting its native libraries. It then triggers a `vrserver` SIGSEGV
+shortly after Steam connects. The service journal and core dumps preserve this
+new blocker; the kernel log does not report a GPU fault. Steam UI presentation
+is not yet accepted. Realtime-priority requests also remain denied, despite
+raising the unit's resource limits; timing requires separate investigation.
+
+Clean lens output, measured motion scale/direction, sustained compositor timing
+and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.

@@ -208,7 +208,15 @@ The canonical physical configuration builds successfully with all 38 matching
 modules under `output/kernel/pico-neo3/linux-timeline-20261021-v1/`. The new
 initramfs and native root use those modules; the RAM container preserves the
 previously tested display DTB bundle, command line and stock OS-version fields.
-These are offline assembly results, not a headset boot result.
+The matching physical kernel subsequently boots on the Pico through RAM-only
+`fastboot boot`. Its kernel notes match the build, and full BOOT/DTBO readback
+hashes match the pre-test backups. The actual unprivileged Turnip/Adreno 650
+process reports timeline OPAQUE_FD import/export support. All four 4 MiB
+cross-exec GPU buffer round trips pass: binary/timeline semaphores with
+exportable/import-only receivers. Valve's compositor gets past its previous
+resource-creation failure. This establishes the missing capability on hardware,
+not completed compositor presentation or physical lens acceptance. Evidence is
+under `output/pico-steamvr-session-20261021-v3/`.
 
 `tools/test-drm-syncobj.py` builds a signed test module for a compiled Pico
 QEMU variant. The module refuses any board other than `linux,dummy-virt`,
