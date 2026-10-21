@@ -38,7 +38,8 @@ def main():
                'src/pico-steamvr-display.h', 'src/pico-steamvr-pose.cpp', 'src/pico-steamvr-pose.h',
                'src/pico-slam-channel.c', 'src/pico-slam-channel.h', 'src/pico-slam-pose.c',
                'src/pico-slam-pose.h', 'src/pico-slam-result.h', 'profiles/openvr.json',
-               'profiles/pico-steamvr-cjson.json', 'system/steamvr-pico/driver.vrdrivermanifest',
+               'profiles/pico-steamvr-cjson.json', 'profiles/pico-steamvr.json',
+               'system/steamvr-pico/driver.vrdrivermanifest',
                'tests/pico-steamvr-live.cpp',
                'tools/build-pico-steamvr.py']
     commands = []
@@ -74,6 +75,7 @@ def main():
         commands.append(command)
         subprocess.run(command, check=True)
     shutil.copyfile(args.sdk / 'LICENSE', args.output / 'OpenVR-LICENSE')
+    shutil.copyfile(ROOT / 'profiles/pico-steamvr.json', args.output / 'steamvr.vrsettings')
     notice = (args.cjson / 'cJSON.h').read_text().split('*/', 1)[0].removeprefix('/*').strip()
     (args.output / 'cJSON-LICENSE').write_text(notice + '\n')
     record = {'architecture': 'aarch64-linux', 'physical_driver': True, 'device_actions': [],

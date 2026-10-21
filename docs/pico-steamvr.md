@@ -34,7 +34,8 @@ python3 tools/build-pico-steamvr.py --output output/NEW_PICO_DRIVER
 
 `--sdk` and `--cjson` select dependency directories. The builder verifies their
 hashes against `profiles/openvr.json` and `profiles/pico-steamvr-cjson.json`, emits
-a standalone `reframed_pico` driver directory and a physical-headset client probe,
+a standalone `reframed_pico` driver directory, a physical-headset client probe
+and an opt-in `steamvr.vrsettings` session template,
 and records source and artifact hashes. OpenVR and cJSON license notices accompany
 the bundle. No unit-specific coefficients enter the build or repository.
 
@@ -44,7 +45,9 @@ reference for separate Bionic tracking and Vulkan direct-display integration.
 Neo3 calibration and pose conventions are established separately.
 
 Register the resulting `reframed_pico` directory in the session's OpenVR path
-registry, select `steamvr.forcedDriver = "reframed_pico"`, and provide all of:
+registry and copy the template to that session's configuration directory. It
+selects `reframed_pico`, Valve's asynchronous Vulkan path and 120 Hz. It disables
+the Frame sensor driver and motion smoothing. Provide all of:
 
 | Environment variable | Required value |
 | --- | --- |
@@ -118,7 +121,23 @@ reacquisition, denial, nested-reference and external-file cases under sanitizers
 The reproducible build and device evidence are under
 `output/mesa/pico-held-master-20261021-v2/` and the live-session evidence directory.
 This closes the isolated swapchain permission failure; SteamVR's complete render
-and synchronization paths still need a fresh acceptance run.
+and synchronization paths require separate acceptance.
+
+The next comparison isolates a second initialization failure: creating the same
+swapchain succeeds at 120 Hz and fails at 90 Hz with
+`VK_ERROR_INITIALIZATION_FAILED` on this kernel/display path. The optical profile
+already specifies 120 Hz; SteamVR's bundled `preferredRefreshRate` defaults to
+90 Hz independently. Setting that preference to 120 Hz makes the actual Valve
+compositor select 120 Hz and create its two-image FIFO direct-display swapchain.
+The session template preserves that verified setting. This does not establish
+90 Hz support or clean optical presentation.
+
+The compositor subsequently fails during renderer resource creation with
+`UNKNOWN_ERROR` at `vulkanrenderer.cpp:2710`, after constructing both distortion
+meshes. The guarded launcher therefore does not start the Steam overlay. This
+remains an open graphics integration failure, distinct from live pose transport.
+Evidence for both mode selection and the later failure is retained under
+`output/pico-steamvr-session-20261021-v2/`.
 
 Compositor presentation, clean lens output, measured motion scale/direction and
 usable Steam UI remain hardware acceptance steps. The default configuration
