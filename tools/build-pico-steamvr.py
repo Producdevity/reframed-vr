@@ -41,6 +41,7 @@ def main():
                'profiles/pico-steamvr-cjson.json', 'profiles/pico-steamvr.json',
                'system/steamvr-pico/driver.vrdrivermanifest',
                'system/steamvr-pico/compositor.conf',
+               'system/steamvr-pico/vrserver',
                'tests/pico-steamvr-live.cpp',
                'tools/build-pico-steamvr.py']
     commands = []
@@ -78,6 +79,8 @@ def main():
     shutil.copyfile(args.sdk / 'LICENSE', args.output / 'OpenVR-LICENSE')
     shutil.copyfile(ROOT / 'profiles/pico-steamvr.json', args.output / 'steamvr.vrsettings')
     shutil.copyfile(ROOT / 'system/steamvr-pico/compositor.conf', args.output / 'compositor.conf')
+    shutil.copyfile(ROOT / 'system/steamvr-pico/vrserver', args.output / 'vrserver')
+    (args.output / 'vrserver').chmod(0o755)
     notice = (args.cjson / 'cJSON.h').read_text().split('*/', 1)[0].removeprefix('/*').strip()
     (args.output / 'cJSON-LICENSE').write_text(notice + '\n')
     record = {'architecture': 'aarch64-linux', 'physical_driver': True, 'device_actions': [],

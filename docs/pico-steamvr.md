@@ -77,6 +77,32 @@ unsupported ARMv8.4 instruction on Kryo 585. Namespace isolation here avoids
 modifying the preserved Frame runtime. This omits CVP motion estimation;
 asynchronous reprojection and live head tracking require their own validation.
 
+Use the bundle's `vrserver` launcher for the native server at the same runtime
+location. It retains the existing `/usr/lib64/libnm.so.0` through process-scoped
+`LD_PRELOAD`, preserving other preload entries. It does not replace the library
+or intercept loader calls. The library is required explicitly; a missing library
+stops the launcher.
+
+On the measured userspace, Steam API attachment reloads libnm and faults in
+its constructor's error-type registration through `g_intern_static_string()`
+and `strcmp()`. An isolated regression with GLib held loaded crashes on the
+second normal libnm open. Both `RTLD_NODELETE` and process-start preloading
+pass all 16 open/close cycles; the preload test reports linker namespace zero
+(`LM_ID_BASE`). The system libnm is 1,613,280 bytes, SHA-256
+`d473ee6ddf80926d6a9301badc31f788a3fa10cedbf6884b2840a9628eb8388a`.
+Run `tests/steamvr-libnm-lifetime.py` on native Linux as the negative control,
+then with `--nodelete` and with
+`LD_PRELOAD=/usr/lib64/libnm.so.0` for the two retention cases. The negative
+control intentionally may terminate with SIGSEGV; use a disposable process.
+
+GNOME's [module-lifetime contract](https://docs.gtk.org/gmodule/modules.html)
+requires modules registering shared static data to remain loaded;
+[`g_intern_static_string()`](https://docs.gtk.org/glib/func.intern_static_string.html)
+does not copy its input. NetworkManager's
+[constructor](https://github.com/NetworkManager/NetworkManager/blob/ed279d788f3b1443254f8ba5a8a3217cf1cf9596/src/libnm-core-impl/nm-utils.c#L512)
+invokes the corresponding error-type registration. These contracts corroborate
+the observed lifetime failure; they do not imply a general GLib version defect.
+
 Use an unprivileged SteamVR user with the required DRM/KGSL access. A root-owned
 producer can share its mapping read-only with that user's group. Its private
 directory must permit traversal without exposing calibration to other users.
@@ -192,9 +218,19 @@ The hash-verified evidence is in
 The next Steam launch passes its initial missing data-link failure after creating
 the required owned `~/.steam/steam` and `~/.steam/root` links to the client, with
 `sdkarm64` selecting its native libraries. It then triggers a `vrserver` SIGSEGV
-shortly after Steam connects. The service journal and core dumps preserve this
-new blocker; the kernel log does not report a GPU fault. Steam UI presentation
-is not yet accepted. Realtime-priority requests also remain denied, despite
+shortly after Steam connects. The service journal, exact mapped libraries and
+core dumps identify the libnm constructor failure described above; the kernel
+log does not report a GPU fault. With the retained-library launcher, the next
+90-second capture publishes 90,061 tracked poses and consumes 2,249 head-camera
+sets. The actual client reports 300 valid poses and no invalid samples. Steam,
+its native web helper, the server and compositor remain running through the
+display test. All 280 plane queries succeed and observe 96 framebuffer changes
+across two buffers. This is evidence of continuing scanout, not a frame-rate
+measurement. The capture still shows the skybox, so Steam overlay visibility
+remains unverified. The manifest-checked archive is
+`output/pico-steamvr-session-20261021-v3/export-steam-render.tar.gz`
+(SHA-256 `9cbc2474dc14fee7bed02a18f5280c95475cd4e8d2f52e7a334e18320e1703d9`).
+Realtime-priority requests also remain denied, despite
 raising the unit's resource limits; timing requires separate investigation.
 
 Clean lens output, measured motion scale/direction, sustained compositor timing
