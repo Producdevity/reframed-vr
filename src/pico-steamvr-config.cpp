@@ -66,7 +66,9 @@ static bool parse(const cJSON *json, pico_steamvr_display_config &c)
         for (unsigned j=0; j<2; ++j)
             if (!integer(cJSON_GetArrayItem(render,static_cast<int>(j)),1,16384,v.render[j])) return false;
         const cJSON *radial=field(item,"analytic_distortion"), *type=field(radial,"type");
-        if (field(item,"distortion") || field(item,"grid_width") || field(item,"grid_height") ||
+        if (cJSON_GetObjectItemCaseSensitive(item,"distortion") ||
+            cJSON_GetObjectItemCaseSensitive(item,"grid_width") ||
+            cJSON_GetObjectItemCaseSensitive(item,"grid_height") ||
             !cJSON_IsString(type) || std::strcmp(type->valuestring,"pico-radial-2") ||
             !array(field(item,"rotation"),4,v.rotation) || !array(field(item,"fov"),4,v.fov) ||
             !array(field(item,"eye_pose"),7,v.eye_pose) ||

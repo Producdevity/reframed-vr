@@ -60,6 +60,8 @@ class PicoSteamvrDisplayTests(unittest.TestCase):
                 mutate(bad)
                 check(bad, False)
             check(json.dumps(profile).replace('"schema_version": 3', '"schema_version": 3, "schema_version": 3'), False)
+            for name in ['distortion', 'grid_width', 'grid_height']:
+                check(json.dumps(profile).replace('"viewport":', f'"{name}": null, "{name}": null, "viewport":'), False)
             check(json.dumps(profile) + '\x00', False)
             check('{', False)
             path.unlink()
