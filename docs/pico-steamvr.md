@@ -132,12 +132,21 @@ compositor select 120 Hz and create its two-image FIFO direct-display swapchain.
 The session template preserves that verified setting. This does not establish
 90 Hz support or clean optical presentation.
 
-The compositor subsequently fails during renderer resource creation with
-`UNKNOWN_ERROR` at `vulkanrenderer.cpp:2710`, after constructing both distortion
-meshes. The guarded launcher therefore does not start the Steam overlay. This
-remains an open graphics integration failure, distinct from live pose transport.
-Evidence for both mode selection and the later failure is retained under
-`output/pico-steamvr-session-20261021-v2/`.
+The compositor subsequently fails during renderer resource creation at
+`vulkanrenderer.cpp:2710`, after constructing both distortion meshes. A Mesa
+logging build identifies `VK_ERROR_INVALID_EXTERNAL_HANDLE` at
+`vk_semaphore.c:165`. Disassembly of this exact native compositor confirms
+creation of a timeline semaphore with OPAQUE_FD export. The running 4.19 kernel
+supports the binary sharing tests but does not expose DRM timeline sync objects;
+Mesa reports no external timeline support. The guarded launcher therefore does
+not start the Steam overlay. This identifies the failed resource and missing
+capability; it does not establish that enabling the capability will close all
+remaining renderer failures. See the [targeted kernel backport](pico-drm-timeline-backport.md).
+Evidence is retained under `output/pico-steamvr-session-20261021-v2/`, including
+the hash-verified `error-log-export.tar.gz` and `renderer-resource-analysis.json`.
+All camera/IMU/SLAM and SteamVR processes then stop, MCU references return to
+zero and both DSPs go offline. Full BOOT/DTBO readbacks match the backups, and
+the device returns to stock b1977 with Wi-Fi off and the updater disabled.
 
 Compositor presentation, clean lens output, measured motion scale/direction and
 usable Steam UI remain hardware acceptance steps. The default configuration
