@@ -127,6 +127,10 @@ does not establish working Vulkan interprocess synchronization or presentation.
 
 ## Current hardware status
 
+The current RAM diagnostic root is Fedora 44 with Frame's native ARM64 Steam and
+SteamVR components. Migration to the installed Frame-based userspace remains
+separate work; this is not a completed Frame OS image.
+
 The native ARM64 Valve compositor renders Steam's setup UI into both eye views
 with live vendor-SLAM head poses. The manual startup sequence needs `vrdashboard`
 and an explicit dashboard selection; process startup alone does not show the UI.

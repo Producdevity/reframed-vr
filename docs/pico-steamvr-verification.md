@@ -162,7 +162,7 @@ The hash-verified compositor-core archive is
 
 A bounded diagnostic sets `SDL_THREAD_PRIORITY_POLICY=other`, `LimitRTPRIO=0`,
 `LimitNICE=-20` and `RestrictRealtime=yes` only for the compositor. It keeps the
-realtime watchdog intact and does not grant scheduler capabilities. SDL documents
+kernel realtime throttling unchanged and does not grant scheduler capabilities. SDL documents
 the ordinary-policy hint in its [pthread implementation](https://github.com/libsdl-org/SDL/blob/SDL2/src/thread/pthread/SDL_systhread.c).
 The compositor survives the comparison; all sampled compositor threads use
 ordinary or batch scheduling. The dashboard probe receives 1,000 valid poses and
@@ -254,6 +254,34 @@ for `framesToThrottle`, `powersaveFramesToThrottle` and
 returned zeros cannot establish the active throttling policy. Evidence is in
 `output/pico-steamvr-session-20261021-v4/export-native-keyboard.tar.gz`
 (SHA-256 `ba5c632217f723855a9511e84f0da302c6bcbca3db58ee9d2449fe190a2feaa2`).
+
+A source-matched Continue click through the client's loopback CEF debugger
+advances its DOM to `Welcome / Select a language`, but the subsequent physical
+scanout still contains the preceding input page. This is control-plane progress,
+not accepted presentation of the new page. The manifest-checked evidence is
+`output/pico-steamvr-session-20261021-v4/export-steam-cef-v2.tar.gz`
+(SHA-256 `703888e3d37201834e905844ddfdff703d4f14ee8c673ca0c7ccb95fdacefe9b`).
+
+The diagnostic root reports Fedora 44, so forcing the client's `-steamos` mode
+does not establish a working Frame OS installation. A disposable unprivileged
+process successfully enters and leaves FIFO/RR policies at priorities 1 and 80
+with the specified limits. A combined launch comparison then removes `-steamos`,
+enables gamescope's installed `-e` Steam integration, allows priority 80 and sets
+a 2/2.5-second realtime limit, while retaining the SDL ordinary-policy hint and
+the bounded 587 MHz request. This profile fails: the compositor's saved live
+limits have nevertheless been reduced to 100/200 ms, all sampled thread policies
+remain ordinary/batch, and the service journal reports SIGXCPU after 23 seconds.
+The camera helper later exits on SIGSEGV. Those observations do not establish a
+single cause for both failures. This profile is rejected; its realtime limits
+and launch changes are not adopted as a verified replacement configuration.
+The manifest-checked archive is
+`output/pico-steamvr-session-20261021-v4/export-native-profile.tar.gz`
+(SHA-256 `0546ecc20dfe11b210152ae8687a480302b60f7285f2d8e836722ff228c940f3`).
+
+The GPU minimum is restored to 305 MHz, complete BOOT/DTBO hashes still match,
+MCU references return to zero and both DSPs go offline before reboot. The Pico
+returns to b1977 with Wi-Fi off, the updater disabled and `flash.locked=0`, recorded
+in `output/pico-steamvr-session-20261021-v4/stock-return-final.json`.
 
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
