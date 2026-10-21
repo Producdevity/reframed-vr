@@ -19,7 +19,7 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def initramfs(init, module=None):
+def initramfs(init, module=None, module_name='dma_buf_resv_test.ko'):
     archive = bytearray()
 
     def entry(name, mode, data=b'', rdev=(0, 0)):
@@ -35,7 +35,7 @@ def initramfs(init, module=None):
     entry('dev/console', stat.S_IFCHR | 0o600, rdev=(5, 1))
     entry('init', stat.S_IFREG | 0o755, init)
     if module is not None:
-        entry('dma_buf_resv_test.ko', stat.S_IFREG | 0o600, module)
+        entry(module_name, stat.S_IFREG | 0o600, module)
     entry('TRAILER!!!', 0)
     return bytes(archive)
 

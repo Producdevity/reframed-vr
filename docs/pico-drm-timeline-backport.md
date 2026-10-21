@@ -3,13 +3,13 @@
 Research baseline: repository `40b277a2e25dfea6219153b47032f3f529a39c7d`,
 2026-10-21. The target is ByteDance Neo3 Linux 4.19.81,
 [`9cacc1c1356dd32a048f4cb13bc84af402bd3326`](https://github.com/bytedance/neo3-kernel/tree/9cacc1c1356dd32a048f4cb13bc84af402bd3326),
-pinned by `profiles/kernel/pico-neo3.json`. This note proposes source imports;
-it does not record a built backport, QEMU pass, or headset result.
+pinned by `profiles/kernel/pico-neo3.json`. The local patch series and its
+verification boundaries are recorded below.
 
-## Recommendation
+## Selected approach
 
-Backport the DRM-core timeline interface, not a newer DRM/MSM submission driver
-or the whole DMA-buffer subsystem. Use Linux **v5.4.302**, commit
+The backport adds the DRM-core timeline interface while retaining the vendor
+submission, camera and DSP drivers. Its core reference is Linux **v5.4.302**, commit
 [`9e3157c56ec7917e6a80ea53a8bd752e0037f2cb`](https://github.com/gregkh/linux/commit/9e3157c56ec7917e6a80ea53a8bd752e0037f2cb),
 as the core source reference, plus the narrowly selected fence-unwrapping and
 transfer corrections below. This is an engineering choice for its older,
@@ -79,7 +79,8 @@ old opaque syncobj FD import/export ABI and binary operations. Point zero in
 sync-file import/export, eventfd and deadline extensions are unnecessary for
 the inspected Mesa bridge. Its counter query supplies flags zero, so the later
 [`2093dea3def9` last-submitted query extension](https://github.com/torvalds/linux/commit/2093dea3def9d5bf3000697ae3b0ec36c43354e0)
-is not required by that path.
+is not required by that path. Its separate fence-reference cleanup is required,
+as described below.
 
 The vendor driver-feature bit layout differs from upstream: `0x80000` already
 means `DRIVER_PREFER_XBGR_30BPP`; use its free `0x100000` for the local timeline
@@ -101,6 +102,17 @@ v5.4.302 already incorporates these fixes; retain their behavior when adapting:
 - [`a37eef63bc9e`](https://github.com/torvalds/linux/commit/a37eef63bc9e16e06361b539e528058146af80ab): retain syncobj reference throughout wait-for-submit.
 - [`b19926d4f3a6`](https://github.com/torvalds/linux/commit/b19926d4f3a660a8b76e5d989ffd1168e619a5c4): completed, garbage-collected points resolve to a signaled stub rather than successful NULL lookup.
 - [`101c9f637efa`](https://github.com/torvalds/linux/commit/101c9f637efa1655f55876644d4439e552267527) and [`3c43177ffb54`](https://github.com/torvalds/linux/commit/3c43177ffb54ea5be97505eb8e2690e99ac96bc9): `WAIT_AVAILABLE` accepts a future point and registers a wakeup, returning on submission instead of sleeping until timeout.
+
+**Additional query correction:** v5.4.302 still leaks the owning reference from
+`drm_syncobj_fence_get()` on every nonempty query, independently of the iterator
+references fixed by `b33b556ce59b`. Select the `dma_fence_put(fence)` immediately
+before `copy_to_user()` from
+[`2093dea3def9`](https://github.com/torvalds/linux/commit/2093dea3def9d5bf3000697ae3b0ec36c43354e0).
+That one-statement correction covers chain and binary fences, including failed
+copy-back, without enabling the last-submitted query extension. A scoped manual
+ownership pass over the chosen core's creation, FD import/export, point lookup,
+wait entries, signal and transfer cleanup found no further obvious unreleased
+owning references; this is static inspection, not a leak-test result.
 
 **Additional transfer import:** v5.4.302 lacks the
 [`721255b52700` chain-flattening correction](https://github.com/torvalds/linux/commit/721255b52700b320c4ae2e23d57f7d9ad1db50b9).
@@ -130,6 +142,13 @@ to report `-ENOMEM` correctly. A small compatible source selection is:
    This small correction applies without newer timestamp/private-stub APIs.
    Also select [`18226ba52159`](https://github.com/torvalds/linux/commit/18226ba52159257d4c2f777a168cc09adb3c1ac0)
    to reject unsupported lookup/transfer flags.
+
+The existing Neo3 DMA-buffer patch deliberately preserves OR arrays. Retain
+`dma_fence_merge_all()` unchanged. For the imported iterator, the planned local
+compatibility adaptation is to return the OR-array head from `array_first()`
+and NULL from `array_next()` when `signal_on_any` is set, preserving that array
+as one dependency. This differs from upstream's unconditional child traversal
+and requires an unsignaled OR-array transfer regression alongside the AND case.
 
 Preserve upstream SPDX/copyright notices and attribute the selected commits.
 The main implementation authors include Christian König, Chunming Zhou and
@@ -176,3 +195,41 @@ Concurrency, reference ownership, global fence-layout changes and vendor module
 compatibility are the principal regression risks. The backport is bounded in
 source area but crosses shared synchronization code; the completed display and
 tracking gates do not remove the need to validate those paths together.
+
+## Local implementation and verification
+
+`patches/kernel/pico-neo3-linux/0011` through `0014` contain the fence
+prerequisites, stable core, transfer unwrapping and query-reference correction.
+The core keeps the vendor `drmP.h`/slab declarations and expresses the newer
+lockdep diagnostic through the existing `lockdep_depth()` API. Unsupported
+lookup flags are rejected before acquiring the syncobj reference.
+
+The canonical physical configuration builds successfully with all 38 matching
+modules under `output/kernel/pico-neo3/linux-timeline-20261021-v1/`. The new
+initramfs and native root use those modules; the RAM container preserves the
+previously tested display DTB bundle, command line and stock OS-version fields.
+These are offline assembly results, not a headset boot result.
+
+`tools/test-drm-syncobj.py` builds a signed test module for a compiled Pico
+QEMU variant. The module refuses any board other than `linux,dummy-virt`,
+creates a software-only DRM node, and leaves the kernel's module-signature
+enforcement enabled. It does not submit virtual or physical GPU work. The
+guest exercises the actual core ioctls, software fences and reference counts,
+then unloads the fixture and powers off without a disk or network interface.
+
+The negative baseline under
+`output/pico-drm-timeline-20261021-v1/vm-query-baseline-v5/` reproduces the
+query leak: 512 queries plus eight failed copy-backs increase the retained
+fence's reference count from 2 to 522. Future-point wakeups, pending/completed
+transfers, opaque-FD sharing between processes, high counters, 1,024 descriptor
+cleanup cycles, OR/AND unwrapping, 32-bit wrapping and 8,192-node chain teardown
+also pass. Reference counts inspect the actual retained fence; descriptor
+counts alone would not expose the query leak.
+
+The corrected canonical QEMU kernel under
+`output/kernel/pico-neo3/qemu-timeline-20261021-v5/` passes the same suite in
+`output/pico-drm-timeline-20261021-v1/vm-final-v1/`. Query references remain
+2 to 2 through the same 520 operations; every other listed case and clean
+fixture unload/power-off passes, without kernel warnings. Full GPU interprocess
+synchronization, Valve compositor presentation and physical lens acceptance
+remain separate hardware gates.
