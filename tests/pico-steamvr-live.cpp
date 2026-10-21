@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <time.h>
 #include <unistd.h>
 
 static bool board(const char *serial)
@@ -57,6 +58,17 @@ int main(int argc,char **argv)
         std::printf("PICO_STEAMVR_DASHBOARD_REQUEST key=%s\n",key);
         overlay->ShowDashboard(key);
     }
+    auto *compositor=overlay?static_cast<vr::IVRCompositor *>(get(vr::IVRCompositor_Version,&error)):nullptr;
+    auto stats=[&](const char *phase) {
+        if (!compositor) return;
+        vr::Compositor_CumulativeStats value{};
+        compositor->GetCumulativeStats(&value,sizeof(value));
+        timespec now{};clock_gettime(CLOCK_MONOTONIC,&now);
+        std::printf("PICO_STEAMVR_APP_STATS phase=%s monotonic_s=%.9f app_pid=%u presents=%u dropped=%u reprojected=%u\n",
+                    phase,static_cast<double>(now.tv_sec)+now.tv_nsec/1e9,value.m_nPid,
+                    value.m_nNumFramePresents,value.m_nNumDroppedFrames,value.m_nNumReprojectedFrames);
+    };
+    stats("begin");
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
     for (long i=0;i<seconds*100;++i) {
         vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount]{};
@@ -72,8 +84,17 @@ int main(int argc,char **argv)
             }
             max_distance=std::fmax(max_distance,std::sqrt(distance));++valid;
         } else ++invalid;
+        if (compositor&&i%100==0) {
+            vr::Compositor_FrameTiming timing{};timing.m_nSize=sizeof(timing);
+            bool available=compositor->GetFrameTiming(&timing,1);
+            std::printf("PICO_STEAMVR_FRAME_TIMING available=%d index=%u system_s=%.9f presents=%u mispresented=%u dropped=%u compositor_gpu_ms=%.6f compositor_cpu_ms=%.6f wait_present_cpu_ms=%.6f\n",
+                        available,timing.m_nFrameIndex,timing.m_flSystemTimeInSeconds,
+                        timing.m_nNumFramePresents,timing.m_nNumMisPresented,timing.m_nNumDroppedFrames,
+                        timing.m_flCompositorRenderGpuMs,timing.m_flCompositorRenderCpuMs,timing.m_flWaitForPresentCpuMs);
+        }
         usleep(10000);
     }
+    stats("end");
     bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
     if (overlay) {
         std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);

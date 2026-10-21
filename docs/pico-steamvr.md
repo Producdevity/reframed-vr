@@ -243,6 +243,10 @@ for example `--dashboard reframed.pico.steam`. Omitting that argument preserves
 the runtime's default dashboard selection. The request does not change tracking
 origins, calibration or headset activity. When a key is supplied, success also
 requires that specific overlay to exist, be visible and be the active dashboard.
+Dashboard mode also logs sampled `GetFrameTiming` values and before/after
+`GetCumulativeStats` records with a monotonic host timestamp. The latter counters
+belong to the last scene application; `app_pid=0` does not measure dashboard FPS.
+These read-only diagnostics do not change the probe's visibility acceptance.
 
 The next hardware comparison receives another 300 valid head samples but returns
 9: Steam's `valve.steam.gamepadui.main` texture exists at 1920×1080 and the named
@@ -318,6 +322,20 @@ sets and stops cleanly with zero MCU references. BOOT and the retained working
 DTBO still match their complete backup hashes. The manifest-checked control is
 `output/pico-steamvr-session-20261021-v4/export-dashboard-control.tar.gz`
 (SHA-256 `2bfe8d80519ec110e456e412e47505c3deb8884031cb6b6f04e8faa7252a681b`).
+
+The timing baseline keeps the selected Steam overlay visible and returns 2,000
+valid poses without invalid samples. All 20 sampled OpenVR frame-timing records
+are available. Their frame indices advance at approximately 59.87 per second,
+while 120 DRM vblank queries measure 119.9999 Hz. Reported compositor GPU time
+ranges from 10.50 to 10.73 ms (median 10.56 ms), CPU submission from 0.45 to 0.70 ms
+and present spin-wait from 0.004 to 0.011 ms. Application cumulative counters
+remain zero with `app_pid=0`, as expected without a scene application. The GPU
+samples exceed the 8.33 ms budget for 120 Hz; they do not isolate a shader,
+clock, idle-policy or scheduling cause, and include contention allowed by the
+OpenVR timing contract. Ordinary compositor scheduling remains diagnostic.
+The manifest-checked baseline is
+`output/pico-steamvr-session-20261021-v4/export-dashboard-timing.tar.gz`
+(SHA-256 `3da157bc16fba79204ef4cd1afba0baa7cbd35102ad0f764bdd650be170be1d5`).
 
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
