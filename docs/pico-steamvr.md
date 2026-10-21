@@ -233,6 +233,26 @@ remains unverified. The manifest-checked archive is
 Realtime-priority requests also remain denied, despite
 raising the unit's resource limits; timing requires separate investigation.
 
+The physical probe's optional `--dashboard` mode requests the dashboard, then
+reports actual dashboard visibility, the two known overlay texture dimensions,
+chaperone calibration state and headset activity. It returns 9 if head tracking
+passes but the dashboard remains hidden. The ordinary pose-only mode is unchanged;
+both modes still require the explicit physical boot serial and `reframed_pico`.
+
+The next hardware comparison receives another 300 valid head samples but returns
+9: Steam's `valve.steam.gamepadui.main` texture exists at 1920×1080 and the named
+gamescope overlay at 1280×800; both are hidden. Thus process startup and allocated
+UI textures do not establish visible Steam UI. Adding the original Frame
+`vrmonitor` identifies a separate loader failure: its bundled Qt 5.7 lacks
+`QPushButton::hitButton(QPoint const&)`. The probe reports calibration state 201
+(tracking center uninitialized) and activity 0 (idle). Neither observation alone
+establishes why the dashboard is hidden. No floor, play area or physical
+calibration was fabricated. The cached Frame Qt 5.15 bundle used by the VM path
+is the next compatibility candidate; its Pico monitor behavior remains untested.
+Evidence is retained in
+`output/pico-steamvr-session-20261021-v3/export-monitor.tar.gz`
+(SHA-256 `bb7cd890a3906b15292747df135793b92442f78100059a7fb3490a5d5adc502b`).
+
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.

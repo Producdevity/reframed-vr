@@ -43,8 +43,13 @@ int main(int argc,char **argv)
     char tracking[128]={0};vr::ETrackedPropertyError property=vr::TrackedProp_Success;
     system->GetStringTrackedDeviceProperty(0,vr::Prop_TrackingSystemName_String,tracking,sizeof(tracking),&property);
     if (property!=vr::TrackedProp_Success||std::strcmp(tracking,"reframed_pico")) {shutdown();return 5;}
+    vr::IVROverlay *overlay=nullptr;
     if (argc==5) {
-        auto *overlay=static_cast<vr::IVROverlay *>(get(vr::IVROverlay_Version,&error));
+        auto *chaperone=static_cast<vr::IVRChaperone *>(get(vr::IVRChaperone_Version,&error));
+        std::printf("PICO_STEAMVR_SESSION calibration=%d activity=%d\n",
+                    chaperone&&error==vr::VRInitError_None?static_cast<int>(chaperone->GetCalibrationState()):-1,
+                    static_cast<int>(system->GetTrackedDeviceActivityLevel(0)));
+        overlay=static_cast<vr::IVROverlay *>(get(vr::IVROverlay_Version,&error));
         if (!overlay||error!=vr::VRInitError_None) {shutdown();return 6;}
         overlay->ShowDashboard("");
     }
@@ -65,7 +70,22 @@ int main(int argc,char **argv)
         } else ++invalid;
         usleep(10000);
     }
+    bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
+    if (overlay) {
+        std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);
+        const char *keys[]={"valve.steam.gamepadui.main","reframed.pico.steam"};
+        for (const char *key:keys) {
+            vr::VROverlayHandle_t handle=vr::k_ulOverlayHandleInvalid;
+            auto found=overlay->FindOverlay(key,&handle);
+            uint32_t width=0,height=0;
+            auto texture=found==vr::VROverlayError_None?
+                overlay->GetOverlayTextureSize(handle,&width,&height):found;
+            std::printf("PICO_STEAMVR_OVERLAY key=%s find=%d texture=%d size=%ux%u visible=%d\n",
+                        key,found,texture,width,height,
+                        found==vr::VROverlayError_None&&overlay->IsOverlayVisible(handle));
+        }
+    }
     shutdown();dlclose(library);
     std::printf("PICO_STEAMVR_LIVE_RESULT valid=%u invalid=%u max_position_delta_m=%.6f physical_motion_acceptance=0\n",valid,invalid,max_distance);
-    return valid>100?0:8;
+    return valid<=100?8:dashboard_visible?0:9;
 }
