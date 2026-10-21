@@ -283,6 +283,34 @@ MCU references return to zero and both DSPs go offline before reboot. The Pico
 returns to b1977 with Wi-Fi off, the updater disabled and `flash.locked=0`, recorded
 in `output/pico-steamvr-session-20261021-v4/stock-return-final.json`.
 
+### Login rendering and presentation boundary
+
+A fresh RAM session on 2026-10-22 retains ordinary compositor scheduling,
+the 305 MHz GPU minimum, both DMA planes and 120 Hz. Removing the diagnostic
+client's `-steamos` flag and enabling gamescope's `-e` Steam integration takes
+the client directly to its Linux login route. The named gamescope dashboard is
+active and visible, with 2,000 valid poses and no invalid samples. Both the
+camera helper and SLAM consumer exit successfully and release the MCU reference.
+The loopback CEF inspection finds the login form, but the physical scanout still
+contains Steam's loading logo. This is not accepted presentation of the login UI.
+The manifest-checked archive is
+`output/pico-steamvr-session-20261022-v1/export-linux-ui.tar.gz`
+(SHA-256 `fbe47dc5dab9cfb65184d1e7352d4209f534d691775787a5cf8b208b81d44eff`).
+
+Steam's webhelper logs `AcquirePixmap` failures, `BadMatch` and `GLXBadPixmap`.
+[Valve issue 10456](https://github.com/ValveSoftware/steam-for-linux/issues/10456)
+reports the same error sequence on another graphics stack; that report does not
+establish a shared cause. A bounded comparison uses the cached client's supported
+`-cef-disable-gpu` option, leaving Valve's VR compositor GPU accelerated. The
+webhelper confirms disabled browser GPU compositing and creates a system window.
+Its CEF screenshot contains the login form, while the physical scanout still
+contains the loading logo. Another 2,000 pose samples are valid with none invalid,
+and both capture processes stop successfully. Disabling browser acceleration
+therefore does not resolve the measured presentation failure and is not adopted
+as a verified fix. The manifest-checked archive is
+`output/pico-steamvr-session-20261022-v1/export-cef-software.tar.gz`
+(SHA-256 `846c23c57c392a66fe39b2ddce0cb447fcc0a6fad28171581cf91c253a5675b0`).
+
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.
