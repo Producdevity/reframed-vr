@@ -238,6 +238,11 @@ reports actual dashboard visibility, the two known overlay texture dimensions,
 chaperone calibration state and headset activity. It returns 9 if head tracking
 passes but the dashboard remains hidden. The ordinary pose-only mode is unchanged;
 both modes still require the explicit physical boot serial and `reframed_pico`.
+An optional argument after `--dashboard` selects a dashboard overlay by key,
+for example `--dashboard reframed.pico.steam`. Omitting that argument preserves
+the runtime's default dashboard selection. The request does not change tracking
+origins, calibration or headset activity. When a key is supplied, success also
+requires that specific overlay to exist, be visible and be the active dashboard.
 
 The next hardware comparison receives another 300 valid head samples but returns
 9: Steam's `valve.steam.gamepadui.main` texture exists at 1920×1080 and the named
@@ -247,11 +252,72 @@ UI textures do not establish visible Steam UI. Adding the original Frame
 `QPushButton::hitButton(QPoint const&)`. The probe reports calibration state 201
 (tracking center uninitialized) and activity 0 (idle). Neither observation alone
 establishes why the dashboard is hidden. No floor, play area or physical
-calibration was fabricated. The cached Frame Qt 5.15 bundle used by the VM path
-is the next compatibility candidate; its Pico monitor behavior remains untested.
+calibration was fabricated.
 Evidence is retained in
 `output/pico-steamvr-session-20261021-v3/export-monitor.tar.gz`
 (SHA-256 `bb7cd890a3906b15292747df135793b92442f78100059a7fb3490a5d5adc502b`).
+
+The cached Frame Qt 5.15.16 bundle subsequently passes `ldd -r vrmonitor` on the
+Pico, and the monitor stays running until the test's cleanup. All 15 staged Qt,
+plugin and dependency files match their source manifest. This uses a private Qt
+directory first in the monitor's `LD_LIBRARY_PATH`, with its matching XCB plugin;
+the preserved SteamVR runtime is unchanged. The transfer carrier is
+`output/pico-steamvr-session-20261021-v3/frame-qt.tar.xz`
+(SHA-256 `07d23aac0f39aad9f547e3d3e69d83bdaf32a8268e99ab15bb4b6feca60f51c9`).
+
+That session ends because the compositor receives SIGXCPU, not because the
+monitor exits. The compositor core records `SI_KERNEL`; its saved process limits
+show unlimited ordinary CPU time and a 200,000 microsecond hard realtime limit.
+The interrupted render thread is inside the KGSL submission ioctl. The saved soft
+limit is 1,100,000 microseconds, consistent with the kernel increment after a
+realtime timeout. SDL's [Linux realtime scheduling implementation](https://github.com/libsdl-org/SDL/blob/SDL2/src/core/linux/SDL_threadprio.c)
+sets a 200 ms hard limit and half that soft limit before asking RealtimeKit.
+That source corroborates the limit values; it does not establish which scheduling
+call succeeded in this binary or why this GPU submission exceeded the budget.
+The hash-verified compositor-core archive is
+`output/pico-steamvr-session-20261021-v4/export-compositor-core.tar.gz`
+(SHA-256 `1c4077508fd63eee9fb7f755143a9524caa2ce1dbd06eaa70975e36e90986618`).
+
+A bounded diagnostic sets `SDL_THREAD_PRIORITY_POLICY=other`, `LimitRTPRIO=0`,
+`LimitNICE=-20` and `RestrictRealtime=yes` only for the compositor. It keeps the
+realtime watchdog intact and does not grant scheduler capabilities. SDL documents
+the ordinary-policy hint in its [pthread implementation](https://github.com/libsdl-org/SDL/blob/SDL2/src/thread/pthread/SDL_systhread.c).
+The compositor survives the comparison; all sampled compositor threads use
+ordinary or batch scheduling. The dashboard probe receives 1,000 valid poses and
+no invalid poses but returns 9, with both Steam overlays still hidden. All 280
+plane queries succeed and observe 141 framebuffer changes. A scanout capture
+still shows only the skybox. This separates the timeout from the unresolved UI
+visibility issue; it is not a production timing fix or a frame-rate benchmark.
+The manifest-checked archive is
+`output/pico-steamvr-session-20261021-v4/export-other.tar.gz`
+(SHA-256 `85087e637b4cbe3fe7ad93f66e593a329bb52eaf3848f85630b0a4131a063f78`).
+
+The next session explicitly starts the preserved runtime's ARM64 `vrdashboard`
+and requests `ShowDashboard("reframed.pico.steam")`. The probe reports the
+dashboard and gamescope overlay visible, with 500 valid poses and no invalid
+poses. Both DMA planes use the same 1920×3664 framebuffer; a synchronized readback
+contains Steam's controller-setup screen in both optically distorted eye views.
+The compositor and Steam remain active through the test. Calibration still
+reports 201, so no fabricated room calibration was needed to reach this result.
+This establishes rendered Steam UI in the physical scanout with live head poses;
+it does not establish clean lens output, physical motion accuracy, input usability
+or sustained VR performance. The manual component sequence must include the
+dashboard process; Frame's packaged service instead enters through `vrstartup`.
+The manifest-checked archive is
+`output/pico-steamvr-session-20261021-v4/export-dashboard-service.tar.gz`
+(SHA-256 `c19c12642cc45514dd1ff8383f9af8862632fe6e47d5e16cc0bcc6118bf22fc1`).
+
+A same-generation control repeats both default and named requests before starting
+`vrdashboard`: both return 9, with 300 valid poses each and the overlays hidden.
+After starting `vrdashboard`, the same named request passes with 500 valid poses;
+the requested overlay is now both active and visible. Readbacks before and after
+show the skybox and Steam's setup screen respectively. This verifies the missing
+dashboard process as a visibility blocker in the manual component sequence.
+The 90-second capture publishes 90,062 tracked poses, consumes all 2,249 head-frame
+sets and stops cleanly with zero MCU references. BOOT and the retained working
+DTBO still match their complete backup hashes. The manifest-checked control is
+`output/pico-steamvr-session-20261021-v4/export-dashboard-control.tar.gz`
+(SHA-256 `2bfe8d80519ec110e456e412e47505c3deb8884031cb6b6f04e8faa7252a681b`).
 
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration

@@ -23,10 +23,12 @@ static bool board(const char *serial)
 int main(int argc,char **argv)
 {
     setvbuf(stdout,nullptr,_IOLBF,0);
-    if ((argc!=4&&argc!=5) || !board(argv[2])) return 22;
+    if ((argc!=4&&argc!=5&&argc!=6) || !board(argv[2])) return 22;
     char *end=nullptr;long seconds=std::strtol(argv[3],&end,10);
     if (!*argv[3] || *end || seconds<1 || seconds>30 ||
-        (argc==5&&std::strcmp(argv[4],"--dashboard"))) return 22;
+        (argc>=5&&std::strcmp(argv[4],"--dashboard")) ||
+        (argc==6&&(!*argv[5] || std::strlen(argv[5])>128 ||
+                   std::strspn(argv[5],"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-")!=std::strlen(argv[5])))) return 22;
     alarm(static_cast<unsigned>(seconds+40));
     void *library=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
     if (!library) {std::fprintf(stderr,"%s\n",dlerror());return 1;}
@@ -44,14 +46,16 @@ int main(int argc,char **argv)
     system->GetStringTrackedDeviceProperty(0,vr::Prop_TrackingSystemName_String,tracking,sizeof(tracking),&property);
     if (property!=vr::TrackedProp_Success||std::strcmp(tracking,"reframed_pico")) {shutdown();return 5;}
     vr::IVROverlay *overlay=nullptr;
-    if (argc==5) {
+    if (argc>=5) {
         auto *chaperone=static_cast<vr::IVRChaperone *>(get(vr::IVRChaperone_Version,&error));
         std::printf("PICO_STEAMVR_SESSION calibration=%d activity=%d\n",
                     chaperone&&error==vr::VRInitError_None?static_cast<int>(chaperone->GetCalibrationState()):-1,
                     static_cast<int>(system->GetTrackedDeviceActivityLevel(0)));
         overlay=static_cast<vr::IVROverlay *>(get(vr::IVROverlay_Version,&error));
         if (!overlay||error!=vr::VRInitError_None) {shutdown();return 6;}
-        overlay->ShowDashboard("");
+        const char *key=argc==6?argv[5]:"";
+        std::printf("PICO_STEAMVR_DASHBOARD_REQUEST key=%s\n",key);
+        overlay->ShowDashboard(key);
     }
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
     for (long i=0;i<seconds*100;++i) {
@@ -73,6 +77,15 @@ int main(int argc,char **argv)
     bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
     if (overlay) {
         std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);
+        if (argc==6) {
+            vr::VROverlayHandle_t selected=vr::k_ulOverlayHandleInvalid;
+            auto found=overlay->FindOverlay(argv[5],&selected);
+            bool active=found==vr::VROverlayError_None&&overlay->IsActiveDashboardOverlay(selected);
+            bool visible=found==vr::VROverlayError_None&&overlay->IsOverlayVisible(selected);
+            std::printf("PICO_STEAMVR_DASHBOARD_SELECTED key=%s find=%d active=%d visible=%d\n",
+                        argv[5],found,active,visible);
+            dashboard_visible=dashboard_visible&&active&&visible;
+        }
         const char *keys[]={"valve.steam.gamepadui.main","reframed.pico.steam"};
         for (const char *key:keys) {
             vr::VROverlayHandle_t handle=vr::k_ulOverlayHandleInvalid;
