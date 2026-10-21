@@ -194,6 +194,17 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "display-refresh-under-test.h"),
                 "executable_sha256": digest(output / "mesa-display-refresh-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/mesa-display-master-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-master-tests.log", timeout=120)
+            report["display_master_tests"] = {
+                "status": "passed",
+                "scope": "actual WSI master reference counting with modeled vendor-kernel permissions",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-master-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-master-tests.c"),
+                "helpers_sha256": digest(output / "display-master-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-master-tests"),
+            }
             run([sys.executable, str(ROOT / "tests/mesa-pico-split-tests.py"),
                  str(source / "src/vulkan/wsi/wsi_display_pico.h"), str(output)],
                 "mesa-pico-split-tests.log", timeout=120)

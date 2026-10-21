@@ -110,7 +110,15 @@ with `VK_ERROR_DEVICE_LOST`. The same direct GPU probe fails as the SteamVR user
 and presents 64 frames using both DMA planes as root. A libdrm check confirms
 the vendor kernel denies unprivileged `DROP_MASTER` and `SET_MASTER`, even while
 the file already holds master. The held-master WSI patch addresses that redundant
-reacquisition; hardware verification of the rebuilt library is still required.
+reacquisition. The rebuilt library then passes the same test as the unprivileged
+SteamVR user: 64 GPU-rendered frames, 63 framebuffer changes, matching pixel
+readbacks, both DMA planes active and successful present waits. The old source
+fails the ownership regression; the patched source passes its held-master,
+reacquisition, denial, nested-reference and external-file cases under sanitizers.
+The reproducible build and device evidence are under
+`output/mesa/pico-held-master-20261021-v2/` and the live-session evidence directory.
+This closes the isolated swapchain permission failure; SteamVR's complete render
+and synchronization paths still need a fresh acceptance run.
 
 Compositor presentation, clean lens output, measured motion scale/direction and
 usable Steam UI remain hardware acceptance steps. The default configuration
