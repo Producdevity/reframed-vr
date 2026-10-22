@@ -238,6 +238,37 @@ The manifest-checked evidence is
 `6913a316610fbe65ed0b71f8ccaa54a1b87430338969ce5ea610d2ef68cfa850`;
 the live collector receipt is `stock-controller-tracker-parameters.json` beside it.
 
+### Controller image selection
+
+`pico_station_camera_hand_mode` encodes b1977's `StationService::SetHandMode`:
+station command 4, payload `[9, enabled]`, followed by the existing frame padding
+and CRC. It performs no I/O and is not enabled automatically. The camera owner
+must check both the command reply and the mode flag returned by camera status.
+The off command reads back flag zero; a caller that still requires flag one
+will abort before streaming.
+
+The private head-camera bring-up owner previously forced hand mode on. Its
+90-second captures contained alternating head/hand frames and no
+controller-class frames. A 2026-10-22 native comparison turns hand mode off with
+the maintained encoder and checks the zero readback. In an eight-second,
+camera-only capture, each of four cameras delivers 397 frames: 199 head,
+198 controller and zero hand. All four controller-class images are retained.
+No DSP or estimator runs in that comparison, and no poses are published; head
+6DoF and SteamVR with this image mode still require a combined test. It restores
+the missing image class, not a working controller pointer. IMU/head matching,
+image delivery to the accepted tracker and controller pose publication remain.
+
+The ASan/UBSan station protocol suite passes with both mode packets and the
+null-output refusal. The initial native attempt is retained separately: it sent
+the off command successfully but stopped at the old on-mode assertion before
+streaming. It is not evidence of an estimator regression. The corrected
+camera-only export has 16 manifest-verified files:
+`output/pico-vsync-controller-20261022-v3/export-classes.tar.gz`, SHA-256
+`b0698cd9955796f7992e2e0f4d7e5caea48379ea06bde209b8b8077ffcffcccf`.
+MCU references return to zero, boot/DTBO readbacks remain unchanged and stock
+return is verified. The source, actual mode/readback and acceptance boundaries
+are retained beside that export.
+
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter
 returns 1; an empty property must not be interpreted as disabled. The MCU type

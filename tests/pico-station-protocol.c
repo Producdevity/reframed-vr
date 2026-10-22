@@ -34,6 +34,10 @@ int main(void)
     golden("aa01040203020000000000000000000000000000000000000000000000000000000000000000006c");
     assert(pico_station_camera_pacing(1, frame));
     golden("aa011901000000000000000000000000000000000000000000000000000000000000000000000031");
+    assert(pico_station_camera_hand_mode(true, frame));
+    golden("aa0104090100000000000000000000000000000000000000000000000000000000000000000000f2");
+    assert(pico_station_camera_hand_mode(false, frame));
+    golden("aa010409000000000000000000000000000000000000000000000000000000000000000000000012");
     assert(pico_station_camera_status(false, frame));
     golden("aa01040f000000000000000000000000000000000000000000000000000000000000000000000056");
     assert(pico_station_camera_read_register(0xe6, 0x300a, frame));
@@ -60,6 +64,7 @@ int main(void)
     assert(!pico_station_camera_initialize_metadata(0, true, PICO_STATION_CAMERA_METADATA_EXPOSURE, NULL));
     assert(!pico_station_camera_stream(0, false, NULL));
     assert(!pico_station_camera_pacing(1, NULL));
+    assert(!pico_station_camera_hand_mode(false, NULL));
     assert(!pico_station_camera_status(false, NULL));
     assert(!pico_station_camera_read_register(0xe6, 0x300a, NULL));
     assert(!pico_station_version(NULL));

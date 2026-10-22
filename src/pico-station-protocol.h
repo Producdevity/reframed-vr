@@ -25,6 +25,7 @@ bool pico_station_camera_initialize_metadata(unsigned camera, bool raw8,
 bool pico_station_camera_stream(unsigned camera, bool enabled, uint8_t *output);
 /* The two stock pacing modes are wire values, not measured frame rates. */
 bool pico_station_camera_pacing(unsigned mode, uint8_t *output);
+bool pico_station_camera_hand_mode(bool enabled, uint8_t *output);
 bool pico_station_camera_status(bool failure_counters, uint8_t *output);
 bool pico_station_camera_read_register(unsigned slave, unsigned address, uint8_t *output);
 bool pico_station_version(uint8_t *output);
