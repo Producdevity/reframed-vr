@@ -43,6 +43,8 @@ def main():
                'profiles/pico-steamvr-cjson.json', 'profiles/pico-steamvr.json',
                'system/steamvr-pico/driver.vrdrivermanifest',
                'system/steamvr-pico/resources/input/neo3_profile.json',
+               'system/steamvr-pico/resources/input/neo3_legacy_bindings.json',
+               'system/steamvr-pico/resources/input/neo3_compositor_bindings.json',
                'system/steamvr-pico/compositor.conf',
                'system/steamvr-pico/gamescope.conf',
                'system/steamvr-pico/vrserver',

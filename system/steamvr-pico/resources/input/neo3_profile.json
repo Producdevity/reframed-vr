@@ -6,15 +6,121 @@
   "driver_name": "reframed_pico",
   "input_bindingui_mode": "controller_handed",
   "input_source": {
-    "/input/system": {"type": "button", "binding_image_point": [0, 0], "order": 0, "click": true},
-    "/input/application_menu": {"type": "button", "binding_image_point": [0, 0], "order": 1, "click": true},
-    "/input/x": {"type": "button", "binding_image_point": [0, 0], "order": 2, "click": true, "touch": true, "side": "left"},
-    "/input/y": {"type": "button", "binding_image_point": [0, 0], "order": 3, "click": true, "touch": true, "side": "left"},
-    "/input/a": {"type": "button", "binding_image_point": [0, 0], "order": 2, "click": true, "touch": true, "side": "right"},
-    "/input/b": {"type": "button", "binding_image_point": [0, 0], "order": 3, "click": true, "touch": true, "side": "right"},
-    "/input/grip": {"type": "button", "binding_image_point": [0, 0], "order": 4, "click": true},
-    "/input/joystick": {"type": "button", "binding_image_point": [0, 0], "order": 5, "click": true, "touch": true},
-    "/input/trigger": {"type": "button", "binding_image_point": [0, 0], "order": 6, "click": true, "touch": true},
-    "/input/thumbrest": {"type": "button", "binding_image_point": [0, 0], "order": 7, "click": false, "touch": true}
-  }
+    "/input/system": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 0,
+      "click": true
+    },
+    "/input/application_menu": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 1,
+      "click": true
+    },
+    "/input/x": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 2,
+      "click": true,
+      "touch": true,
+      "side": "left"
+    },
+    "/input/y": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 3,
+      "click": true,
+      "touch": true,
+      "side": "left"
+    },
+    "/input/a": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 2,
+      "click": true,
+      "touch": true,
+      "side": "right"
+    },
+    "/input/b": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 3,
+      "click": true,
+      "touch": true,
+      "side": "right"
+    },
+    "/input/grip": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 4,
+      "click": true
+    },
+    "/input/joystick": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 5,
+      "click": true,
+      "touch": true
+    },
+    "/input/trigger": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 6,
+      "click": true,
+      "touch": true
+    },
+    "/input/thumbrest": {
+      "type": "button",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 7,
+      "click": false,
+      "touch": true
+    },
+    "/pose/tip": {
+      "type": "pose",
+      "binding_image_point": [
+        0,
+        0
+      ],
+      "order": 8
+    }
+  },
+  "legacy_binding": "{reframed_pico}/input/neo3_legacy_bindings.json",
+  "default_bindings": [
+    {
+      "app_key": "openvr.component.vrcompositor",
+      "binding_url": "neo3_compositor_bindings.json"
+    }
+  ]
 }

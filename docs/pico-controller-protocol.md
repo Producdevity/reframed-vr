@@ -176,8 +176,8 @@ connected settings. The read-only receipt is
 SHA-256 `98678b9403989e1cca70a40b8d3c65053b20642a20c9dbb1f4bec6c88c3589b1`.
 This establishes stock configuration only. Later native FastRPC captures
 validated connected input, followed by [SteamVR digital-input tests](pico-steamvr.md#native-controller-input-verification).
-Analog calibration, controller poses and default application bindings remain
-unverified.
+Analog calibration and controller poses remain unverified. Digital defaults are
+described in [SteamVR bindings](pico-steamvr.md#digital-default-bindings).
 
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter

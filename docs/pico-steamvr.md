@@ -7,8 +7,8 @@ not use Monado. Nothing enables or installs it automatically.
 Peripheral integration is tracked separately: the
 [controller receiver](pico-controller-protocol.md#native-fastrpc-input-worker)
 has verified physical left-controller button, touch and analog reports through
-the native FastRPC path. Calibration, poses and SteamVR application bindings
-remain separate work. The
+the native FastRPC path. Digital legacy and dashboard bindings are provided
+below; analog calibration and controller poses remain separate work. The
 [native audio diagnostic](pico-native-audio.md) routes the native Steam client through Frame PipeWire to the Pico speakers;
 the owner confirmed hearing Steam's startup sound. Installed session wiring,
 microphone capture and concurrent SteamVR/audio load remain unverified. The
@@ -97,7 +97,7 @@ the debug response counts rejected calls. The timeout uses host receipt time,
 not an established controller capture-clock mapping.
 
 The controller reports `poseIsValid=false` throughout. No controller position,
-orientation, haptics, analog calibration, render model or application bindings
+orientation, haptics, analog calibration or render model
 are supplied by this step. Raw analog endpoints were captured but axis sign,
 center and dead zone still need physical calibration. Enabling this adapter
 does not yet provide a tracked dashboard pointer.
@@ -108,6 +108,76 @@ invalid pose. The same callbacks pass native UBSan on the Pico. Native ASan
 cannot start on the current kernel: its requested shadow/heap address exceeds
 the supported user address space. The separate IPC test replays all 27,794
 physical records and exercises concurrent publication without changing fields.
+
+### Digital default bindings
+
+The profile supplies a Neo3-specific legacy binding and a driver default for
+`openvr.component.vrcompositor`, using Valve's
+[input-profile mechanism](https://github.com/ValveSoftware/openvr/wiki/Input-Profiles#default-bindings).
+User or application bindings take precedence. Both JSON resources are packaged
+and hashed by the driver builder; no SteamVR installation files are modified.
+
+| Physical control | Legacy application input | Dashboard laser-mouse action |
+| --- | --- | --- |
+| Trigger click / touch | Axis 1 press / touch | Left click |
+| Stick click / touch | Axis 0 press / touch | Right click |
+| Grip click | Grip press | Middle click |
+| X / A click / touch | A press / touch | Home |
+| Y / B click / touch | Application-menu press / touch | Back |
+| Menu click | Application-menu press | Back |
+| PICO / Home click | System press | Toggle dashboard, in the system action set |
+
+The retained runtime also includes pressed buttons in the legacy touch mask;
+the grip touch bit in that API does not establish a physical grip-touch sensor.
+
+The compositor binding also supplies digital room-setup accept/back and
+dual-analog click/touch actions. It does not supply analog values, scrolling,
+haptics or skeleton actions. Right-hand paths reserve the corresponding A/B
+layout; the current driver registers only the left controller, and right-hand
+hardware acceptance remains pending. Thumbrest touch remains available to
+applications through explicit bindings but has no legacy/dashboard mapping here.
+
+The laser-mouse pointer binds `/pose/tip`, which SteamVR registers for tracked
+devices. Its pose stays invalid until controller tracking and the pointing
+transform are implemented and validated. A digital binding alone therefore does
+not provide dashboard pointing or establish rendered dashboard interaction.
+
+### Native binding verification
+
+RAM-only Pico boot `a014287d-2c4f-4869-bd16-ac24b4b1e752` tested the defaults in
+native ARM64 SteamVR 2.17.10 with fresh session configurations and the retained
+27,794 physical left-controller records. The server selected the driver's legacy
+binding automatically. Legacy button/touch masks matched the expected mappings,
+including the runtime's inferred grip-touch bit. The final connected sample was
+released; after disconnect, `GetControllerState` correctly returned false.
+
+A background diagnostic identified its explicit process ID as
+`openvr.component.vrcompositor`, verified that identity, and loaded the unchanged
+runtime action manifest. SteamVR selected `neo3_compositor_bindings.json` without
+an explicit binding override. Binding introspection confirmed the six physical
+source paths, and `IVRInput` returned all five laser-mouse actions: left/middle/right
+click, Home from X, and Back from Y/menu. It observed 72 transitions and released
+all actions after replay. Both runs had zero driver input errors and 144 accepted
+component changes. This validates automatic binding selection and recorded-input
+actions, not a new simultaneous physical button test or rendered dashboard use.
+
+The passing runs started no compositor or audio, and the driver continued to
+report invalid controller poses. Home-button dashboard toggling, right-hand input,
+physical wake-from-idle, analog calibration and tracked pointing remain pending.
+Earlier diagnostic pose queries unexpectedly started the compositor; those failed
+probe attempts are retained separately and do not establish compositor readiness.
+
+Evidence: `output/pico-controller-bindings-20261022-v1/export-bindings.tar.gz`,
+147 files, SHA-256
+`9096de0c8c4f143cfb33751d91f8c0b892a5cad2042b0bfecd6c457a229de045`.
+The archive and all member hashes were verified. All 28 final driver-build inputs
+match the repository; packaged bindings match the loaded resources. Native UBSan
+callback/IPC tests and 26 host controller/SteamVR tests passed. The unchanged
+driver binary has the hash recorded in the earlier verification below.
+Full boot/DTBO readbacks remained unchanged, all DSPs remained unbooted and MCU
+references were zero. `stock-return-final.json` records the return to b1977 with
+Wi-Fi off and the updater disabled; `stock-mute-final.json` confirms media/system
+volume zero. No partitions were written.
 
 ### Native controller input verification
 
@@ -130,10 +200,11 @@ exposed by the driver but was not pressed in that physical capture.
 This is live transport acceptance plus recorded-input action acceptance, not
 a new simultaneous physical button test. The diagnostic uses an inactive head
 pose and starts neither the compositor nor audio. Controller pose remains
-invalid. Default Steam dashboard and game bindings are not supplied: the stock
-generic legacy fallback asks for unsupported analog/trackpad/haptic components.
+invalid. This earlier run used the stock generic legacy fallback, which requested
+unsupported analog/trackpad/haptic components. The digital defaults below replace
+that fallback.
 The maintained receiver's subsequent shared-sensor test is recorded below.
-Installed session orchestration, bindings and controller pose remain pending.
+Installed session orchestration and controller pose remain pending.
 
 Evidence is in `output/pico-controller-steamvr-20261022-v1/`:
 
