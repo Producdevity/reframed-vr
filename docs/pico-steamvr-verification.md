@@ -883,3 +883,49 @@ CDSP/SLPI `OFFLINE`, zero MCU references and the original 305 MHz GPU minimum.
 Stock b1977 returns at 2026-10-22 07:42:24 UTC under a new boot UUID, with Wi-Fi
 off and updater disabled. See this session's `stock-return-final.json`.
 No firmware partition is flashed and the Quest remains untouched.
+
+### Classified overdue updates and presentation deadlines
+
+The new live probe brackets every `GetTimeSinceLastVsync` call with monotonic
+timestamps and logs each failure with its reason, counter and a read-only kernel
+timestamp. The existing aggregate and pose/dashboard exit criteria are retained.
+Unavailable, nonfinite, negative, overdue and invalid-refresh cases have separate
+counters. All 30 late failures below are overdue; none are negative, unavailable,
+nonfinite or caused by a bad refresh property.
+
+| Capture | Submitted presents/sec | Late overdue / 2,000 | Late driver busy reads |
+| --- | ---: | ---: | ---: |
+| Old-channel control | 102.53 | 9 | 3 |
+| ABI-2 channel | 104.01 | 10 | 0 |
+| ABI-2, attempted realtime permissions | 102.37 | 11 | 0 |
+
+These rates count submissions in the marked instrumented window, not physical
+FPS. All three kernel vblank streams remain approximately 120 Hz, with no trace
+overruns. At each of these 30 faults the client counter is two kernel vblanks
+behind. In the old-channel control, successive render-thread counter reads have
+a median interval of 8.367 ms, a 95th percentile of 16.704 ms and maximum 19.609 ms.
+The late faults coincide with a GPU semaphore wait followed by roughly another
+refresh-period present wait before the next counter update. The paired timestamp
+is correct for its reported sequence; it is the update that arrives late.
+
+Filtered scheduler trace records the render thread's runnable delays as well as
+its blocking waits. In that control's marked window, the measured runnable-delay
+median is 8 microseconds, 95th percentile 268 microseconds and maximum 4.089 ms.
+Between the last counter update and the nine fault queries, total measured
+runnable delay ranges from zero to 0.803 ms. Thus CPU scheduling contributes in
+some cases, while an exclusively CPU-scheduling diagnosis is unsupported. The
+trace does not yet separate the GPU execution, GPU-queue delay and vendor KMS
+deadline margins sufficiently to select a graphics-path fix.
+
+The final comparison applies `LimitRTPRIO=80`, a 100 ms realtime CPU-time limit
+and an SDL realtime-policy request only to the compositor unit. Its actual
+`/proc` limits confirm those limits, but all sampled `RenderThread` tasks remain
+policy 0, priority 0. The compositor logs `setschedparam` permission failures;
+the comparison therefore does not test an effective realtime render thread.
+The built kernel has `CONFIG_RT_GROUP_SCHED=y`; its role in those permission
+failures remains unverified. No scheduling change is promoted. The runtime GPU
+inventory also confirms 587 MHz is the highest advertised operating point, so
+the completed tests already use the supported maximum, restored to 305 MHz at
+cleanup. The native probe SHA-256 is
+`99a46b5ae07f42d4f7df63e359ae2f60395f6eafba7f2207135b51ed8d49d849`.
+The archives and stock-return receipt are listed in the preceding section.

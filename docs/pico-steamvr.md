@@ -191,8 +191,9 @@ The legacy/Facet/legacy comparison raised submitted presents from 66–72 to abo
 fixes that mismatch. Two subsequent Facet runs submit about 98 and 104 presents
 per second; sampled timestamps match the reported kernel vblank sequence within
 9 microseconds. The template selects this corrected path. Some client counters
-lag the latest kernel vblank, and 8 and 10 of 2,000 age checks still fail. These
-aggregate checks do not distinguish every failure reason. The physical
+lag the latest kernel vblank, and 8 and 10 of 2,000 age checks still fail. The
+subsequent reason-classifying probe identifies overdue updates in all 30 late
+failures across three complete captures. The physical
 probe records renderer selection, timing phases, vsync age/counter and a bracketed
 read-only kernel timestamp. `PICO_STEAMVR_VSYNC_RESULT` counts unavailable,
 non-finite, negative or greater-than-two-period ages as invalid. These diagnostics
@@ -206,6 +207,13 @@ failure in its first native capture: the late observer records 48,188 successful
 driver reads without rejections. Readers use the committed sample during an
 in-progress write, with the same age and generation checks. Both processes need
 the new ABI and a fresh mapping; see the [transport contract](pico-slam.md#pose-transport-to-steamvr).
+
+The timing trace places those overdue updates after GPU completion and a wait
+for another presentation boundary; the reported counter is two vblanks behind.
+Ordinary-scheduler delay varies between the affected frames and is not the sole
+established cause. A compositor-only realtime-permission experiment leaves the
+actual render thread on ordinary scheduling and does not improve cadence. Its
+configuration is not adopted. Sustained 120 Hz presentation remains unresolved.
 
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.

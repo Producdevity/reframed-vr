@@ -99,6 +99,7 @@ int main(int argc,char **argv)
     stats("begin");
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
     unsigned vsync_samples=0,vsync_invalid=0;
+    unsigned vsync_unavailable=0,vsync_nonfinite=0,vsync_negative=0,vsync_overdue=0,vsync_bad_refresh=0;
     property=vr::TrackedProp_Success;
     float refresh=system->GetFloatTrackedDeviceProperty(0,vr::Prop_DisplayFrequency_Float,&property);
     double max_vsync_age=property==vr::TrackedProp_Success&&std::isfinite(refresh)&&refresh>0?2.0/refresh:0;
@@ -119,12 +120,25 @@ int main(int argc,char **argv)
         float since_vsync=0;uint64_t vsync_counter=0;bool vsync_available=false;
         uint64_t kernel_before=0,kernel_after=0;int64_t query_before=0,query_after=0;
         if (compositor) {
-            if (i%100==0) {kernel_before=kernel_vsync(vsync_fd);query_before=monotonic_ns();}
+            if (i%100==0) kernel_before=kernel_vsync(vsync_fd);
+            query_before=monotonic_ns();
             vsync_available=system->GetTimeSinceLastVsync(&since_vsync,&vsync_counter);
-            if (i%100==0) {query_after=monotonic_ns();kernel_after=kernel_vsync(vsync_fd);}
+            query_after=monotonic_ns();
             ++vsync_samples;
-            if (!vsync_available || !std::isfinite(since_vsync) || since_vsync<0 ||
-                max_vsync_age<=0 || since_vsync>max_vsync_age) ++vsync_invalid;
+            const char *reason=nullptr;
+            if (!vsync_available) {++vsync_unavailable;reason="unavailable";}
+            else if (!std::isfinite(since_vsync)) {++vsync_nonfinite;reason="nonfinite";}
+            else if (since_vsync<0) {++vsync_negative;reason="negative";}
+            else if (max_vsync_age<=0) {++vsync_bad_refresh;reason="refresh";}
+            else if (since_vsync>max_vsync_age) {++vsync_overdue;reason="overdue";}
+            if (i%100==0 || reason) kernel_after=kernel_vsync(vsync_fd);
+            if (reason) {
+                ++vsync_invalid;
+                std::printf("PICO_STEAMVR_VSYNC_FAULT sample=%ld reason=%s age_s=%.9f counter=%llu query_before_ns=%lld query_after_ns=%lld kernel_before_ns=%llu kernel_after_ns=%llu\n",
+                    i,reason,since_vsync,static_cast<unsigned long long>(vsync_counter),
+                    static_cast<long long>(query_before),static_cast<long long>(query_after),
+                    static_cast<unsigned long long>(kernel_before),static_cast<unsigned long long>(kernel_after));
+            }
         }
         if (compositor&&i%100==0) {
             vr::Compositor_FrameTiming timing{};timing.m_nSize=sizeof(timing);
@@ -144,8 +158,9 @@ int main(int argc,char **argv)
         usleep(10000);
     }
     stats("end");
-    if (compositor) std::printf("PICO_STEAMVR_VSYNC_RESULT samples=%u invalid=%u max_age_s=%.9f\n",
-                                vsync_samples,vsync_invalid,max_vsync_age);
+    if (compositor) std::printf("PICO_STEAMVR_VSYNC_RESULT samples=%u invalid=%u max_age_s=%.9f unavailable=%u nonfinite=%u negative=%u overdue=%u bad_refresh=%u\n",
+                                vsync_samples,vsync_invalid,max_vsync_age,vsync_unavailable,
+                                vsync_nonfinite,vsync_negative,vsync_overdue,vsync_bad_refresh);
     if (vsync_fd>=0) close(vsync_fd);
     auto *debug=static_cast<vr::IVRDebug *>(get(vr::IVRDebug_Version,&error));
     if (debug&&error==vr::VRInitError_None) {
