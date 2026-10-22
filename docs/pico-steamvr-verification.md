@@ -1330,3 +1330,59 @@ disabled; effective music/system volumes read zero. No partition is flashed,
 and the Quest remains untouched. The updated optional SteamVR pose adapter is
 built/tested separately on this CPU; these captures do not enable it or establish
 a working optical controller pointer.
+
+### Restored Mesa cache comparison
+
+A second cold RAM boot restores the 189 hash-verified Mesa cache files before
+starting the same 90 Hz candidate. Initialization has created only `index` and
+`marker`; these two files are preserved in a separate RAM directory before the
+restore. The physical driver, Mesa library, optical profile, Steam workload,
+ordinary scheduling, 587 MHz test floor and capture instrumentation are retained.
+The compositor additionally requests cache statistics, but no cache hit/miss
+statistics are emitted in its retained log; cache reuse is not established by
+a reported hit count.
+
+The same-boot clock correlations place Facet's pipeline-creation messages in
+these acquire-to-submit intervals. They measure the containing interval rather
+than the individual Vulkan pipeline call:
+
+| Pipeline group | Cold cache | Restored cache |
+| --- | ---: | ---: |
+| Initial distortion grid | 39.197 ms | 2.060 ms |
+| Curved embedded overlay | 28.458 ms | 1.096 ms |
+| Flat/reflected embedded overlay | 57.935 ms | 1.728 ms |
+| Curved overlay | 15.379 ms | 1.728 ms |
+
+The largest acquire-to-submit interval anywhere in the restored run is still
+14.444 ms. Its first readiness attempt sees the selected 1280×800 Steam overlay,
+500 valid head poses and zero overdue vsync ages. The late probe adds 2,000 valid
+head poses and zero overdue ages. `dashboard-observer.log` duplicates the
+successful readiness log and is not an additional 500-query window. The cold
+run's two readiness attempts contain 7 and 2 overdue samples. Both late probes
+have zero; this comparison does not reproduce or fix the earlier occasional
+late blocking fault. The unchanged age bound is two refresh periods.
+
+The 90.93-second tracking session consumes 2,249 head-camera sets and publishes
+90,064 confident head poses. The native scanout copy contains Steam's sign-in
+panel in both distorted eye views and both DMA planes remain active. The copy
+spans multiple scanouts, so its visible copy boundary and software image do not
+establish coherent optical output. Physical 90 Hz acceptance, motion calibration
+and optical controller correction remain unverified in this run.
+
+These results support retaining the Mesa cache across sessions and RAM boots,
+rather than adopting a CPU-priority workaround for the measured startup stalls.
+The maintained compositor drop-in now provisions a private system-service cache
+and a 512 MiB bound. Its exact configuration passes `systemd-analyze verify` on
+the Pico. A native service running as UID 1000 verifies the cache path, 0700 mode,
+ownership, environment and write/read/remove cycle. This configuration test does
+not install persistent Linux storage; the performance comparison restores the
+cache explicitly into RAM.
+
+Evidence: `output/pico-shader-cache-20261023-v1/`. The 212-file export archive has
+SHA-256 `003d0426ee66196bde3fe98a9d90337d822f9e38078d6dccd83f271330f40d53`;
+every archive/member hash is verified. `cache-comparison.json` retains all matched
+intervals and probe results. Hardware owners stop cleanly, MCU references reach
+zero, the GPU floor returns to 305 MHz and ADSP/PCM remain quiet. Full boot/DTBO
+readbacks match the recovery inputs. Offline stock b1977 returns at
+2026-10-22 23:05:05 UTC, with updater disabled. No partition is flashed and the
+Quest remains untouched.

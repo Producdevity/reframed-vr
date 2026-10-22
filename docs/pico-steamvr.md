@@ -408,6 +408,22 @@ The drop-in also carries the tested diagnostic scheduling policy:
 they do not constitute a finished low-latency scheduling profile. Transient
 launches need the same properties and environment explicitly.
 
+For a system-manager compositor service running as `vr`, the drop-in also
+creates the private cache directory `/var/cache/reframed-vr/pico-mesa` with mode
+0700 and sets `MESA_SHADER_CACHE_DIR` there. `MESA_SHADER_CACHE_MAX_SIZE=512M`
+bounds Mesa's disk cache to 512 MiB. Keep that directory on persistent Linux
+storage. In the temporary RAM environment it needs an explicit verified restore
+or persistent backing; setting the environment does not preserve RAM across a
+reboot. Transient services need the equivalent `CacheDirectory`, mode and
+environment properties. Preserve cache contents across normal session restarts;
+Mesa keys entries by the relevant driver/shader identity.
+
+The [restored-cache comparison](pico-steamvr-verification.md#restored-mesa-cache-comparison)
+reduces the matched startup pipeline interval from 57.935 ms to 1.728 ms, with
+zero overdue vsync samples in its first 500-query readiness and 2,000-query late
+windows. This is a bounded comparison, not a sustained frame-rate or optical
+acceptance result. The separate occasional late blocking fault remains open.
+
 The compositor drop-in also sets `MESA_VK_WSI_FRAME_COUNTER_TIMING=1`. It requires
 Turnip patch 0015 from this tree: the retained Frame compositor requests a private
 two-word vblank counter/time pair. Unpatched Mesa reports success after writing
