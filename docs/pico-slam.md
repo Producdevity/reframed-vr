@@ -243,6 +243,26 @@ queue exhaustion permanently stop that feed; callbacks from older generations
 cannot affect it. Calls are serialized by its process owner. The feed starts no
 hardware or vendor algorithm and publishes no poses.
 
+The vendor feed holds at most 256 unpaired IMU samples per sensor. SSC can
+deliver accelerometer and gyroscope events in separate bursts: the earlier
+32-sample bound stopped a native SteamVR run with `ENOBUFS`. Its counters show
+the failure on the 33rd unpaired input, while only one camera set was pending
+against an eight-set limit. The retained stream contains the corresponding
+gyro burst; the failed record itself was overwritten after the consumer stopped.
+The larger queue changes neither sample freshness nor the maximum IMU gap,
+matching rules or terminal failure policy. A synthetic regression covers
+56-sample bursts in either sensor order, rejects an expired partner batch and
+still stops at the new finite capacity. This host check does not establish
+sustained headset tracking.
+
+With that change, a subsequent combined run reaches 69,921 matched pairs without
+`ENOBUFS`, then fails closed with `ETIMEDOUT` while five camera sets await IMU
+coverage. The IMU producer reports stopped accelerometer delivery; both DSPs
+remain online. This is a separate unresolved delivery/stall failure, not evidence
+that increasing capacity makes the whole session stable. The manifest-checked
+archive is `output/pico-steamvr-session-20261022-v2/export-shm-ready.tar.gz`,
+SHA-256 `a6f11cc3c483c3ac95178db66e00e3d5529d6010fa008e0807334828823eb66b`.
+
 The default lifetime policy keeps pixel storage and vector metadata until the
 caller has stopped and destroyed the vendor backend. It retains at most 384
 sets (about 450 MiB of pixels) and eight pending sets, stopping at either limit.

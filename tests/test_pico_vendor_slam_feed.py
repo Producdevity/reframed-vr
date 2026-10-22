@@ -16,5 +16,5 @@ class PicoVendorSlamFeedTests(unittest.TestCase):
                 '-o', str(binary),
             ], check=True, capture_output=True, text=True, timeout=30)
             result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=30)
-            self.assertIn('PICO_VENDOR_SLAM_FEED_PASS cycles=100 faults=50', result.stdout)
+            self.assertIn('PICO_VENDOR_SLAM_FEED_PASS cycles=100 faults=52', result.stdout)
             self.assertIn('PICO_VENDOR_SLAM_COPY_PASS delivered=1000 retained_limit=2 pending_on_stop=1', result.stdout)
