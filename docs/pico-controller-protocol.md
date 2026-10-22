@@ -22,7 +22,8 @@ uses `libssc.so` and `libsns_api.so`. For SSC message ID `0x400`, the library
 parses `sns_ble_mcu_data` and copies 25 uint32 words into the 100-byte station
 record at offset `0x1018` of a `0x1980`-byte event. This establishes the inner
 record boundary. The payload and outer event schemas have been checked offline
-as described below; the live SSC connection still needs validation.
+as described below. Native subscription and shutdown have since been tested;
+connected-controller reports still need validation.
 
 The outer event timestamp at offset `0x10` uses SSC ticks multiplied by
 `52.083333333333336`, plus an offset measured from Android elapsed real time and
@@ -163,6 +164,60 @@ analysis and physical read receipts are retained in
 `output/pico-controller-config-20261012-v1/`.
 
 ## Native Linux SSC transport
+
+### Bounded physical receiver
+
+[`build-pico-controller-capture.py`](../tools/build-pico-controller-capture.py)
+builds the opt-in [`capture-pico-controller.c`](../tools/capture-pico-controller.c)
+receiver on native ARM64 Linux. It verifies the installed SSC profile, source
+archive and patched sources, compiles libssc into a separate executable, and
+copies its GPL license. The installed tracking library is unchanged. Each build
+also runs nine report-callback cases without accessing hardware, covering
+attribute events, stream identity, shutdown, configuration replies, accepted
+input, duplicate timestamps and corrupt records.
+
+```sh
+python3 tools/build-pico-controller-capture.py --output /tmp/controller-build
+/tmp/controller-build/capture-pico-controller \
+  BOOT_SERIAL SUID_HIGH SUID_LOW MCU RADIO TOUCH SECONDS
+```
+
+Supply the boot serial from the native kernel command line, the discovered
+`ble_mcu` SUID, and this unit's verified stock configuration. The receiver
+requires a matching boot serial, exact SUID, available continuous sensor,
+calibrated monotonic clock and duration of 1–120 seconds. An owning service must
+start SLPI and hold the MCU power reference separately. It does not start DSPs,
+power the MCU, pair controllers or modify firmware.
+
+The stock b1977 request is 480 Hz although the physical `ble_mcu` metadata
+omits the supported-rate list. The receiver sends that explicit standard
+continuous configuration through the pinned SSC client, rather than changing
+the generic library's rate-selection policy. A transport acknowledgement is
+reported separately from configuration events and CRC-checked data. Normal
+shutdown, signals and output errors drain pending work, disable an attempted
+subscription and release the sensor/client objects. Timeout or incomplete
+cleanup fails the process. Raw records are bounded; decoded axes remain
+uncalibrated bytes and are not controller poses.
+
+On 2026-10-22, release and UBSan builds compiled on the physical Neo3 Pro Eye.
+Both passed the nine callback cases. The UBSan receiver also passed normal
+subscription/shutdown, `/dev/full` output failure, cancellation during sensor
+discovery, and absent-SUID refusal. All four cases ended with zero live SSC
+objects; cases that attempted a subscription acknowledged its disable. The
+test owner released the MCU power reference to zero. AddressSanitizer could
+not start in this native environment because its own memory mapping failed
+before `main`; that run provides no receiver validation.
+
+Both controllers were disconnected in the preceding stock capture. Native
+requests were acknowledged, but no controller reports arrived. This proves
+bounded transport ownership, not working buttons, analog calibration,
+controller tracking, haptics or SteamVR controller integration. Source-pinned
+builds and test evidence are in
+`output/pico-steamvr-session-20261022-v8/export-controller-final/`;
+the verified carrier SHA-256 is
+`12502fb65fe5e5734295167b08e57074d13c35145dd4a00ebdcb0c1436141e06`.
+
+### Library and clock ownership
 
 The native [libssc](https://codeberg.org/DylanVanAssche/libssc) source is pinned
 in [`profiles/ssc.json`](../profiles/ssc.json), including its GPL-3.0-or-later
