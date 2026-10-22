@@ -68,6 +68,11 @@ lookup() {
 }
 lookup
 ((count == 0)) || fail 'a service mapper is already active'
+# The vendor audio PDR announcement is not replayed to late notifier clients.
+for module in q6_notifier_dlkm rx_macro_dlkm tx_macro_dlkm va_macro_dlkm \
+              wcd938x_slave_dlkm pinctrl_wcd_dlkm stub_dlkm; do
+    modprobe "$module" || fail "audio module initialization failed: $module"
+done
 /usr/bin/pd-mapper "${arguments[@]}" &
 mapper=$!
 deadline=$((SECONDS + 8))
