@@ -401,6 +401,50 @@ the 8.33 ms budget for 120 Hz. The frame-index cadence with `app_pid=0` still do
 not establish physical scanout FPS. This workaround closes the measured buffer
 growth for a bounded session; long-session performance remains unverified.
 
+### Supported GPU point and DRM timing
+
+A further bounded comparison keeps that transport and requests the supported
+587 MHz GPU minimum, restoring 305 MHz afterward. Its camera, SLAM and IMU
+processes all exit zero, with 2,249 camera sets, 92,472 matched IMU pairs and
+90,061 published tracked poses. The three physical-client checks receive
+300, 500 and 2,000 valid poses respectively, with no invalid samples. Sampled
+compositor GPU time in the late check is 6.490–6.976 ms, median 6.613 ms. This is
+below the 8.33 ms nominal 120 Hz budget; it is not end-to-end photon latency.
+
+A private ftrace instance records the kernel's existing DRM vblank and delivery
+tracepoints without changing global tracing. All 25,424 entries are retained;
+per-CPU overrun and dropped-event counters are zero. Between the dashboard-ready
+and late-probe-finished markers, a 24.851-second interval contains 2,982
+consecutive CRTC-0 vblank sequences: 119.999965 Hz, median interval 8.332 ms,
+95th percentile 8.411 ms and maximum 8.994 ms.
+
+The same interval contains 4,786 delivered callbacks covering those same 2,982
+sequences. Multiple callbacks therefore occur within a vblank. This kernel's
+delivery format identifies a DRM file rather than a submitting PID and does
+not identify the callback's buffer or present ID. Counting callbacks, or their
+unique sequence numbers, cannot establish newly rendered frames per second.
+The trace does not identify which remaining delay belongs to render submission,
+presentation completion or runtime policy. `WaitForPendingPresent` errors remain
+in the compositor log; presentation pacing is still an open issue.
+
+The trace instance is disabled and removed after capture, and the original GPU
+minimum is restored. The manifest-checked archive is
+`output/pico-steamvr-session-20261022-v2/export-shm-timing.tar.gz`, SHA-256
+`3c6b565e00e7107a0a1904baa023968eb995a9162de3fe23823e842e9cfb1075`.
+The retained trace's SHA-256 is
+`74e8dccae00ebe809fca57e60d3b9273a114f34c4ce0175b208d5a0660b65d15`.
+
+The updated physical-driver bundle builds offline in the cached ARM64 Fedora
+container. All nine packaged artifacts match its manifest, including the opt-in
+compositor scheduling and gamescope transport drop-ins. This is a bundle check,
+not installation of a Frame-based operating system.
+
+After these RAM-only tests, complete BOOT and DTBO readbacks still match the
+retained recovery hashes. All VR service cgroups are empty, MCU references are
+zero and both DSPs go offline before reboot. At 2026-10-22 00:31:32 UTC, stock
+b1977 returns with Wi-Fi off, the updater disabled and `flash.locked=0`, recorded
+in `output/pico-steamvr-session-20261022-v2/stock-return-final.json`.
+
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.
