@@ -141,11 +141,9 @@ for the maintained domain-aware wrapper.
 The [optional IMU command](pico-controller-protocol.md#controller-imu-command)
 also failed to restore delivery. Stock logs report `hmd-freq:0` alongside live
 controller IMU samples, so that debug field alone is not evidence of a missing
-native prerequisite. The next comparison needs to establish whether the
-controller subscription reaches the DSP driver and enables its MCU interrupt
-and SPI receive path. GPIO snapshots taken before the native subscription and
+native prerequisite. GPIO snapshots taken before the native subscription and
 during stock tracking are not equivalent operating states and cannot justify
-a pinmux change.
+a pinmux change. The subsequent v4 checks below examine the active subscription.
 
 Evidence roots are `output/pico-controller-delivery-20261022-v1/`, `v2/` and
 `v3/`. Each archive's complete member inventory, sizes and SHA-256 hashes were
@@ -162,6 +160,98 @@ and compute DSPs were never started in that native session. Full boot and DTBO
 partition readbacks matched the retained stock hashes. The controlled return
 verified stock b1977, Wi-Fi off, updater disabled and speaker music/system/ring
 volumes zero. No controller fix is installed.
+
+### Active receive-path checks
+
+The v4 session used the same stock Bionic probe and added these comparisons:
+
+| Check | Verified result | Limit |
+| --- | --- | --- |
+| Sensor firmware identity | All 21 native `slpi.*` files matched files on the readonly stock modem partition byte for byte by SHA-256 | Excludes a different packaged SLPI firmware set, not a runtime configuration difference |
+| Active pin state | GPIO 111 became an input with keeper during the subscription, matching the stock snapshot | Pin configuration does not prove interrupt delivery |
+| Host SPI ownership | Pinctrl identifies GPIOs 0–3 as `894000.spi`, which owns `/dev/spidev0.0` | These are the host-to-MCU pins; their state does not establish the DSP SPI path |
+| Stock startup queries | Firmware-type `AA0100` and version `AA0101` requests did not change the zero controller ring; a valid `BB0101` version reply arrived | No `BB0100` reply was captured; this is not proof that both commands were acknowledged |
+| Simultaneous accelerometer control | A separate stock-library channel started five seconds into the controller capture and repeatedly changed its own buffer; the controller buffer remained entirely zero | Verifies DSP shared-memory writes in the same process, not decoded accelerometer samples or every head-tracking prerequisite |
+
+The simultaneous test retained both final buffers. At the last periodic sample,
+the accelerometer buffer had changed 177 times and contained 866 nonzero bytes;
+the controller buffer had no changed slots or valid records. Both channels
+stopped and deinitialized successfully. Both allocations remained alive until
+SLPI was independently confirmed `OFFLINE`, then the probe freed them and exited
+zero. MCU power references returned to zero.
+
+The controller DSP's diagnostic SSID 124 also confirmed sensor-instance
+initialization, `ble_mcu_register_interrupt`, and one initial notification/ISR
+handler invocation. No recurring controller notifications appeared during the
+20-second capture before MCU pacing was enabled. The later comparison below
+identifies a missing startup command; this initial trace alone did not identify
+that cause.
+The collector restored the prior logging mask before closing. Its first mask
+query exposed a collector assumption: this kernel returns the entire containing
+mask table, even for a single-SSID request. The corrected collector queries the
+table's start and reads the corresponding entry before changing or restoring it.
+
+Evidence is retained in `output/pico-controller-delivery-20261022-v4/`.
+Archive inventories and every member's size and SHA-256 were verified against
+the embedded manifests and the extracted files:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-stock.tar.gz` | 22 | `e61e9719203b1bdaa8f4930a4088472f315c0a3ce50c76f596afa4ee44678c7f` |
+| `export-query.tar.gz` | 22 | `2b819f5188ccb3e9dd8835e51a60251c84f2185cbffe85880c4bd5922950ea44` |
+| `export-dual.tar.gz` | 23 | `f6344fa029247eed0fb1b459536015ff4504cea197618a39a78376c8d91efe69` |
+| `export-diag-v2.tar.gz` | 24 | `5cdb46c8e4c7e1e856662f7a0e2e6b88f826adc4c682278b397f6d38f1438289` |
+
+The full firmware comparison is in `compare-firmware-result.log`; the active
+pin samples, raw rings and decoded diagnostic frames are in the archives.
+### Controller delivery enabled by MCU pacing
+
+Starting the verified five-second camera capture during a stock-library
+controller subscription changed its previously zero ring into 7,230 CRC-valid
+records. Delivery continued after the cameras stopped. The maintained key and
+IMU decoders accepted every record as left-hand data, with advancing controller
+microsecond timestamps. This establishes native receive transport and decoding;
+no button presses, analog endpoints, controller poses or SteamVR input were
+validated in this stationary capture.
+
+A subsequent isolated test sent only the existing
+`pico_station_camera_pacing(1)` command (`AA 01 19 01`, padded and CRC-checked)
+five seconds into a fresh subscription. Its `BB 01 19` reply was captured and
+acknowledged. Records began immediately without starting the cameras: 1,734
+valid left-hand records arrived before delivery stopped about 3.4 seconds later.
+The MCU continued reporting increasing left-radio packet counts after the ring
+stopped, so controller sleep alone does not explain that stall.
+
+A third test combined that command with a concurrent head-accelerometer
+channel. It received 7,567 valid left-hand records continuously for the remaining
+15 seconds, approximately 507 records per second. The accelerometer-only
+negative control above stayed empty on the controller channel. Together these
+checks establish the missing MCU pacing request and a working two-channel
+startup combination. Whether the pacing-only stall is a DSP idle-state problem
+remains an inference requiring isolation; camera streaming is not required by
+this successful capture.
+
+All three captures retained their DMA buffers until SLPI was independently
+confirmed `OFFLINE`; MCU power references returned to zero. Audio and compute
+DSPs remained off. The camera run's verbose diagnostic collector reached its
+1.5 MB logging limit after collection, causing the enclosing command to fail.
+Its exception cleanup stopped SLPI and released the retained buffers safely.
+The raw records and manifest remain valid, but that run did not verify the
+logging-mask restoration acknowledgement. The two pacing tests used no
+verbose diagnostic collector and exited zero.
+
+Additional v4 archives, verified with the same per-file manifest checks:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-diag-v3.tar.gz` | 25 | `53d19d6f586ceb2a21106fe0e96dc697be19d44da6761e33fb89ae066ef40799` |
+| `export-with-cameras.tar.gz` | 25 | `1b1ad796b0292beb8417923c667a3a199596dc23b507885bd06ed21624d3832e` |
+| `export-pacing-only.tar.gz` | 23 | `ec62702d154fe4ef3627202c5f84f95d202679adda03d6dbb3618acdeb0516a3` |
+| `export-pacing-accel.tar.gz` | 24 | `17591bd9367bf3a2ca9fd9974cb405e46569c0871f0f0c1174959c870d94d985` |
+
+The decoder receipts are `decode-camera-records.txt`, `decode-pacing-only.txt`
+and `decode-pacing-accel.txt`. The native source FastRPC wrapper and SteamVR
+integration still require a live test with this corrected startup sequence.
 
 ## Offline root installation
 
