@@ -572,3 +572,55 @@ returns at 2026-10-22 01:06:41 UTC with Wi-Fi off, updater disabled and
 `flash.locked=0`. The receipt is
 `output/pico-steamvr-session-20261022-v3/stock-return-final.json`.
 No partitions are written, and the Quest is untouched.
+
+### Standalone direct-display capacity
+
+A separate display-only RAM boot runs the direct Vulkan path as the same `vr`
+user, using the same Mesa library, two-image FIFO, split-DMA opt-in and supported
+587 MHz GPU minimum. Cameras, SLAM, SteamVR and their DSP owners are not started.
+The private diagnostic derives from the retained dual-DMA probe, presents solid
+green, checks 400 GPU-readback pixels per frame and verifies both DMA halves
+after primary initialization and at the end. It removes per-frame DRM inventory
+queries and logging from the measured loop. Each run completes 600 present IDs;
+the reported rate excludes the first 30 completions.
+
+| Run | Added host delay after the GPU fence, before present wait | Completed presents per second |
+| --- | --- | --- |
+| First control | none | 120.023 |
+| Delay comparison | 6,500 microseconds | 105.404 |
+| Repeat control | none | 119.987 |
+
+All three exit zero and restore the GPU minimum to 305 MHz. No measured
+present-to-completion interval after warmup exceeds 15 ms. The actual wait uses
+a generous three-second deadline; this is not the compositor's 15 ms timeout
+test. This light clear/readback workload also does not reproduce SteamVR's GPU
+work or its surrounding CPU scheduling. It establishes full-refresh capacity
+for this workload and rules out an unconditional approximately 73 Hz limit in
+the direct path. The blocking query read identified above is a measured cost;
+this comparison does not establish it as the sole cause of SteamVR's cadence.
+
+The first diagnostic attempt incorrectly requires dual DMA on the initial
+primary-plane frame and exits before collecting a rate. The corrected guard
+allows that bootstrap frame and verifies both DMA halves on the second and final
+frames. Both versions and the rejected log are retained. The corrected
+binary's SHA-256 is
+`46790ab8a70e3570f823158a70e53e4219d3be1b71ce32d73a6349099c89dfc3`.
+The five exported files pass their manifest checks in
+`output/pico-present-bench-20261022-v1/export-bench.tar.gz`, SHA-256
+`85b43994d14b3a5e211b70e2294b0098c675f75d63d9436f8a24e57e4d00b640`.
+
+This display-only session also differs from a started-and-stopped tracking
+session: the vendor subsystem interface reports SLPI/CDSP as `OFFLINING`.
+The pinned kernel's `subsystem_restart.c` defines that state as zero and
+zero-initializes newly registered subsystems; only a lifecycle transition sets
+`OFFLINE`. These strings alone do not establish active shutdown. No DSP-owner
+units exist, no camera/SLAM/renderer processes or open FastRPC/SPI descriptors
+remain, MCU references are zero and the GPU minimum is restored. The kernel has
+no `/sys/class/remoteproc/remoteproc*` entries, so an empty remoteproc iteration
+is not accepted as proof of DSP state. The display-specific recovery check
+records the actual vendor states before normal reboot.
+
+Complete BOOT/DTBO hashes still match the retained inputs. At 2026-10-22 01:20:48
+UTC, stock b1977 returns with Wi-Fi off, updater disabled and `flash.locked=0`,
+recorded in `output/pico-present-bench-20261022-v1/stock-return-final.json`.
+No partitions are written and the Quest remains untouched.

@@ -169,6 +169,10 @@ between each present submission and its present wait. Setting
 `disableLinuxWaitForPresent=true` does not suppress these waits on the measured
 direct-display path, even though OpenVR reads that setting successfully; it is
 not added to the template. The original GPU policy is restored after each test.
+A separate light direct-display test completes approximately 120 presents per
+second. The compositor's lower cadence therefore needs investigation with its
+actual rendering and scheduling workload; the query read alone is not proven
+to explain it.
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.
 
