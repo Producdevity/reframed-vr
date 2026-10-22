@@ -15,7 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static int64_t monotonic_ns()
+static int64_t monotonic_ns(void *)
 {
     struct timespec t;
     if (clock_gettime(CLOCK_MONOTONIC,&t)) return 0;
@@ -31,6 +31,7 @@ class PicoHeadset final : public vr::ITrackedDeviceServerDriver {
     std::atomic<vr::TrackedDeviceIndex_t> index{vr::k_unTrackedDeviceIndexInvalid};
     std::atomic<bool> running{false};
     std::thread worker;
+    std::atomic<uint64_t> reads[PICO_SLAM_READ_RESULTS]{};
 public:
     PicoHeadset(const pico_steamvr_display_config &c, const pico_slam_channel *poses,
                 uint64_t i, uint64_t g, int64_t age)
@@ -86,20 +87,40 @@ public:
         return vr::VRInitError_None;
     }
     void Deactivate() override {
-        running.store(false);
+        bool active=running.exchange(false);
         if (worker.joinable()) worker.join();
         index.store(vr::k_unTrackedDeviceIndexInvalid);
+        if (active) {
+            char log[320];
+            DebugRequest("pose-read-stats",log,sizeof(log));
+            vr::VRDriverLog()->Log(log);
+        }
     }
     void EnterStandby() override {}
     void *GetComponent(const char *name) override {
         return name&&!std::strcmp(name,vr::IVRDisplayComponent_Version)?static_cast<vr::IVRDisplayComponent *>(&display):nullptr;
     }
-    void DebugRequest(const char *,char *response,uint32_t size) override {
-        if (size) std::snprintf(response,size,"No calibration or origin changes during a live generation");
+    void DebugRequest(const char *request,char *response,uint32_t size) override {
+        if (!size) return;
+        if (!request || std::strcmp(request,"pose-read-stats")) {
+            std::snprintf(response,size,"No calibration or origin changes during a live generation");
+            return;
+        }
+        std::snprintf(response,size,"PICO_STEAMVR_POSE_READS ok=%llu refused=%llu busy=%llu inactive=%llu future=%llu stale=%llu malformed=%llu",
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_OK].load()),
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_REFUSED].load()),
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_BUSY].load()),
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_INACTIVE].load()),
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_FUTURE].load()),
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_STALE].load()),
+            static_cast<unsigned long long>(reads[PICO_SLAM_READ_MALFORMED].load()));
     }
     vr::DriverPose_t GetPose() override {
-        return pico_steamvr_pose(channel,instance,generation,monotonic_ns(),max_age,
-                                 index.load()!=vr::k_unTrackedDeviceIndexInvalid);
+        pico_slam_read_result result;
+        auto pose=pico_steamvr_pose_now(channel,instance,generation,max_age,
+            index.load()!=vr::k_unTrackedDeviceIndexInvalid,monotonic_ns,nullptr,&result);
+        reads[result].fetch_add(1,std::memory_order_relaxed);
+        return pose;
     }
 };
 

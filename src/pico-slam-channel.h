@@ -23,7 +23,7 @@ struct pico_slam_channel_sample {
 /* Initialize only a new, exclusively owned mapping before sharing it. The
  * process owner serializes one writer; all payload accesses are atomic so
  * concurrent readers never race ordinary floating-point memory accesses.
- * Readers bind to one instance/generation and make at most four attempts.
+ * Readers bind to one instance/generation; fixed-time reads try at most four times.
  * Starting another generation requires quiescing the previous estimator. */
 bool pico_slam_channel_init(struct pico_slam_channel *channel, uint64_t instance);
 bool pico_slam_channel_begin(struct pico_slam_channel *channel, uint64_t generation);
@@ -50,6 +50,25 @@ bool pico_slam_channel_read(const struct pico_slam_channel *channel,
                             uint64_t instance, uint64_t generation,
                             int64_t now_ns, int64_t max_age_ns,
                             struct pico_slam_channel_sample *sample);
+
+enum pico_slam_read_result {
+    PICO_SLAM_READ_OK,
+    PICO_SLAM_READ_REFUSED,
+    PICO_SLAM_READ_BUSY,
+    PICO_SLAM_READ_INACTIVE,
+    PICO_SLAM_READ_FUTURE,
+    PICO_SLAM_READ_STALE,
+    PICO_SLAM_READ_MALFORMED,
+    PICO_SLAM_READ_RESULTS
+};
+/* Sample the reader's monotonic clock after a consistent copy, so a concurrent
+ * publication cannot be newer than a clock sampled before that copy. The
+ * existing freshness, uncertainty and generation checks still apply. This live
+ * path tries at most 64 snapshots, without sleeping or reusing a cached pose. */
+enum pico_slam_read_result pico_slam_channel_read_clock(
+    const struct pico_slam_channel *channel, uint64_t instance, uint64_t generation,
+    int64_t (*monotonic_ns)(void *), void *clock_data, int64_t max_age_ns,
+    struct pico_slam_channel_sample *sample, int64_t *read_ns);
 
 #ifdef __cplusplus
 }

@@ -4,8 +4,25 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <time.h>
 #include <unistd.h>
+
+static int64_t monotonic_ns()
+{
+    timespec now{};
+    return clock_gettime(CLOCK_MONOTONIC,&now)?0:static_cast<int64_t>(now.tv_sec)*1000000000+now.tv_nsec;
+}
+
+static uint64_t kernel_vsync(int fd)
+{
+    char text[64]={0};
+    ssize_t size=fd>=0?pread(fd,text,sizeof(text)-1,0):-1;
+    if (size<8 || std::strncmp(text,"VSYNC=",6)) return 0;
+    char *end=nullptr;
+    auto value=std::strtoull(text+6,&end,10);
+    return end==text+size-1 && *end=='\n'?value:0;
+}
 
 static bool board(const char *serial)
 {
@@ -68,6 +85,8 @@ int main(int argc,char **argv)
         overlay->ShowDashboard(key);
     }
     auto *compositor=overlay?static_cast<vr::IVRCompositor *>(get(vr::IVRCompositor_Version,&error)):nullptr;
+    int vsync_fd=compositor?open("/sys/devices/platform/soc/ae00000.qcom,mdss_mdp/drm/card0/sde-crtc-0/vsync_event",
+                                O_RDONLY|O_CLOEXEC|O_NOFOLLOW):-1;
     auto stats=[&](const char *phase) {
         if (!compositor) return;
         vr::Compositor_CumulativeStats value{};
@@ -98,8 +117,11 @@ int main(int argc,char **argv)
             max_distance=std::fmax(max_distance,std::sqrt(distance));++valid;
         } else ++invalid;
         float since_vsync=0;uint64_t vsync_counter=0;bool vsync_available=false;
+        uint64_t kernel_before=0,kernel_after=0;int64_t query_before=0,query_after=0;
         if (compositor) {
+            if (i%100==0) {kernel_before=kernel_vsync(vsync_fd);query_before=monotonic_ns();}
             vsync_available=system->GetTimeSinceLastVsync(&since_vsync,&vsync_counter);
+            if (i%100==0) {query_after=monotonic_ns();kernel_after=kernel_vsync(vsync_fd);}
             ++vsync_samples;
             if (!vsync_available || !std::isfinite(since_vsync) || since_vsync<0 ||
                 max_vsync_age<=0 || since_vsync>max_vsync_age) ++vsync_invalid;
@@ -115,12 +137,22 @@ int main(int argc,char **argv)
                         timing.m_flCompositorUpdateStartMs,timing.m_flCompositorUpdateEndMs,
                         timing.m_nNumVSyncsReadyForUse,timing.m_nNumVSyncsToFirstView,
                         vsync_available,since_vsync,static_cast<unsigned long long>(vsync_counter));
+            std::printf("PICO_STEAMVR_VSYNC_REFERENCE query_before_ns=%lld query_after_ns=%lld kernel_before_ns=%llu kernel_after_ns=%llu\n",
+                static_cast<long long>(query_before),static_cast<long long>(query_after),
+                static_cast<unsigned long long>(kernel_before),static_cast<unsigned long long>(kernel_after));
         }
         usleep(10000);
     }
     stats("end");
     if (compositor) std::printf("PICO_STEAMVR_VSYNC_RESULT samples=%u invalid=%u max_age_s=%.9f\n",
                                 vsync_samples,vsync_invalid,max_vsync_age);
+    if (vsync_fd>=0) close(vsync_fd);
+    auto *debug=static_cast<vr::IVRDebug *>(get(vr::IVRDebug_Version,&error));
+    if (debug&&error==vr::VRInitError_None) {
+        char response[320]={0};
+        uint32_t count=debug->DriverDebugRequest(0,"pose-read-stats",response,sizeof(response));
+        std::printf("PICO_STEAMVR_DRIVER_READ_STATS chars=%u %s\n",count,response);
+    }
     bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
     if (overlay) {
         std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);

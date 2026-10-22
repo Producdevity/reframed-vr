@@ -26,8 +26,66 @@ static void invalid(const vr::DriverPose_t &p, bool connected=true)
     for(unsigned i=0;i<3;++i)assert(p.vecPosition[i]==0&&p.vecVelocity[i]==0);
 }
 
+struct ReadClock {
+    pico_slam_channel *channel;
+    pico_slam_channel_sample next;
+    int64_t now;
+    unsigned calls;
+};
+
+static int64_t after_snapshot(void *data)
+{
+    auto &c=*static_cast<ReadClock *>(data);
+    ++c.calls;
+    if (c.channel) {
+        assert(pico_slam_channel_publish(c.channel,&c.next));
+        c.channel=nullptr;
+    }
+    return c.now;
+}
+
+static void publication_clock_race()
+{
+    pico_slam_channel channel{};
+    assert(pico_slam_channel_init(&channel,51)&&pico_slam_channel_begin(&channel,1));
+    pico_slam_channel_sample sample{};
+    sample.generation=1;sample.timestamp_ns=999000000;sample.published_ns=1000000001;
+    sample.uncertainty_ns=100;sample.pose.orientation[3]=1;sample.pose.position[0]=3;
+    assert(pico_slam_channel_publish(&channel,&sample));
+    // The publisher advances between the original clock sample and channel copy.
+    invalid(pico_steamvr_pose(&channel,51,1,1000000000,100000000,true));
+    ReadClock clock{};clock.now=1000000002;
+    pico_slam_read_result status=PICO_SLAM_READ_REFUSED;
+    auto pose=pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status);
+    assert(status==PICO_SLAM_READ_OK && pose.poseIsValid && clock.calls==1);
+    near(pose.poseTimeOffset,-.001000002);
+
+    clock.channel=&channel;clock.next=sample;clock.next.timestamp_ns=1000000001;
+    clock.next.published_ns=1000001000;clock.next.pose.position[0]=9;clock.now=1000002000;
+    pose=pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status);
+    assert(status==PICO_SLAM_READ_OK && pose.poseIsValid && clock.calls==2);
+    near(pose.vecPosition[0],3);near(pose.poseTimeOffset,-.001002);
+    clock.now=1000000000;
+    invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));
+    assert(status==PICO_SLAM_READ_FUTURE);
+    clock.now=1200000000;
+    invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));
+    assert(status==PICO_SLAM_READ_STALE);
+    __atomic_store_n(&channel.sequence,7,__ATOMIC_RELEASE);
+    invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));
+    assert(status==PICO_SLAM_READ_BUSY);
+    __atomic_store_n(&channel.sequence,8,__ATOMIC_RELEASE);
+    assert(pico_slam_channel_stop(&channel,1));
+    unsigned calls=clock.calls;
+    invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));
+    assert(status==PICO_SLAM_READ_INACTIVE && clock.calls==calls);
+    invalid(pico_steamvr_pose_now(&channel,51,2,100000000,true,after_snapshot,&clock,&status));
+    assert(status==PICO_SLAM_READ_REFUSED && clock.calls==calls);
+}
+
 int main(int argc, char **argv)
 {
+    publication_clock_race();
     pico_slam_channel channel{};
     assert(pico_slam_channel_init(&channel,42)&&pico_slam_channel_begin(&channel,1));
     const int64_t now=1002000000,age=100000000;

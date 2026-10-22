@@ -141,33 +141,68 @@ enum pico_slam_channel_result pico_slam_channel_publish_result(
     return pico_slam_channel_publish(c,&sample) ? PICO_SLAM_CHANNEL_PUBLISHED : PICO_SLAM_CHANNEL_REFUSED;
 }
 
-bool pico_slam_channel_read(const struct pico_slam_channel *c, uint64_t instance,
-                            uint64_t generation, int64_t now, int64_t max_age,
-                            struct pico_slam_channel_sample *sample)
+static enum pico_slam_read_result snapshot(const struct pico_slam_channel *c,
+    uint64_t instance, uint64_t generation, unsigned attempts,
+    uint64_t words[PICO_SLAM_CHANNEL_WORDS])
 {
-    if (!header(c)||!instance||!generation||!sample||now<=0||max_age<=0||max_age>1000000000||
-        instance!=__atomic_load_n(&c->instance,__ATOMIC_RELAXED)) return false;
-    uint64_t words[PICO_SLAM_CHANNEL_WORDS];bool copied=false;
-    for (unsigned attempt=0;attempt<4;++attempt) {
+    if (!header(c)||!instance||!generation||
+        instance!=__atomic_load_n(&c->instance,__ATOMIC_RELAXED)) return PICO_SLAM_READ_REFUSED;
+    bool copied=false;
+    for (unsigned attempt=0;attempt<attempts;++attempt) {
         uint64_t sequence=__atomic_load_n(&c->sequence,__ATOMIC_ACQUIRE);
-        if (sequence>UINT64_MAX-2) return false;
+        if (sequence>UINT64_MAX-2) return PICO_SLAM_READ_REFUSED;
         if (sequence&1) continue;
         for (unsigned i=0;i<PICO_SLAM_CHANNEL_WORDS;++i)
             words[i]=__atomic_load_n(&c->words[i],__ATOMIC_RELAXED);
         __atomic_thread_fence(__ATOMIC_SEQ_CST);
         if (sequence==__atomic_load_n(&c->sequence,__ATOMIC_RELAXED)) {copied=true;break;}
     }
-    if (!copied||words[GENERATION]!=generation||words[ACTIVE]!=1||!words[TIMESTAMP]||
-        words[TIMESTAMP]>(uint64_t)now||words[PUBLISHED]>(uint64_t)now||
-        words[PUBLISHED]<words[TIMESTAMP]||words[UNCERTAINTY]>(uint64_t)max_age||
-        words[PUBLISHED]-words[TIMESTAMP]<words[UNCERTAINTY]||
-        (uint64_t)now-words[TIMESTAMP]>(uint64_t)max_age-words[UNCERTAINTY]) return false;
-    struct pico_slam_channel_sample result={.generation=generation,
+    if (!copied) return PICO_SLAM_READ_BUSY;
+    if (words[GENERATION]!=generation) return PICO_SLAM_READ_REFUSED;
+    if (words[ACTIVE]!=1) return PICO_SLAM_READ_INACTIVE;
+    return PICO_SLAM_READ_OK;
+}
+
+static enum pico_slam_read_result validate(const uint64_t words[PICO_SLAM_CHANNEL_WORDS],
+    int64_t now, int64_t max_age, struct pico_slam_channel_sample *sample)
+{
+    if (now<=0) return PICO_SLAM_READ_REFUSED;
+    if (!words[TIMESTAMP]||words[PUBLISHED]<words[TIMESTAMP]||
+        words[PUBLISHED]-words[TIMESTAMP]<words[UNCERTAINTY]) return PICO_SLAM_READ_MALFORMED;
+    if (words[TIMESTAMP]>(uint64_t)now||words[PUBLISHED]>(uint64_t)now) return PICO_SLAM_READ_FUTURE;
+    if (words[UNCERTAINTY]>(uint64_t)max_age||
+        (uint64_t)now-words[TIMESTAMP]>(uint64_t)max_age-words[UNCERTAINTY]) return PICO_SLAM_READ_STALE;
+    struct pico_slam_channel_sample result={.generation=words[GENERATION],
         .timestamp_ns=(int64_t)words[TIMESTAMP],.uncertainty_ns=(int64_t)words[UNCERTAINTY],
         .published_ns=(int64_t)words[PUBLISHED]};
     for (unsigned i=0;i<4;++i) result.pose.orientation[i]=number(words[ORIENTATION+i]);
     for (unsigned i=0;i<3;++i) result.pose.position[i]=number(words[POSITION+i]);
-    if (!pose_valid(&result.pose)) return false;
+    if (!pose_valid(&result.pose)) return PICO_SLAM_READ_MALFORMED;
     *sample=result;
-    return true;
+    return PICO_SLAM_READ_OK;
+}
+
+bool pico_slam_channel_read(const struct pico_slam_channel *c, uint64_t instance,
+                            uint64_t generation, int64_t now, int64_t max_age,
+                            struct pico_slam_channel_sample *sample)
+{
+    if (!sample||now<=0||max_age<=0||max_age>1000000000) return false;
+    uint64_t words[PICO_SLAM_CHANNEL_WORDS];
+    return snapshot(c,instance,generation,4,words)==PICO_SLAM_READ_OK &&
+           validate(words,now,max_age,sample)==PICO_SLAM_READ_OK;
+}
+
+enum pico_slam_read_result pico_slam_channel_read_clock(
+    const struct pico_slam_channel *c, uint64_t instance, uint64_t generation,
+    int64_t (*clock_ns)(void *), void *clock_data, int64_t max_age,
+    struct pico_slam_channel_sample *sample, int64_t *read_ns)
+{
+    if (!clock_ns||!sample||!read_ns||max_age<=0||max_age>1000000000) return PICO_SLAM_READ_REFUSED;
+    uint64_t words[PICO_SLAM_CHANNEL_WORDS];
+    enum pico_slam_read_result result=snapshot(c,instance,generation,64,words);
+    if (result!=PICO_SLAM_READ_OK) return result;
+    int64_t now=clock_ns(clock_data);
+    result=validate(words,now,max_age,sample);
+    if (result==PICO_SLAM_READ_OK) *read_ns=now;
+    return result;
 }
