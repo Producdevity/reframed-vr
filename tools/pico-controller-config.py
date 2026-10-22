@@ -26,23 +26,43 @@ MOTION_LIBRARIES = (
 )
 
 
-def calibration(text):
+def addressed_words(text, word_count):
     lines = text.strip().splitlines()
     if lines and lines[-1].endswith(')') and lines[-1] != ')':
         lines[-1] = lines[-1][:-1]
         lines.append(')')
-    if len(lines) != 45 or lines[0] != 'Result: Parcel(' or lines[-1] != ')':
-        raise ValueError('Unexpected controller calibration reply')
+    if len(lines) != 2 + (word_count + 3) // 4 or lines[0] != 'Result: Parcel(' or lines[-1] != ')':
+        raise ValueError('Unexpected controller parcel reply')
     words = []
     for line in lines[1:-1]:
         match = re.fullmatch(r"\s*0x([0-9a-fA-F]{8}):\s+((?:[0-9a-fA-F]{8}\s+){1,4})'[^\r\n]*'", line)
         if not match or int(match[1], 16) != len(words) * 4:
-            raise ValueError('Invalid controller calibration framing')
+            raise ValueError('Invalid controller parcel framing')
         row = match[2].split()
-        if len(row) != min(4, 169 - len(words)):
-            raise ValueError('Invalid controller calibration row length')
+        if len(row) != min(4, word_count - len(words)):
+            raise ValueError('Invalid controller parcel row length')
         words.extend(int(word, 16) for word in row)
-    if len(words) != 169 or words[:4] != [0, 0, 1, 14]:
+    if len(words) != word_count:
+        raise ValueError('Invalid controller parcel size')
+    return words
+
+
+def algorithm_info(text):
+    words = addressed_words(text, 106)
+    if words[:4] != [0, 0, 1, 19]:
+        raise ValueError('Controller algorithm information unavailable or unsupported')
+    result = {}
+    for hand, offset in [('left', 4), ('right', 55)]:
+        gyro, accel = words[offset + 1:offset + 3]
+        if (gyro, accel) not in ((4000, 32), (8000, 64)):
+            raise ValueError('Unsupported controller IMU range')
+        result[hand] = {'gyro_range': gyro, 'accel_range': accel}
+    return result
+
+
+def calibration(text):
+    words = addressed_words(text, 169)
+    if words[:4] != [0, 0, 1, 14]:
         raise ValueError('Controller calibration unavailable or unsupported')
     raw = struct.pack('<165I', *words[4:])
     if raw[0] != 0:
@@ -147,12 +167,17 @@ def collect(read, *, include_motion_status=False, calibration_hand=None):
     if include_motion_status:
         status.append(motion_status(read('service', 'call', 'PicoStation-new', '19')))
     calibrations = []
+    algorithm = []
     if calibration_hand:
         hand = '1' if calibration_hand == 'left' else '2'
+        algorithm.append(algorithm_info(read('service', 'call', 'PicoStation-new', '20')))
         for _ in range(2):
             calibrations.append(calibration(read('service', 'call', 'PicoStation-new', '12', 'i32', hand)))
         if calibrations[0] != calibrations[1]:
             raise ValueError('Controller calibration changed while reading')
+        algorithm.append(algorithm_info(read('service', 'call', 'PicoStation-new', '20')))
+        if algorithm[0] != algorithm[1]:
+            raise ValueError('Controller IMU ranges changed while reading')
     if snapshot(read) != config:
         raise ValueError('Controller configuration changed while reading')
     if include_motion_status:
@@ -168,8 +193,14 @@ def collect(read, *, include_motion_status=False, calibration_hand=None):
     if include_motion_status:
         result['motion_status'] = status
     if calibration_hand:
+        ranges = algorithm[0][calibration_hand]
+        vector = []
+        for section in ('imu', 'ir', 'imu_ir'):
+            vector.extend([1.0, *calibrations[0]['sections'][section]])
+        vector.extend([float(ranges['gyro_range']), float(ranges['accel_range']), float(config['radio_type'])])
         result['calibration'] = {'hand': calibration_hand, 'source': 'stock_service_cache',
-                                 **calibrations[0]}
+                                 **calibrations[0], 'imu_ranges': ranges,
+                                 'tracker_parameters': vector}
     return result
 
 

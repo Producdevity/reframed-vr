@@ -216,6 +216,28 @@ integration path, not live optical controller tracking. Controller LED images,
 capture-clock mapping, head-pose matching and the SteamVR controller pose remain
 to be connected and verified.
 
+The collector also brackets calibration with transaction 20, the cached
+algorithm-information getter. Its successful type-19 reply contains two
+204-byte records. Only their gyro/accelerometer range fields are interpreted;
+the remaining fields are not calibration parameters. Supported vendor range
+pairs are 4000/32 and 8000/64. Both snapshots must agree. The report's
+`tracker_parameters` contains each valid flag followed by its active section,
+then those ranges and the verified radio protocol: exactly 85 floats. These
+range values retain the vendor API's units; they are not converted IMU samples.
+
+The extended collector passes 22 host tests and a second live read. Its generated
+340-byte vector matches the native probe input byte for byte, SHA-256
+`857661824fa8086cebbf4950967a92fe8025f75adffd89ce26cf9234be5d84a8`.
+On native Linux, an isolated Bionic process loads b1977's controller tracker,
+initializes it, registers its result callback, resets the left algorithm to kind
+0 and accepts this calibration; each call returns zero. Hardware device access
+is blocked for this probe, and it receives no motion or images. Process exit
+ends the probe. This proves library/calibration acceptance, not a tracked pose.
+The manifest-checked evidence is
+`output/pico-vsync-controller-20261022-v2/export-tracker.tar.gz`, SHA-256
+`6913a316610fbe65ed0b71f8ccaa54a1b87430338969ce5ea610d2ef68cfa850`;
+the live collector receipt is `stock-controller-tracker-parameters.json` beside it.
+
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter
 returns 1; an empty property must not be interpreted as disabled. The MCU type

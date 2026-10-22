@@ -101,6 +101,7 @@ class PicoControllerMotionConfigTests(unittest.TestCase):
         PicoControllerConfigTests.setUp(self)
         self.replies.update({('sha256sum', p): f'{h}  {p}' for p, h in CONFIG.MOTION_LIBRARIES})
         self.replies[('service', 'call', 'PicoStation-new', '19')] = status_reply()
+        self.replies[('service', 'call', 'PicoStation-new', '20')] = algorithm_reply()
 
     def test_status_snapshot(self):
         report = CONFIG.collect(self.read, include_motion_status=True)
@@ -200,6 +201,9 @@ class PicoControllerMotionConfigTests(unittest.TestCase):
         self.assertEqual({k: len(v) for k, v in result['sections'].items()},
                          {'imu': 24, 'ir': 48, 'imu_ir': 7})
         self.assertEqual(len(result['raw_cv3_hex']), 1320)
+        self.assertEqual(len(result['tracker_parameters']), 85)
+        self.assertEqual(result['tracker_parameters'][-3:], [4000.0, 32.0, 2.0])
+        self.assertEqual([result['tracker_parameters'][i] for i in (0, 25, 74)], [1.0] * 3)
         self.assertEqual(self.commands.count(('service', 'call', 'PicoStation-new', '12', 'i32', '1')), 2)
         inline = calibration_reply().removesuffix('\n)') + ')'
         self.assertEqual(CONFIG.calibration(inline), CONFIG.calibration(calibration_reply()))
@@ -255,6 +259,32 @@ class PicoControllerMotionConfigTests(unittest.TestCase):
         self.assertEqual(CONFIG.collect(self.read, calibration_hand='right')['calibration']['hand'], 'right')
         self.assertNotIn(('service', 'call', 'PicoStation-new', '12', 'i32', '1'), self.commands)
 
+    def test_controller_algorithm_ranges(self):
+        result = CONFIG.algorithm_info(algorithm_reply())
+        self.assertEqual(result['left'], {'gyro_range': 4000, 'accel_range': 32})
+        self.assertEqual(result['right'], {'gyro_range': 8000, 'accel_range': 64})
+        for ranges in ((0, 0), (4000, 64), (8000, 32), (16000, 128)):
+            with self.subTest(ranges=ranges), self.assertRaises(ValueError):
+                CONFIG.algorithm_info(algorithm_reply(left=ranges))
+        for header in ((1, 0, 1, 19), (0, 0, 0, 19), (0, 0, 1, 18)):
+            with self.subTest(header=header), self.assertRaises(ValueError):
+                CONFIG.algorithm_info(algorithm_reply(header=header))
+
+    def test_algorithm_range_change_refuses(self):
+        self.calibration_replies()
+        self.replies[('service', 'call', 'PicoStation-new', '20')] = [
+            algorithm_reply(), algorithm_reply(left=(8000, 64))]
+        with self.assertRaisesRegex(ValueError, 'IMU ranges changed'):
+            CONFIG.collect(self.read, calibration_hand='left')
+
+    def test_algorithm_unused_fields_do_not_change_parameters(self):
+        self.calibration_replies()
+        before = CONFIG.collect(self.read, calibration_hand='left')['calibration']['tracker_parameters']
+        self.calibration_replies()
+        self.replies[('service', 'call', 'PicoStation-new', '20')] = [
+            algorithm_reply(), algorithm_reply(unused=0xffffffff)]
+        self.assertEqual(CONFIG.collect(self.read, calibration_hand='left')['calibration']['tracker_parameters'], before)
+
 
 def calibration_raw():
     raw = bytearray(660)
@@ -267,6 +297,18 @@ def calibration_raw():
 def calibration_reply(raw=None, header=(0, 0, 1, 14)):
     raw = calibration_raw() if raw is None else raw
     words = list(header) + list(struct.unpack('<165I', raw))
+    lines = ['Result: Parcel(']
+    for start in range(0, len(words), 4):
+        lines.append('  0x%08x: %s  %r' %
+                     (start * 4, ' '.join('%08x' % v for v in words[start:start + 4]), '................'))
+    return '\n'.join(lines + [')'])
+
+
+def algorithm_reply(left=(4000, 32), right=(8000, 64), header=(0, 0, 1, 19), unused=0):
+    words = list(header) + [0] * 102
+    words[5:7] = left
+    words[56:58] = right
+    words[7] = unused
     lines = ['Result: Parcel(']
     for start in range(0, len(words), 4):
         lines.append('  0x%08x: %s  %r' %
