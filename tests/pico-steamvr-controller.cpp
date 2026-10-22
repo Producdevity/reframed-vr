@@ -5,6 +5,8 @@
 #include <ctime>
 #include <map>
 #include <string>
+#include <thread>
+#include <chrono>
 using namespace vr;
 struct MockIVRProperties final : IVRProperties {
     int32_t role = 0;
@@ -287,6 +289,58 @@ int main()
         unsigned before = context.host.calls;
         failed.Update();
         assert(context.host.calls == before);
+    }
+    {
+        context.input.fail_create = false;
+        context.input.names.clear(); context.input.values.clear();
+        pico_slam_channel poses;
+        assert(pico_slam_channel_init(&poses, 789));
+        assert(pico_slam_channel_begin(&poses, 9));
+        pico_controller_sample sample{}; sample.hand = 1;
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        PicoSteamvrController driver(&channel, 123, 1, {&poses, 789, 9, 456, 100000000});
+        assert(driver.Activate(3) == VRInitError_None);
+        driver.Update();
+        assert(driver.GetPose().deviceIsConnected && !driver.GetPose().poseIsValid);
+        auto publish_pose = [&] {
+            int64_t now = now_ns();
+            pico_slam_channel_sample pose{};
+            pose.pose.orientation[3] = 1;
+            pose.pose.position[0] = .2; pose.pose.position[1] = 1.3; pose.pose.position[2] = -.4;
+            pose.generation = 9; pose.timestamp_ns = now - 1000000; pose.published_ns = now;
+            assert(pico_slam_channel_publish(&poses, &pose));
+        };
+        publish_pose(); driver.Update();
+        auto pose = driver.GetPose();
+        assert(pose.poseIsValid && pose.deviceIsConnected && pose.result == TrackingResult_Running_OK);
+        assert(pose.vecPosition[0] == .2 && pose.vecPosition[1] == 1.3 && pose.vecPosition[2] == -.4);
+        assert(pose.qRotation.w == 1 && pose.qWorldFromDriverRotation.w == 1);
+        assert(pose.poseTimeOffset <= -.001 && pose.poseTimeOffset > -.1);
+        assert(context.host.pose.poseIsValid);
+        std::this_thread::sleep_for(std::chrono::milliseconds(105));
+        pose = driver.GetPose();
+        assert(pose.deviceIsConnected && !pose.poseIsValid && pose.vecPosition[0] == 0);
+        publish_pose();
+        assert(driver.GetPose().poseIsValid);
+        assert(pico_slam_channel_invalidate(&poses, 9));
+        assert(!driver.GetPose().poseIsValid);
+        publish_pose();
+        assert(driver.GetPose().poseIsValid);
+        assert(pico_controller_channel_disconnect(&channel, 1));
+        assert(!driver.GetPose().poseIsValid && !driver.GetPose().deviceIsConnected);
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update(); assert(driver.GetPose().poseIsValid);
+        assert(pico_slam_channel_stop(&poses, 9));
+        assert(pico_slam_channel_begin(&poses, 10));
+        assert(!driver.GetPose().poseIsValid);
+        driver.Deactivate(); assert(!driver.GetPose().deviceIsConnected);
+    }
+    {
+        pico_slam_channel poses;
+        PicoSteamvrController wrong(&channel, 123, 1, {&poses, 456, 9, 456, 100000000});
+        assert(wrong.Activate(3) == VRInitError_Driver_Failed);
+        PicoSteamvrController partial(&channel, 123, 1, {nullptr, 789, 9, 456, 100000000});
+        assert(partial.Activate(3) == VRInitError_Driver_Failed);
     }
     CleanupDriverContext();
     std::puts("PICO_STEAMVR_CONTROLLER_PASS callbacks=mock hardware_access=0");

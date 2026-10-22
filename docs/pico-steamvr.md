@@ -566,6 +566,33 @@ subsequent rendering at 90 Hz serve different purposes. The
 [fresh-boot verification](pico-steamvr-verification.md#fresh-90-hz-handoff-and-controller-tracker-calibration)
 records the tested limits; clean lens output at 90 Hz remains unverified.
 
+### Optional tracked left-controller input
+
+The physical driver accepts `PICO_STEAMVR_LEFT_POSE_CHANNEL` and
+`PICO_STEAMVR_LEFT_POSE_INSTANCE` alongside the existing digital-controller
+settings. Both are required together. The absolute path must name a regular,
+trusted-owner ABI-2 SLAM channel with no group/world write permissions; the
+instance is a nonzero 16-digit lowercase hexadecimal identifier distinct from
+the HMD instance. The HMD channel's inode is refused. The controller reader binds
+the HMD generation and universe, with the same maximum pose age (at most 100 ms).
+
+The producer must supply the controller origin in metres in the current HMD
+world. The reader applies no head/eye extrinsic, arm model, prediction or default
+position. Both the digital input and pose must be current. Tracking loss,
+disconnect, stop or a generation mismatch publishes an invalid pose; `GetPose`
+and the debug query recheck freshness instead of reviving a cached result.
+Without these optional settings, the controller retains digital-only operation
+and an invalid pose.
+
+The seven host SteamVR test suites pass, and the updated driver builds on the
+Pico's native ARM64 Linux userspace. Its native controller harness passes under
+UBSan, including fresh pose values, stale poses with still-connected input,
+invalidation/recovery, disconnect, stopped/wrong generations and incomplete
+bindings. These are adapter tests with mocked OpenVR callbacks. The separate
+recorded-data tracker replay does not establish a live controller pointer or
+verified grip/aim calibration. Evidence is retained in
+`output/pico-controller-integration-20261023-v1/`.
+
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.
 
