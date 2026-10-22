@@ -28,6 +28,8 @@ bool pico_station_camera_pacing(unsigned mode, uint8_t *output);
 bool pico_station_camera_status(bool failure_counters, uint8_t *output);
 bool pico_station_camera_read_register(unsigned slave, unsigned address, uint8_t *output);
 bool pico_station_version(uint8_t *output);
+/* Neo3 selectors are 1 for left and 2 for right, unlike PICO 4's 0/1. */
+bool pico_station_controller_imu(unsigned hand, bool enabled, uint8_t *output);
 bool pico_station_acknowledge(uint16_t sequence, uint8_t *output);
 
 /* Validate one complete fixed-size station response before interpreting it.

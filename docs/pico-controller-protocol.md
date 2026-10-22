@@ -636,6 +636,31 @@ Evidence is retained in
 `output/pico-recovery-bringup-20261018-v1/neo3-6dof-v1/`. These checks establish
 station transport, not camera capture, physical controller tracking or 6DoF.
 
+### Controller IMU command
+
+`pico_station_controller_imu` encodes command `AA 01 07` with payload
+`[hand, enabled]`. Neo3 uses hand **1 for left, 2 for right**. The b1977
+`libstationopticsservice.so` (SHA-256
+`91b45470678ca7d614a7f12ccb21261f3cda273c4ba6b08c1edb153cd5b6286e`)
+passes roles 2/3 from `GetCalibration` at `0x549e8`, then subtracts one in
+`_SetImuStreaming` at `0x53f3c`. PicoFrame's MIT
+[`pico-station.c`](https://github.com/TheReal-Flo/PicoFrame/blob/3affbc11ecaae56c56b7bd3eb13344c73a7a03da/rootfs/pico-station.c)
+was a reference for this command; its PICO 4 hand selectors 0/1 do not apply
+to this Neo3 implementation.
+
+The encoder does no I/O and is not enabled automatically. Host ASan/UBSan and
+native ARM64 tests pass all 12 packet vectors, invalid selectors, null outputs
+and 320 corrupted response frames. The staged native sources match the
+maintained sources; receipts are in
+`output/pico-controller-delivery-20261022-v2/export-stream-enabled/`.
+
+The physical PR0513 station returned a valid version response, but no `BB 01 07`
+acknowledgment to the tested left enable/disable requests. Enabling did not
+populate the controller ring. Fresh stock logs in the `v2` and `v3` delivery
+sessions also report an IMU-enable failure, followed by live left-controller
+IMU samples. This verifies the packet encoding only; a successful response to
+this command is not an established prerequisite for controller delivery.
+
 ## Verification
 
 An isolated ARM64 Linux process executed the stock CRC and key parsing functions
