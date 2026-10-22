@@ -361,7 +361,7 @@ through stock's double-precision division by `132.48`, addition of `25`, then
 float32 rounding. The six vector components preserve stock float32 rounding
 and signed zero before widening to double. A comparison against the retained
 stock-execution corpus passed all nine values for 10,368 records / 18,144
-samples. Host sanitizer checks also cover flag extraction, temperature limits
+samples. Host sanitizer checks also cover flag extraction, temperature edge cases
 and unchanged outputs on rejection. This applies stock's intermediate units
 and axis selection; the vendor tracker still owns factory calibration.
 

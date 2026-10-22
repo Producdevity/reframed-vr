@@ -1174,3 +1174,71 @@ Both stock audio streams are set and read back at zero. Receipts are retained
 beside the v2 archives. No firmware partitions are flashed and the Quest is
 untouched. Startup timing, controller optical capture/pose integration, physical
 motion scale and clean 90 Hz lens output remain acceptance gates.
+
+## Controller motion inputs and late-vsync trace (2026-10-22 UTC)
+
+Two further cold RAM boots retain controller-class camera frames with hand mode
+explicitly off. Each run consumes 2,249 synchronized head-camera sets; every
+camera delivers 2,248 controller frames and no hand frames. The ADSP remains
+unstarted, PCM streams closed, and the GPU floor is restored after each run.
+These captures log raw controller/camera data and are not unbiased performance
+comparisons.
+
+| Probe | First cold capture | Second cold capture |
+| --- | ---: | ---: |
+| First readiness overdue ages / 500 | 7 | 9 |
+| Selected readiness overdue ages / 500 | 1 | 1 |
+| Late overdue ages / 2,000 | 0 | 1 |
+| Late head queries valid / invalid | 2,000 / 0 | 2,000 / 0 |
+
+The [controller motion conversion](pico-tracking-protocol.md#controller-imu-records)
+passes the 36-test host controller suite, a bit-exact nine-value comparison
+against 18,144 retained stock-execution samples, and the boundary/unit harness
+on the Pico ARM64 CPU in a device-denied Bionic jail. The first cold capture
+provides 5,006 fresh controller samples bracketed by recorded head poses.
+The second capture's raw snapshot instead contains ten retained samples aged
+17.47–17.48 seconds: the receive stream had stopped earlier. All ten are rejected
+by the maintained 100 ms freshness gate without changing the output. Neither
+capture establishes optical controller poses or a SteamVR pointer. A warm
+tracking restart also failed its confident-head readiness gate and was stopped;
+it is not accepted as a working tracking session.
+
+The second cold capture identifies a specific late-vsync sequence, with no
+scheduler-trace overruns or dropped events on any of the eight CPUs:
+
+- At monotonic 190.326077 s, the render thread finishes image acquisition.
+- It sleeps from 190.326173 to 190.330078 s (`prev_state=S`), accounting for
+  3.905 ms of the 4.420 ms before GPU submission begins.
+- Hardware vblank 4298 occurs at 190.335898 s. No pageflip completion is
+  delivered for that sequence. The render thread's semaphore wait returns at
+  190.337459 s; the precise GPU execution interval is not captured.
+- Presentation wait completes on vblank 4299. A concurrent client query at
+  190.347029 s still observes counter 4297 and age 22.273071 ms. The render
+  thread's next paired-counter query starts at 190.347082 s and returns 4299.
+
+This verifies a missed presentation deadline and a pre-submit blocking interval.
+It does not identify the blocking syscall or lock, prove a GPU scheduling fault,
+or establish that a priority change fixes it. The next timing capture needs
+render-thread ioctl/futex entry and exit around this interval. The age threshold
+remains two refresh periods; no timing failure is suppressed or counted as fixed.
+
+Evidence is retained in `output/pico-controller-tracking-20261022-v1/` and `-v2/`,
+including exact binaries, source hashes, raw snapshots, extracted fault timelines
+and manifests. Both export archives and every data member were hash-verified:
+
+| Archive | Data members | SHA-256 |
+| --- | ---: | --- |
+| v1 `export-render.tar.gz` | 205 | `16785d79e840bfa1fa46f10e6a2410154aced84b5bdc57a088c98089812f80eb` |
+| v2 `export-render.tar.gz` | 206 | `db337410e7147d326cb308aa9008beb31c63dd9543fb432e6f1970299c1c3608` |
+
+The Pico4 reference remains PicoFrame's MIT `pico-ctrltrack.c` at revision
+`3affbc11ecaae56c56b7bd3eb13344c73a7a03da`. It informs the private tracker replay
+ABI/head-history work; the Neo3 uses its own measured clock relationship,
+nine-value conversion and 85-float calibration vector. The synchronized optical
+replay remains unverified because the recorded images and live controller motion
+do not overlap in these captures.
+
+Full boot/DTBO readbacks again match the recovery inputs. Final stock return is
+verified at 2026-10-22 22:09:36 UTC with Wi-Fi off and updater disabled. The stock
+AudioService reports effective music/system stream volume zero; the generic
+stored volume settings still read 8 and are not treated as effective volume.
