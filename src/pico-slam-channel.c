@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define MAGIC UINT64_C(0x52565049434f3631)
-#define VERSION 1
+#define VERSION 2
 #define GENERATION 0
 #define ACTIVE 1
 #define TIMESTAMP 2
@@ -15,7 +15,7 @@
 #define POSITION 9
 
 _Static_assert(__atomic_always_lock_free(8, 0), "Pose IPC requires lock-free 64-bit atomics");
-_Static_assert(sizeof(struct pico_slam_channel) == 136, "Pose IPC layout changed");
+_Static_assert(sizeof(struct pico_slam_channel) == 232, "Pose IPC layout changed");
 _Static_assert(sizeof(double)==8 && DBL_MANT_DIG==53 && DBL_MAX_EXP==1024, "Pose IPC requires IEEE binary64");
 
 static bool header(const struct pico_slam_channel *c)
@@ -49,6 +49,12 @@ static bool pose_valid(const struct pico_slam_pose *pose)
     return true;
 }
 
+static uint64_t current(const struct pico_slam_channel *c, unsigned word)
+{
+    uint64_t sequence=__atomic_load_n(&c->sequence,__ATOMIC_RELAXED);
+    return __atomic_load_n(&c->slots[(sequence>>1)&1][word],__ATOMIC_RELAXED);
+}
+
 static bool store(struct pico_slam_channel *c, const uint64_t words[PICO_SLAM_CHANNEL_WORDS])
 {
     uint64_t sequence=__atomic_load_n(&c->sequence,__ATOMIC_RELAXED);
@@ -56,8 +62,9 @@ static bool store(struct pico_slam_channel *c, const uint64_t words[PICO_SLAM_CH
     if (!__atomic_compare_exchange_n(&c->sequence,&sequence,sequence+1,false,
                                      __ATOMIC_ACQ_REL,__ATOMIC_RELAXED)) return false;
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    unsigned next=((sequence>>1)&1)^1;
     for (unsigned i=0;i<PICO_SLAM_CHANNEL_WORDS;++i)
-        __atomic_store_n(&c->words[i],words[i],__ATOMIC_RELAXED);
+        __atomic_store_n(&c->slots[next][i],words[i],__ATOMIC_RELAXED);
     __atomic_store_n(&c->sequence,sequence+2,__ATOMIC_RELEASE);
     return true;
 }
@@ -72,7 +79,7 @@ bool pico_slam_channel_init(struct pico_slam_channel *c, uint64_t instance)
 
 bool pico_slam_channel_begin(struct pico_slam_channel *c, uint64_t generation)
 {
-    if (!header(c)||!generation||generation<=__atomic_load_n(&c->words[GENERATION],__ATOMIC_RELAXED)) return false;
+    if (!header(c)||!generation||generation<=current(c,GENERATION)) return false;
     uint64_t words[PICO_SLAM_CHANNEL_WORDS]={0};
     words[GENERATION]=generation;
     return store(c,words);
@@ -80,12 +87,12 @@ bool pico_slam_channel_begin(struct pico_slam_channel *c, uint64_t generation)
 
 bool pico_slam_channel_publish(struct pico_slam_channel *c, const struct pico_slam_channel_sample *s)
 {
-    if (!header(c)||!s||!s->generation||s->generation!=__atomic_load_n(&c->words[GENERATION],__ATOMIC_RELAXED)||
-        __atomic_load_n(&c->words[ACTIVE],__ATOMIC_RELAXED)==2) return false;
+    if (!header(c)||!s||!s->generation||s->generation!=current(c,GENERATION)||
+        current(c,ACTIVE)==2) return false;
     if (s->timestamp_ns<=0||s->uncertainty_ns<0||s->uncertainty_ns>1000000000||
         s->published_ns<s->timestamp_ns||s->published_ns-s->timestamp_ns<s->uncertainty_ns||
-        (uint64_t)s->timestamp_ns<=__atomic_load_n(&c->words[TIMESTAMP],__ATOMIC_RELAXED)||
-        (uint64_t)s->published_ns<__atomic_load_n(&c->words[PUBLISHED],__ATOMIC_RELAXED)||
+        (uint64_t)s->timestamp_ns<=current(c,TIMESTAMP)||
+        (uint64_t)s->published_ns<current(c,PUBLISHED)||
         !pose_valid(&s->pose)) {
         pico_slam_channel_stop(c,s->generation);
         return false;
@@ -99,10 +106,10 @@ bool pico_slam_channel_publish(struct pico_slam_channel *c, const struct pico_sl
 
 static bool deactivate(struct pico_slam_channel *c, uint64_t generation, uint64_t state)
 {
-    if (!header(c)||!generation||generation!=__atomic_load_n(&c->words[GENERATION],__ATOMIC_RELAXED)) return false;
+    if (!header(c)||!generation||generation!=current(c,GENERATION)) return false;
     uint64_t words[PICO_SLAM_CHANNEL_WORDS];
     for (unsigned i=0;i<PICO_SLAM_CHANNEL_WORDS;++i)
-        words[i]=__atomic_load_n(&c->words[i],__ATOMIC_RELAXED);
+        words[i]=current(c,i);
     if (words[ACTIVE]==2 && state!=2) return false;
     words[ACTIVE]=state;
     return store(c,words);
@@ -123,15 +130,15 @@ enum pico_slam_channel_result pico_slam_channel_publish_result(
     const struct pico_slam_pose_config *config, const struct pico_slam_result *result,
     int64_t uncertainty, int64_t now)
 {
-    if (!header(c)||!generation||generation!=__atomic_load_n(&c->words[GENERATION],__ATOMIC_RELAXED)||
-        __atomic_load_n(&c->words[ACTIVE],__ATOMIC_RELAXED)==2) return PICO_SLAM_CHANNEL_REFUSED;
+    if (!header(c)||!generation||generation!=current(c,GENERATION)||
+        current(c,ACTIVE)==2) return PICO_SLAM_CHANNEL_REFUSED;
     if (!config||!result||result->state!=1||result->confidence>1) {
         pico_slam_channel_stop(c,generation);
         return PICO_SLAM_CHANNEL_REFUSED;
     }
     struct pico_slam_channel_sample sample={.generation=generation,.uncertainty_ns=uncertainty,.published_ns=now};
     if (!pico_slam_pose_convert(config,result,uncertainty,now,&sample.pose)) {
-        if (result->confidence == 1 || __atomic_load_n(&c->words[TIMESTAMP],__ATOMIC_RELAXED)) {
+        if (result->confidence == 1 || current(c,TIMESTAMP)) {
             pico_slam_channel_stop(c,generation);
             return PICO_SLAM_CHANNEL_REFUSED;
         }
@@ -151,11 +158,10 @@ static enum pico_slam_read_result snapshot(const struct pico_slam_channel *c,
     for (unsigned attempt=0;attempt<attempts;++attempt) {
         uint64_t sequence=__atomic_load_n(&c->sequence,__ATOMIC_ACQUIRE);
         if (sequence>UINT64_MAX-2) return PICO_SLAM_READ_REFUSED;
-        if (sequence&1) continue;
         for (unsigned i=0;i<PICO_SLAM_CHANNEL_WORDS;++i)
-            words[i]=__atomic_load_n(&c->words[i],__ATOMIC_RELAXED);
+            words[i]=__atomic_load_n(&c->slots[(sequence>>1)&1][i],__ATOMIC_RELAXED);
         __atomic_thread_fence(__ATOMIC_SEQ_CST);
-        if (sequence==__atomic_load_n(&c->sequence,__ATOMIC_RELAXED)) {copied=true;break;}
+        if ((sequence&~UINT64_C(1))==(__atomic_load_n(&c->sequence,__ATOMIC_RELAXED)&~UINT64_C(1))) {copied=true;break;}
     }
     if (!copied) return PICO_SLAM_READ_BUSY;
     if (words[GENERATION]!=generation) return PICO_SLAM_READ_REFUSED;

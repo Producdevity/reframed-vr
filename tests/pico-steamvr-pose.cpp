@@ -72,9 +72,12 @@ static void publication_clock_race()
     invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));
     assert(status==PICO_SLAM_READ_STALE);
     __atomic_store_n(&channel.sequence,7,__ATOMIC_RELEASE);
-    invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));
-    assert(status==PICO_SLAM_READ_BUSY);
-    __atomic_store_n(&channel.sequence,8,__ATOMIC_RELEASE);
+    clock.now=1000002000;
+    channel.slots[0][9]=UINT64_MAX;
+    pose=pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status);
+    assert(status==PICO_SLAM_READ_OK && pose.poseIsValid);
+    near(pose.vecPosition[0],9);
+    __atomic_store_n(&channel.sequence,6,__ATOMIC_RELEASE);
     assert(pico_slam_channel_stop(&channel,1));
     unsigned calls=clock.calls;
     invalid(pico_steamvr_pose_now(&channel,51,1,100000000,true,after_snapshot,&clock,&status));

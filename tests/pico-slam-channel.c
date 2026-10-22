@@ -147,8 +147,15 @@ int main(int argc, char **argv)
         uint64_t saved=*fields[i];*fields[i]=0;absent(42,11,1000002000);*fields[i]=saved;
         assert(pico_slam_channel_read(&channel,42,11,1000002000,100000000,&out));
     }
-    uint64_t sequence=channel.sequence;channel.sequence|=1;absent(42,11,1000002000);
+    uint64_t sequence=channel.sequence;
+    unsigned inactive=((sequence>>1)&1)^1;
+    channel.slots[inactive][9]=UINT64_MAX;
+    channel.sequence|=1;
+    assert(pico_slam_channel_read(&channel,42,11,1000002000,100000000,&out));
+    assert(out.timestamp_ns==r.timestamp_ns && out.pose.position[0]==r.pose.position[0]);
+    absent(42,11,1200000000);
     channel.sequence=sequence;
+    channel.version=1;absent(42,11,1000002000);channel.version=2;
     channel.sequence=UINT64_MAX-1;assert(!pico_slam_channel_begin(&channel,12));absent(42,11,1000002000);
     assert(pico_slam_channel_init(&channel,42));assert(pico_slam_channel_begin(&channel,1));
     struct pico_slam_pose_config config={.world_from_slam.orientation={0,0,0,1},

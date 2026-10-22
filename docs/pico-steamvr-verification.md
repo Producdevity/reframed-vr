@@ -825,3 +825,61 @@ UTC, stock b1977 returns under a new boot UUID with Wi-Fi off, updater disabled
 and `flash.locked=0`. The receipt is
 `output/pico-steamvr-session-20261022-v5/stock-return-final.json`.
 No firmware partitions are flashed; the Quest remains untouched.
+
+### Two-slot pose publication
+
+A fresh 2026-10-22 native session adds exact vsync-failure reasons and privately
+timestamps contended pose reads. The old ABI-1 reader exhausts its 64 attempts
+in one observed 260-nanosecond read; the writer has already completed by the
+subsequent diagnostic sequence load. A complete old-channel control records
+three busy rejections at its late observation point. Thus this failure does not
+require a long descheduled writer: the retry count can be shorter than an
+ordinary in-progress publication.
+
+ABI 2 uses a 232-byte mapping with two payload slots. The writer updates the
+inactive slot and atomically commits its selection. The reader can copy the
+committed slot during an in-progress write, checking for a concurrent commit.
+The read remains bounded and still rejects expired, malformed, stopped,
+wrong-generation and future data. Old ABI-1 mappings are refused; producer and
+driver must be rebuilt together and use a fresh mapping.
+
+All seven focused host sanitizer tests pass. Regressions cover a partially
+written inactive slot, expiry while publication is interrupted, old-version
+refusal and existing concurrent/process transport and lifecycle cases. The
+ARM64 driver is built in `output/pico-steamvr-channel-v2-20261022-v1/`, SHA-256
+`5c93fad67c03315c36b7c20475e9d0877141c80034aef9f586a083ce4ffb5ef3`.
+The two complete native captures each consume 2,249 camera sets and return zero
+from camera, SLAM and IMU. Their late clients each receive 2,000 valid poses;
+driver counters at those observations show 48,188 and 48,494 successful reads
+with all rejection categories zero. These counters are snapshots before session
+shutdown, not a proof of indefinite loss-free or physically calibrated motion.
+
+The second capture also attempts a compositor scheduling change; the actual
+render thread remains ordinary scheduling, so that attempt is not evidence of
+realtime scheduling. The ABI-2 binaries are unchanged between these captures.
+An earlier private harness attempt incorrectly assumed the old 136-byte layout
+and stopped before SteamVR startup. The corrected harness explicitly checks ABI
+and size and selects the committed slot. That failed attempt is not counted as
+hardware acceptance.
+
+The archives are in `output/pico-steamvr-session-20261022-v6/`:
+
+| Archive | SHA-256 |
+| --- | --- |
+| `export-fault-replay.tar.gz` (old-channel control) | `2ae4f02ef7ea8382fcb5d26df0aaf88502d5164eb67e956ad2e23448a884f92f` |
+| `export-channel-v2-test.tar.gz` | `1305a2012650c6ad5fe2bf1a0753e3e74975ff2a9640ae6f2d9a8f500a5a7de7` |
+| `export-compositor-rr.tar.gz` | `071bc70cea1f164c4aabd6f212f522f22124252fa27f13901e61effeb369fe57` |
+
+A preceding diagnostic capture stops with feed `EPROTO` after about 36 seconds.
+The later camera/IMU ring exhaustion follows that stop; the exact rejected input
+was not retained. Its archive, `export-fault-baseline.tar.gz`, SHA-256
+`433ce4bd4418782d1c6fb7775913b13f2a9ab9e47bf0fd2e675cce225670fdad`,
+is retained as a failure. Subsequent captures add exact feed-failure location
+diagnostics and complete successfully; this does not explain or dismiss that
+earlier protocol failure.
+
+Full BOOT/DTBO readbacks still match recovery inputs. DSP owners stop with
+CDSP/SLPI `OFFLINE`, zero MCU references and the original 305 MHz GPU minimum.
+Stock b1977 returns at 2026-10-22 07:42:24 UTC under a new boot UUID, with Wi-Fi
+off and updater disabled. See this session's `stock-return-final.json`.
+No firmware partition is flashed and the Quest remains untouched.

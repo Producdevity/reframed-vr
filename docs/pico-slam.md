@@ -596,8 +596,8 @@ Do not call the quiescence acknowledgment solely because a stop ioctl succeeded.
 ## Pose transport to SteamVR
 
 `pico-slam-channel` transports converted head poses between the separate Bionic
-SLAM producer and a native Linux consumer. Its 136-byte, versioned mapping uses
-lock-free atomic words and a bounded sequence check. The owner serializes one
+SLAM producer and a native Linux consumer. Its ABI-2, 232-byte mapping uses two
+payload slots, lock-free atomic words and a bounded sequence check. The owner serializes one
 writer, creates a fresh mapping before sharing it, and binds readers to explicit
 process-instance and estimator-generation identifiers. It must not truncate or
 reinitialize a mapping that readers still hold.
@@ -621,6 +621,25 @@ future-time rejections but retained four and one contention rejections at the
 late observation point. Their 100 Hz clients each received 2,000 valid late
 poses, which does not establish loss-free publication by the faster driver.
 See the [timing and pose verification](pico-steamvr-verification.md#frame-counter-abi-and-pose-read-order).
+
+ABI 2 fixes the remaining publication contention structurally. The writer fills
+the inactive slot, then publishes a new sequence selecting that slot. Readers
+can copy the last committed sample while a write is in progress, retrying if a
+commit overlaps the copy. The writer-claim bit alone no longer invalidates a
+read. This follows the two-copy principle described in Linux's
+[latch sequence-counter documentation](https://docs.kernel.org/locking/seqlock.html#latch-sequence-counters-seqcount-latch-t).
+It retains ordinary atomic payload accesses and the existing bounded retries;
+it does not use kernel seqlock APIs or disable preemption.
+
+Freshness, uncertainty, generation and terminal-stop checks still apply to the
+committed sample. An interrupted publisher cannot extend its lifetime past the
+configured age limit. Both producer and consumer must be rebuilt for ABI 2 and
+bound to a fresh mapping; ABI 1 and its old size are refused. Host regressions
+cover a partially written inactive slot, expiry during an interrupted write,
+old-version refusal and concurrent/process transport. The first complete native
+capture's late observer records 48,188 successful reads with no rejections and
+2,000 valid client poses. This is bounded evidence, not indefinite loss-free
+tracking or measured physical motion acceptance.
 
 `pico-steamvr-pose` converts that channel into the actual OpenVR `DriverPose_t`.
 It carries the capture age in `poseTimeOffset`, maps quaternion component order,

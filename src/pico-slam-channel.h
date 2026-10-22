@@ -11,7 +11,7 @@ extern "C" {
 
 struct pico_slam_channel {
     uint64_t magic, version, bytes, instance, sequence;
-    uint64_t words[PICO_SLAM_CHANNEL_WORDS];
+    uint64_t slots[2][PICO_SLAM_CHANNEL_WORDS];
 };
 
 struct pico_slam_channel_sample {
@@ -23,6 +23,9 @@ struct pico_slam_channel_sample {
 /* Initialize only a new, exclusively owned mapping before sharing it. The
  * process owner serializes one writer; all payload accesses are atomic so
  * concurrent readers never race ordinary floating-point memory accesses.
+ * ABI 2 publishes an inactive slot before atomically selecting it. Readers can
+ * read the committed slot while the single writer is preempted. Every payload
+ * access stays atomic; a commit during a copy requires retrying that copy.
  * Readers bind to one instance/generation; fixed-time reads try at most four times.
  * Starting another generation requires quiescing the previous estimator. */
 bool pico_slam_channel_init(struct pico_slam_channel *channel, uint64_t instance);

@@ -201,8 +201,11 @@ do not change its pose/dashboard exit criteria or establish physical display FPS
 The live pose reader now samples time after copying the channel, preventing a
 concurrent publication from being mistaken for future data. Both corrected runs
 receive 2,000 valid late client poses and no future-time driver rejections.
-Bounded snapshot contention still produces occasional invalid driver reads;
-the slower client can miss those. No old pose is substituted on failure.
+The subsequent ABI-2 two-slot channel removes the observed writer-contention
+failure in its first native capture: the late observer records 48,188 successful
+driver reads without rejections. Readers use the committed sample during an
+in-progress write, with the same age and generation checks. Both processes need
+the new ABI and a fresh mapping; see the [transport contract](pico-slam.md#pose-transport-to-steamvr).
 
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.
