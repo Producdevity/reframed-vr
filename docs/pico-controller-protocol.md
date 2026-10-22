@@ -717,6 +717,67 @@ its output. Disconnect clears activity while retaining the last receipt time.
 Receipt age does not establish capture latency or controller clock calibration.
 
 This module neither starts the MCU/DSP nor derives a controller pose. The native
-input diagnostic supplies records through the verified FastRPC path. Its
-production capture-owner integration and application bindings remain separate
-from this channel API. See [SteamVR input integration](pico-steamvr.md#optional-controller-input).
+FastRPC worker below supplies its records. Production session orchestration and
+application bindings remain separate from this channel API. See
+[SteamVR input integration](pico-steamvr.md#optional-controller-input).
+
+### Native FastRPC input worker
+
+[`pico-controller-input.c`](../tools/pico-controller-input.c) maintains the native
+b1977 receive path separately from the earlier ordinary-SSC capture tool. Its
+[`builder`](../tools/build-pico-controller-input.py) verifies the pinned Qualcomm
+SDK archive and a caller-supplied, previously verified FastRPC runtime manifest,
+builds current RPC wrappers into the executable, and runs ring/RPC tests under
+UBSan. It records source and binary hashes; it neither installs nor starts a
+receiver. The runtime manifest maps relative prefix paths to `sha256` or
+`symlink` records, including every symlink target. It must come from verified
+runtime evidence, not hashes generated from an unknown installation.
+
+```sh
+python3 tools/build-pico-controller-input.py \
+  --runtime-manifest VERIFIED_FASTRPC_MANIFEST.json --output BUILD_DIRECTORY
+```
+
+The worker requires native Linux, this unit's boot serial `c980c8d4`, an explicit
+current boot UUID, root and an already-online SLPI. The session owner must first
+verify the b1977 firmware/configuration and supply `DSP_LIBRARY_PATH` and the
+verified FastRPC `LD_LIBRARY_PATH`. The worker uses the measured MCU type 1,
+radio type 2, touch support, controller SUID and 1,000-byte buffer contract. It
+does not infer those settings for another unit or firmware revision.
+
+```sh
+BUILD_DIRECTORY/pico-controller-input \
+  --boot-id CURRENT_BOOT_UUID --channel /run/NEW_CONTROLLER_CHANNEL \
+  --instance NEW_NONZERO_16_DIGIT_HEX --seconds 120
+```
+
+The new file is created exclusively and a process lock excludes another worker.
+The receiver owns its FastRPC clients, registered DMA buffers and input channel.
+It does not open the MCU command device, pair controllers, power a DSP or change
+audio. The session retains exclusive MCU ownership and must send the verified
+`pico_station_camera_pacing(1)` request; camera startup already does this.
+`--companion-accel` reproduces the tested slow accelerometer stream after one
+second for a standalone controller diagnostic. The shared head-IMU/camera test
+works without that additional subscription; it is omitted by default. This does
+not establish controller delivery with every head sensor subscription absent.
+
+[`pico-controller-ring`](../src/pico-controller-ring.h) compares two CPU-synchronized
+snapshots, validates each record with the maintained decoder and selects only
+the newest station timestamp per hand. Changed slot order cannot rewind input.
+Duplicate, torn, CRC-invalid, zero-time or regressing records cannot refresh
+channel activity. A restarted DSP needs a fresh reader, mapping and instance;
+the timestamp at byte 56 is used only for ordering, not host-clock conversion.
+
+Duration expiry or SIGINT/SIGTERM disconnects both hands and closes RPC clients.
+`PICO_CONTROLLER_WAIT_DSP_OFFLINE` tells the session owner to stop its remaining
+head/camera clients and shut down SLPI. The worker retains DMA registrations until
+the subsystem reports `OFFLINE`, including after RPC errors. The owner must not
+kill the worker while SLPI can still access its buffers. Only
+`PICO_CONTROLLER_RELEASED_DSP_OFFLINE` and process exit complete shutdown. This
+deliberately shares the head session's DSP lifetime rather than independently
+restarting the controller worker during head tracking.
+
+The [shared-sensor hardware test](pico-steamvr.md#maintained-receiver-and-shared-sensors)
+verifies this worker with native SteamVR, head IMU and four-camera capture,
+including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate
+from physical failure recovery.

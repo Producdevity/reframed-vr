@@ -5,7 +5,7 @@ SteamVR server and compositor. It is separate from `reframed_virtual` and does
 not use Monado. Nothing enables or installs it automatically.
 
 Peripheral integration is tracked separately: the
-[controller receiver](pico-controller-protocol.md#bounded-physical-receiver)
+[controller receiver](pico-controller-protocol.md#native-fastrpc-input-worker)
 has verified physical left-controller button, touch and analog reports through
 the native FastRPC path. Calibration, poses and SteamVR application bindings
 remain separate work. The
@@ -132,8 +132,8 @@ a new simultaneous physical button test. The diagnostic uses an inactive head
 pose and starts neither the compositor nor audio. Controller pose remains
 invalid. Default Steam dashboard and game bindings are not supplied: the stock
 generic legacy fallback asks for unsupported analog/trackpad/haptic components.
-The capture owner and its MCU/DSP lifecycle still need integration into the
-normal session before this opt-in adapter becomes an installed controller path.
+The maintained receiver's subsequent shared-sensor test is recorded below.
+Installed session orchestration, bindings and controller pose remain pending.
 
 Evidence is in `output/pico-controller-steamvr-20261022-v1/`:
 
@@ -151,6 +151,58 @@ SLPI was confirmed offline; MCU power references returned to zero. Full boot and
 DTBO readbacks still matched their pinned hashes. The headset returned to b1977
 stock with Wi-Fi off and the updater disabled, recorded in
 `stock-return-final.json`. No partitions were written.
+
+### Maintained receiver and shared sensors
+
+The maintained [FastRPC input worker](pico-controller-protocol.md#native-fastrpc-input-worker)
+was built and tested on the Pico in RAM-only boot
+`478af459-223d-47dd-8587-1e5a6423cfc2`. Its SHA-256 is
+`391be406899a664541a6be2b157eb52ed0fa36853fdec4ad285ca7473ffb9d8a`;
+all 21 recorded build inputs match the retained source. Native UBSan ring tests
+and RPC tests passed, including 128 mocked RPC cycles and six injected error
+stages. The existing driver callback and physical-record IPC replay tests passed
+again. The host controller/SteamVR suites passed 22 tests under their configured
+sanitizers.
+
+Two 120-second receive runs shared SLPI with a live head accelerometer/gyroscope
+session and briefly ran all four tracking cameras. Each camera delivered 247
+frames with successful stop calls. The MCU command connection had one owner;
+camera startup supplied pacing, while the controller worker opened no SPI device.
+
+| Configuration | Left input publications | SteamVR connected samples | Rejected driver updates |
+| --- | ---: | ---: | ---: |
+| Head IMU plus slow companion accelerometer | 14,983 | 30 / 130 | 0 |
+| Head IMU, no companion accelerometer | 14,989 | 30 / 130 | 0 |
+
+The head-only configuration therefore needs no additional slow accelerometer
+subscription. Both streams produced approximately 500 input publications per
+second during active delivery. The stationary controller again stopped delivering
+after about 30 seconds; the driver then disconnected and kept its components
+released. No physical buttons were pressed during these runs. These results
+neither resolve wake-from-idle nor replace the earlier recorded-input action test.
+
+Both workers disconnected input, closed RPC clients and retained their DMA
+buffers while the head client stopped and joined. SLPI then reached `OFFLINE`
+before the workers released registrations and exited successfully. MCU references
+returned to zero. The head stream remained active throughout each receive run
+and reported no session/ring failure; its diagnostic mount-matrix fallback does
+not validate head calibration. The SteamVR HMD channel was intentionally inactive,
+controller poses stayed invalid, and neither compositor nor audio was started.
+This verifies concurrent sensor/input transport, not simultaneous rendered 6DoF
+or a tracked dashboard pointer.
+
+Evidence is in `output/pico-controller-worker-20261022-v1/`; both archives and
+every member hash were verified after export:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-worker.tar.gz` | 96 | `93f68878f8c57e45b15e5bba72db161cf2448247046696b840254759c051af2e` |
+| `export-head-only.tar.gz` | 94 | `7d190a7479e393811820324d66df24c57c4f533e0190db93ab504b30a9c02300` |
+
+Full boot and DTBO readbacks after both tests still matched the pre-test hashes.
+The Pico returned to stock b1977 with Wi-Fi off, updater disabled and music/system
+volume verified at zero. The return and mute receipts are retained alongside
+the archives. No partitions were written.
 
 ## Compositor and server setup
 
