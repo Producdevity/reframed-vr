@@ -1242,3 +1242,91 @@ Full boot/DTBO readbacks again match the recovery inputs. Final stock return is
 verified at 2026-10-22 22:09:36 UTC with Wi-Fi off and updater disabled. The stock
 AudioService reports effective music/system stream volume zero; the generic
 stored volume settings still read 8 and are not treated as effective volume.
+
+## Synchronized controller replay and startup CPU stalls (2026-10-22 UTC)
+
+A further cold RAM boot retains the 90 Hz candidate, original physical driver,
+paired Mesa counter, ordinary CPU scheduling and quiet audio. The 90.98-second
+session consumes 2,249 head-camera sets and publishes 90,101 confident head poses.
+It receives 14,710 left-controller input reports. All head queries in the two
+500-sample readiness windows and the 2,000-sample late window are valid; overdue
+vsync ages are respectively 7, 2 and 0. This does not resolve startup timing or
+the previously observed occasional late fault.
+
+The retained controller IMU and camera traces now overlap. Their calibrated
+clock offset is -105,621,837,251 ns; the 50 four-camera controller sets have at
+most 52 ns of inter-camera skew. After head startup, 6,235 controller IMU samples
+are replayed with these images and real cached calibration through the exact
+b1977 tracker on the Pico CPU. Head matching uses the maintained bounded history
+and measured uncertainty. The isolated replay has no hardware/network access;
+its simulated dispatch clock does not validate live arrival order.
+
+All IMU/image calls return zero and the tracker produces 6,235 callbacks, of
+which 497 carry confidence 1. Negative controls prevent interpreting those as
+optical tracking:
+
+| Image input | Confidence-1 callbacks | Position/orientation compared with real images |
+| --- | ---: | --- |
+| No image calls | 0 | Different |
+| Fifty all-black image sets | 497 | Byte-identical throughout |
+| Fifty recorded image sets | 497 | Reference |
+
+The real/black result records differ only at diagnostic byte `0x54`, in 487
+records. Its meaning is not established. The b1977 getter multiplies internal
+position by 1,000 before writing the raw result; raw controller coordinates
+cannot be passed to OpenVR as metres. Controller state 0 also differs from the
+head result's accepted state 1. Confidence alone is insufficient to enable a
+tracked SteamVR pointer.
+
+A file-open trace identifies a missing controller-specific persist cache in the
+isolated runtime. A second control copies the verified stock cache into writable
+RAM, restoring its original contents before each trial. Original persist is
+mounted read-only with journal replay disabled. The cache and headset serial
+then open successfully, but both black and real inputs still produce identical
+poses and only one confidence-1 callback each. The cache is not a demonstrated
+fix. The earlier run that reused the writable cache between trials is retained
+as a confounded diagnostic, not the comparison result. Factory camera YAMLs
+open successfully; the optional controller configuration YAML is absent from
+the stock system too. Optical correction and grip/aim calibration remain open.
+
+The head-history replay also exposes valid state-1/confidence-1 head results
+with opaque status `0x200`. An added nonzero-status rejection incorrectly clears
+their history. The corrected implementation preserves that field and passes the
+recorded replay, ASan/UBSan host tests and an offline Bionic unit test on the Pico.
+
+Raw syscall entry/exit and scheduler events are captured with zero overruns,
+commit overruns or dropped events on all eight CPUs. The 57.935 ms
+acquire-to-submit interval at monotonic 266.677802–266.735737 s contains 57.870 ms
+on CPU and 0.065 ms runnable off CPU for render thread 1926. Two other startup
+intervals measure 28.458 ms entirely on CPU and 15.379 ms with 13.173 ms on CPU.
+They do not contain a long captured blocking syscall. There are 39 unmatched
+syscall boundary events, so this is not a claim of complete syscall pairing.
+
+A same-boot realtime/monotonic clock correlation places Facet's shader-pipeline
+creation logs inside all three intervals, including two pipeline creations in
+the 57.935 ms interval. This supports pipeline creation as the startup-stall
+cause; CPU starvation does not explain that interval. Mesa's 189-file, 3,434,828
+byte shader cache resides in the temporary overlay and is lost on a RAM reboot.
+A separate restored-cache comparison is required before adopting cache policy
+or claiming a timing fix. The earlier late blocking interval remains a separate
+unresolved observation.
+
+Evidence: `output/pico-controller-integration-20261023-v1/`. Archive and member
+hashes are verified:
+
+| Archive | Data members | SHA-256 |
+| --- | ---: | --- |
+| `export-render.tar.gz` | 211 | `9c9f8bb29006412b1aa9e7eab94f74740733e52ba8c1452ec052f350d67498a6` |
+| `export-replay.tar.gz` | 6 | `39e56d265fa58aec5a690e04a25a88e4473f0af89d66bfca1e7ec981a32c9820` |
+| `export-controls.tar.gz` | 12 | `888b400037448f2aad2db9ce5432f631b946a56e1d7d6a2121555296e5482e97` |
+| `export-cachefresh.tar.gz` | 21 | `1079cde6e097253a741c6ab2f5e960a4a57646f28f29f1734c6f8ae682af5627` |
+| `export-shaders.tar.gz` | 189 | `71aa71cf37f0c4298c4fc62845fd55420323936385e4abb51048af4660aa4259` |
+
+Hardware owners are quiesced before the recorded replays. SLPI/CDSP report
+`OFFLINE`, MCU references return to zero, the GPU floor returns to 305 MHz and
+ADSP remains unstarted with PCM streams closed. Final full boot/DTBO hashes match
+the recovery inputs. Stock b1977 returns at 22:54:13 UTC with Wi-Fi off and updater
+disabled; effective music/system volumes read zero. No partition is flashed,
+and the Quest remains untouched. The updated optional SteamVR pose adapter is
+built/tested separately on this CPU; these captures do not enable it or establish
+a working optical controller pointer.
