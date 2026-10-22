@@ -546,9 +546,25 @@ scheduling submit about 89.5 presents/second and record zero and one overdue
 sample per 2,000 late checks. The repeat's fault includes a measured 7 ms CPU
 scheduling delay. Neither realtime permissions nor an experimental negative nice
 value is adopted. The 90 Hz candidate changes both the optical profile's frame
-interval and SteamVR's preferred rate; only transitions after a working 120 Hz
-handoff have been tested. The template retains 120 Hz until first-handoff and
-physical acceptance are verified. Sustained 120 Hz presentation remains unresolved.
+interval and SteamVR's preferred rate. A fresh Linux boot now starts 90 Hz after
+the maintained 120 Hz display-handoff tool initializes and releases KMS; no
+120 Hz SteamVR session is needed first. Omitting that handoff produced an
+`EINVAL` atomic swapchain test and compositor crash. The fresh 90 Hz run has
+zero overdue ages in its late 2,000-query window, but six in its two earlier
+500-query readiness windows. This is a stable late sample, not an all-session
+timing fix. The template retains 120 Hz pending physical 90 Hz acceptance.
+Sustained 120 Hz presentation remains unresolved.
+
+For this 90 Hz candidate, run `pico-display-handoff` before starting the VR
+server/compositor, or require the packaged `reframed-pico-display-handoff.service`
+from the session owner. The helper adopts the advertised 120 Hz mode, verifies
+five hardware vblank events, then disables the CRTC and releases its resources.
+Set the private optical profile's `screen.frame_interval_ns` to `11111111` and
+the session's `steamvr.preferredRefreshRate` to `90.0` together. Preserve the
+unit's optical coefficients and eye transforms. Initialization at 120 Hz and
+subsequent rendering at 90 Hz serve different purposes. The
+[fresh-boot verification](pico-steamvr-verification.md#fresh-90-hz-handoff-and-controller-tracker-calibration)
+records the tested limits; clean lens output at 90 Hz remains unverified.
 
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.

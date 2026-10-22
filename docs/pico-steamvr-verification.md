@@ -1097,3 +1097,80 @@ has SHA-256 `78bfe02ff8222f84810583fb24400f1757cc9a25a5366b65a68ee849cfa8a7d4`.
 Every archive/member hash was verified. `starvation.json` preserves the measured
 baseline interval; `comparison.json` and its assertion-based analyzer check both
 complete runs, trace continuity, source identity and the acceptance boundaries.
+
+### Fresh 90 Hz handoff and controller tracker calibration
+
+Two further RAM boots retain the current camera refill fix, paired Mesa counter,
+Facet renderer and digital controller driver. The first selects 90 Hz directly
+from the inherited display state. The first swapchain's atomic test returns
+`-22`/`EINVAL`, `vkCreateSwapchainKHR` returns `VK_ERROR_INITIALIZATION_FAILED`,
+and the compositor crashes. This run produces no usable timing comparison.
+A same-boot control runs the maintained `pico-display-handoff`: it adopts the
+advertised 120 Hz mode, observes five vblanks, disables the CRTC and releases its
+resources. A following 90 Hz compositor with an OpenVR observer remains active
+and records 173 successful atomic commits. An intermediate attempt without a
+persistent observer exits normally before that observation and is not counted
+as a passing display test. These controls establish a startup dependency on
+this unit; they do not identify the vendor driver's internal rejection branch.
+
+The second fresh boot runs the same handoff before any SteamVR session, then
+selects a private optical-profile interval of 11,111,111 ns and preferred rate
+90 Hz. It uses ordinary scheduling, no negative nice adjustment and the supported
+587 MHz GPU floor during the bounded capture. The handoff measures an 8,332,057 ns
+120 Hz period and releases its resources. The later hardware vblank samples
+measure 89.9998 Hz. All camera, SLAM, IMU and controller-owner processes complete
+successfully, including controller RPC close and release after SLPI reports
+`OFFLINE`.
+
+| Probe window | Head poses valid / invalid | Overdue vsync ages / samples |
+| --- | ---: | ---: |
+| First dashboard readiness | 500 / 0 | 5 / 500 |
+| Selected dashboard readiness | 500 / 0 | 1 / 500 |
+| Late dashboard | 2,000 / 0 | 0 / 2,000 |
+
+The age limit remains two selected refresh periods: 22.222 ms at 90 Hz. None of
+these failures are unavailable, nonfinite, negative or invalid-refresh values.
+The late driver's read counters show zero rejections in every category.
+There are 1,759 successful present API calls across the late sampled interval
+of 19.783 seconds, or 88.91 calls/second; this is not measured physical FPS.
+Startup ages are still faulty, and one zero-failure late window does not prove
+sustained timing reliability. The 120 Hz template remains unchanged pending
+physical 90 Hz acceptance.
+
+The 90.96-second tracking session consumes 2,249 synchronized head-camera sets,
+92,347 IMU pairs and publishes 90,064 confident head poses. Each camera completes
+4,497 frames: 2,249 head and 2,248 hand, with zero controller-class frames.
+All 690,527 camera profiling records are retained without profiler drops;
+request-zero SOFs are limited to startup frames 1 and 2. This does not imply
+complete scheduler ftrace retention. The controller coexistence probe receives
+3,000 valid head queries and 21 connected left-controller states among 30
+samples; controller pose validity remains zero. A raw scanout copy contains
+the Steam sign-in UI in both distorted eye regions. Its horizontal copy bands
+and non-coherent capture method do not establish clean optical output.
+
+A separate isolated Bionic probe then loads the exact b1977 controller tracker
+and accepts this unit's real cached calibration with the Neo3-specific 85-float
+vector. Init, callback registration, left-kind reset and calibration each return
+zero. The probe has no motion/image feed and hardware device access is blocked;
+it does not produce a tracked controller. The
+[controller calibration contract](pico-controller-protocol.md#cached-controller-tracking-calibration)
+records the adapter difference from PicoFrame and the live collector tests.
+
+Every archive and member hash is checked. Evidence directories are
+`output/pico-vsync-controller-20261022-v1/` and `-v2/`:
+
+| Archive | SHA-256 |
+| --- | --- |
+| v1 `export-startup.tar.gz` | `da487b67fe59fbeb26bd707ef59e6e58aa854ab827ef118a1818ec50b11e36f5` |
+| v2 `export-render.tar.gz` | `2e7dffb9bb5c793a03266db9b90196e4b5412e43025c92da3e878dcfa851e2c4` |
+| v2 `export-tracker.tar.gz` | `6913a316610fbe65ed0b71f8ccaa54a1b87430338969ce5ea610d2ef68cfa850` |
+
+Full boot/DTBO readbacks match the recovery inputs after both RAM boots. Cleanup
+restores the 305 MHz GPU floor, releases MCU references and confirms SLPI/CDSP
+`OFFLINE`; the existing shutdown-acknowledgment/unmap warnings remain. ADSP is
+never started and all PCM streams remain closed. At 2026-10-22 21:19:37 UTC,
+stock b1977 returns with Wi-Fi off, updater disabled and `flash.locked=0`.
+Both stock audio streams are set and read back at zero. Receipts are retained
+beside the v2 archives. No firmware partitions are flashed and the Quest is
+untouched. Startup timing, controller optical capture/pose integration, physical
+motion scale and clean 90 Hz lens output remain acceptance gates.
