@@ -25,6 +25,15 @@ record boundary. The payload and outer event schemas have been checked offline
 as described below. Native subscription and shutdown have since been tested;
 connected-controller reports still need validation.
 
+That ordinary SSC route is distinct from the active b1977 tracking reader's
+[FastRPC shared-memory controller path](pico-tracking-protocol.md#low-latency-rpc-messages).
+`SlpiDataReader::start` requests a 1,000-byte ring of ten 100-byte records,
+period `100000` microseconds, flags `0` and sensor handle `1`. Acknowledged
+480 Hz SSC requests do not establish operation of that path. The
+[physical module-loading check](pico-fastrpc.md#physical-controller-module-loading)
+now verifies its source wrapper's channel lifecycle; controller records and
+SteamVR input remain unverified.
+
 The outer event timestamp at offset `0x10` uses SSC ticks multiplied by
 `52.083333333333336`, plus an offset measured from Android elapsed real time and
 the CPU counter. This is distinct from the timestamps inside the controller IMU
@@ -201,7 +210,7 @@ calibrated monotonic clock and duration of 1–120 seconds. An owning service mu
 start SLPI and hold the MCU power reference separately. It does not start DSPs,
 power the MCU, pair controllers or modify firmware.
 
-The stock b1977 request is 480 Hz although the physical `ble_mcu` metadata
+The stock station service's SSC route requests 480 Hz although the `ble_mcu` metadata
 omits the supported-rate list. The receiver sends that explicit standard
 continuous configuration through the pinned SSC client, rather than changing
 the generic library's rate-selection policy. A transport acknowledgement is

@@ -27,6 +27,8 @@ FD mapping modes return unsupported instead of being reinterpreted.
 
 For default `rpcmem` allocations, `PICO_ION_HEAP_ID` must name an independently
 verified heap from 0 through 31. There is no implicit physical-device default.
+Set it before loading the runtime library: initialization caches the heap choice,
+so setting it after `dlopen` can leave default allocation failing with `ENODEV`.
 The VM uses its deliberately configured system heap 25; that does not establish
 the correct heap or cache policy for the headset's sensor DSP. Explicit heap
 arguments remain available. Cached, uncached, default-heap and no-registration
@@ -46,7 +48,9 @@ cache synchronization, release and failed startup with no DSP attached.
 
 Live sensor attachment, reverse RPC from the physical DSP, stream layout,
 SUID selection, calibration and tracking remain separate acceptance steps.
-These tests do not establish boot/recovery or flash readiness.
+These tests do not establish boot/recovery or flash readiness. The bounded
+physical controller check below establishes module attachment and channel
+lifecycle separately from sample delivery.
 
 `libpico-sensors.so.1` connects the low-latency stream encoder to FastRPC's
 domain-aware handles, explicitly selecting SDSP and the sensor process. The
@@ -61,6 +65,32 @@ does not retry. A failed or malformed initialization has an uncertain channel
 state, so close refuses to discard it. Its buffer must remain owned until an
 independently confirmed DSP teardown; this recovery path is not yet verified.
 The client never equates a failed RPC with proof that the DSP released memory.
+
+## Physical controller module loading
+
+On the Neo3 Pro Eye running b1977, the legacy module name
+`sns_low_lat_stream&_dom=sdsp` reaches the DSP loader unchanged and fails with
+`0x80000406` (`AEE_EUNABLETOLOAD`). The stock stub instead opens the bare
+`sns_low_lat_stream` name through the legacy API. Its success does not establish
+that appending a domain suffix to that name works.
+
+The source wrapper now uses the explicit URI
+`file:///libsns_low_lat_stream_skel.so?sns_low_lat_stream_skel_invoke&_dom=sdsp`.
+The entry point matches the stock DSP skeleton export, and domain selection
+remains explicit. On 2026-10-22, stock-style legacy open/close and this URI's
+64-bit open/close both succeeded on the physical headset. The rebuilt wrapper
+then completed buffer initialization, controller configuration, stop,
+deinitialization and close with zero return codes. The bounded 20-second
+capture delivered no valid controller records; this is a loader and lifecycle
+fix, not verified controller input or SteamVR tracking.
+
+Host ASan/UBSan and native ARM64 lifecycle tests each passed 128 cycles and
+failure handling at six stages with three error codes. The native build and
+capture receipts are in `output/pico-peripheral-session-20261022-v3/`.
+The hash-verified `export-controller.tar.gz` contains 67 files and has SHA-256
+`cb1838c004a5c9fb86a5220c6217eddd3cabac54ba93e7dbbc1263895cb1c0fb`.
+The private probe and rebuilt library stayed in RAM; the installed bundle was
+unchanged. Audio remained inactive throughout these controller tests.
 
 ## Offline root installation
 
