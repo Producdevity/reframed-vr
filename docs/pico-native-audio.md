@@ -1,12 +1,15 @@
 # Neo3 native Linux audio
 
 As of 2026-10-22, the physical Neo3 Pro Eye registers `kona-mtp-snd-card`
-under the retained 4.19.81-perf kernel. The fresh-boot test exposes 35 PCM
-entries and 5,035 ALSA controls. A bounded, digitally muted speaker-route test
-has completed 48,000 silent PCM frames with matching hardware/application
-pointers and full mixer restoration. Audible speaker output, microphone capture
-and Steam session routing have not been verified. Frame's PipeWire stack also
-passes two ten-second muted tests against the physical backend, as detailed below.
+under the retained 4.19.81-perf kernel. Frame's PipeWire stack routes the native
+ARM64 Steam client's startup audio through the speaker PCM, and the owner
+confirmed hearing Steam's startup sound. Microphone capture, protected speaker
+calibration, sustained playback under concurrent SteamVR/6DoF load and an
+installed audio session remain unverified.
+
+The earlier zero-valued PCM tests establish transport and restoration only.
+The requested WSA digital mute values did **not** prevent audible Steam output
+in the later test. Do not use those control readbacks as a guarantee of silence.
 
 ## Verified startup blockers
 
@@ -252,8 +255,8 @@ verb and `Speaker` device, verifies every applied value, and requires the
 selected PCM to be `hw:konamtpsndcard,0`. After playback it disables the device,
 verifies that UCM restored the originals, and sets the verb inactive. An
 independent reverse-order restoration still runs if enabling, playback,
-disabling or manager cleanup fails. Both digital mutes remain held throughout
-the test. These snapshots are per-session data, not portable mixer defaults.
+disabling or manager cleanup fails. Both digital mute controls are requested during
+the test; the later Steam test below shows that this does not guarantee silence. These snapshots are per-session data, not portable mixer defaults.
 
 The first physical attempt failed before playback because ALSA's numeric-ID
 parser consumed the following value as part of the ID. The generated sequences
@@ -314,3 +317,38 @@ speaker protection still need validation before an audible route is accepted.
 Speaker, headset-jack, microphone and suspend/resume behavior need separate
 hardware acceptance. The silent test establishes PCM progress and teardown,
 not audible quality or a working Steam audio device.
+
+## Native Steam startup audio
+
+A fresh native RAM boot (`b0c23392-e3f4-4cdd-8d50-5c300ecc70df`) ran the
+installed ARM64 Steam client under user `vr`, using Xvfb to isolate audio from
+the VR display and tracking workload. The first attempt lacked
+`/home/vr/.steam/steam`; Steam refused startup, and all 21 mixer controls were
+restored. Creating the standard link to its existing data directory allowed
+the second attempt to start.
+
+The private UCM/PipeWire/WirePlumber session automatically selected
+`ReframedPicoSpeaker`. The recorded Pulse stream identifies `steamwebhelper`,
+UID user `vr`, stereo float32 audio at 48 kHz, and sink 18. Its 94 observations
+include uncorked playback and subsequent corking; the hardware PCM advanced
+771,000 frames during observation. No sampled ALSA XRUN or PipeWire `XRun!`
+was recorded. The owner independently reported hearing **Steam's startup
+sound** from the Pico. This verifies actual Steam audio output, rather than
+only a synthetic Pulse client.
+
+The user then requested quiet operation. Playback was stopped, every PCM was
+closed, all 21 controls were restored, and the owned ADSP reached OFFLINE.
+The test requested both digital mute controls, but audible output disproves
+that these values guarantee silence through stream startup. The exact cause
+of that behavior is still unverified. Future quiet session tests must enforce
+and verify software sink mute before launching Steam; stopping playback and
+releasing the owned ADSP remains the verified quiet state.
+
+Private evidence: `output/pico-peripheral-session-20261022-v2/`, including the
+failed attempt, successful stream/PCM captures and audio-stop receipt.
+`export-peripherals.tar.gz` is 420,923 bytes with SHA-256
+`d3a021f22e22f80781f17b272c8cae4da6b0d813123fea718a8a33c1dca88871`;
+all 199 member hashes verify. The user's listening confirmation is separate
+from the machine-generated result, whose `audible_output_verified` field
+correctly remains false. This run does not establish microphone operation,
+audio quality, end-to-end latency, or simultaneous SteamVR/6DoF performance.

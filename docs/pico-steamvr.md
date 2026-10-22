@@ -8,9 +8,10 @@ Peripheral integration is tracked separately: the
 [controller receiver](pico-controller-protocol.md#bounded-physical-receiver)
 has bounded native transport tests but still needs connected-controller input,
 calibration, poses and SteamVR bindings. The
-[native audio diagnostic](pico-native-audio.md) now registers the ALSA card and
-completes muted ALSA and Frame PipeWire backend tests. Audible playback,
-microphone capture and Steam audio session routing remain unverified.
+[native audio diagnostic](pico-native-audio.md) routes the native Steam client through Frame PipeWire to the Pico speakers;
+the owner confirmed hearing Steam's startup sound. Installed session wiring,
+microphone capture and concurrent SteamVR/audio load remain unverified. The
+WSA digital mute readbacks did not guarantee silence; audio is currently stopped.
 
 The display component reads the existing private Neo3 optical-profile format
 (schema 2 or 3, `PICOA7H10`, analytic `pico-radial-2`). It preserves each eye's
