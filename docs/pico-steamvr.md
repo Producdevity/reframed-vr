@@ -193,7 +193,7 @@ per second; sampled timestamps match the reported kernel vblank sequence within
 9 microseconds. The template selects this corrected path. Some client counters
 lag the latest kernel vblank, and 8 and 10 of 2,000 age checks still fail. The
 subsequent reason-classifying probe identifies overdue updates in all 30 late
-failures across three complete captures. The physical
+failures across three complete captures. The live
 probe records renderer selection, timing phases, vsync age/counter and a bracketed
 read-only kernel timestamp. `PICO_STEAMVR_VSYNC_RESULT` counts unavailable,
 non-finite, negative or greater-than-two-period ages as invalid. These diagnostics
@@ -211,9 +211,16 @@ the new ABI and a fresh mapping; see the [transport contract](pico-slam.md#pose-
 The timing trace places those overdue updates after GPU completion and a wait
 for another presentation boundary; the reported counter is two vblanks behind.
 Ordinary-scheduler delay varies between the affected frames and is not the sole
-established cause. A compositor-only realtime-permission experiment leaves the
-actual render thread on ordinary scheduling and does not improve cadence. Its
-configuration is not adopted. Sustained 120 Hz presentation remains unresolved.
+established cause. The first realtime-permission experiment leaves the actual
+render thread on ordinary scheduling. Later tests achieve `SCHED_RR` priority 99,
+but still record late updates at 120 Hz. Matched 90 Hz tests with ordinary
+scheduling submit about 89.5 presents/second and record zero and one overdue
+sample per 2,000 late checks. The repeat's fault includes a measured 7 ms CPU
+scheduling delay. Neither realtime permissions nor an experimental negative nice
+value is adopted. The 90 Hz candidate changes both the optical profile's frame
+interval and SteamVR's preferred rate; only transitions after a working 120 Hz
+handoff have been tested. The template retains 120 Hz until first-handoff and
+physical acceptance are verified. Sustained 120 Hz presentation remains unresolved.
 
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.

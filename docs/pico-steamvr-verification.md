@@ -922,10 +922,107 @@ and an SDL realtime-policy request only to the compositor unit. Its actual
 `/proc` limits confirm those limits, but all sampled `RenderThread` tasks remain
 policy 0, priority 0. The compositor logs `setschedparam` permission failures;
 the comparison therefore does not test an effective realtime render thread.
-The built kernel has `CONFIG_RT_GROUP_SCHED=y`; its role in those permission
-failures remains unverified. No scheduling change is promoted. The runtime GPU
+The built kernel has `CONFIG_RT_GROUP_SCHED=y`; that observation alone does not
+explain the permission failures. The later controls below test the actual
+priority ceiling. No scheduling change is promoted. The runtime GPU
 inventory also confirms 587 MHz is the highest advertised operating point, so
 the completed tests already use the supported maximum, restored to 305 MHz at
 cleanup. The native probe SHA-256 is
 `99a46b5ae07f42d4f7df63e359ae2f60395f6eafba7f2207135b51ed8d49d849`.
 The archives and stock-return receipt are listed in the preceding section.
+
+### Matched refresh rates and effective scheduler controls
+
+A further native session uses the same ABI-2 driver, paired Mesa counter fix,
+Facet renderer and timing probe. Separate short-lived uid-1000 scheduler probes
+accept `SCHED_RR` priority 80 with an RTPRIO ceiling of 80, reject priority 99
+under that ceiling, and accept both with a ceiling of 99. Thus
+`CONFIG_RT_GROUP_SCHED=y` does not categorically prevent realtime scheduling in
+this environment. The retained probe receipts are `inspect-rt-ceiling-result.log`
+and `inspect-rt-permission-result.log` in
+`output/pico-steamvr-session-20261022-v7/`.
+
+With `SDL_THREAD_PRIORITY_POLICY=rr`, `LimitRTPRIO=99` and
+`RestrictRealtime=no` scoped to the compositor, its sampled render and signal
+threads reach `SCHED_RR` priority 99. One render-thread sample in the repeated
+120 Hz run instead records FIFO priority 40; the other 59 record RR 99.
+The first priority-99 attempt with `LimitRTTIME=50ms:100ms` terminates with
+`24/XCPU` about 1.15 seconds after compositor startup. The following successful
+realtime captures use a 1/2-second soft/hard limit. Ordinary-scheduler controls
+retain the existing realtime restriction.
+
+Each complete capture consumes 2,249 camera sets, returns zero from camera,
+SLAM and IMU, and records 2,000 valid late client poses. Every driver rejection
+category is zero at the late observations. The table reports submissions during
+marked windows of approximately 25 seconds within these 90-second sensor
+captures; these are not physical FPS measurements. Hardware vblank matches the
+selected 90 or 120 Hz, and all retained complete traces have zero overruns or
+dropped trace events. GPU frequency is the supported 587 MHz during sampling;
+thermal histories differ, so the rate differences do not isolate a scheduler
+speedup.
+
+| Configuration | Submitted presents/sec | Late overdue / 2,000 | Successful driver-read snapshot |
+| --- | ---: | ---: | ---: |
+| 120 Hz, ordinary, nice 0 | 96.53 | 14 | 52,991 |
+| 120 Hz, RR 99 | 107.50 | 6 | 48,393 |
+| 120 Hz, RR 99 repeat | 105.22 | 10 | 53,271 |
+| 90 Hz, RR 99 | 89.59 | 0 | 49,054 |
+| 90 Hz, ordinary, nice 0 | 89.52 | 0 | 49,064 |
+| 90 Hz, ordinary repeat | 89.59 | 1 | 49,141 |
+| 90 Hz, ordinary, nice -10 | 89.29 | 0 | 49,128 |
+
+The ordinary-scheduler 90 Hz repeat's one late sample includes 7.258 ms of
+measured runnable delay between counter updates. Its trace directly records the
+render thread runnable for 7.169 ms while an equal-priority `vrwebhelper` and
+other tasks run. This establishes a CPU contribution to that sample. In the
+120 Hz captures, measured runnable delay at most affected queries is much
+smaller; their GPU semaphore/presentation waits remain relevant. Neither a
+CPU-only nor a GPU-only diagnosis explains the complete set of observations.
+
+The explicit nice=-10 experiment changes the sampled render/signal thread nice
+values as intended, without enabling realtime policy. It completes at 90 Hz,
+but does not establish a consistent cadence or worst-case runnable-delay gain.
+Its 120 Hz comparison fills the native 1.6 GiB `/run` filesystem before the late
+observer and is rejected. It is not a compositor-fault or performance result.
+The interrupted cleanup is completed explicitly, with VR units stopped and
+MCU/GPU state checked. Four older trace files are moved to `/tmp` after exact
+hash verification against retained host evidence, preserving their bytes while
+freeing `/run`. The private capture preparation now requires at least 256 MiB
+of `/run` headroom before camera, trace or compositor startup. No nice or
+realtime setting is promoted to the maintained drop-in.
+
+The 90 Hz tests change only `screen.frame_interval_ns` to `11111111` in a private
+copy of the optical profile and set `steamvr.preferredRefreshRate=90`; optical
+coefficients and geometry remain unchanged. They follow a working 120 Hz
+handoff. First-handoff 90 Hz and clean lens output remain unverified, so the
+maintained template retains 120 Hz. Occasional counter intervals still span
+roughly two refresh periods even when the age probe samples no faults. These
+captures establish a promising 90 Hz candidate, not loss-free presentation or
+physical motion calibration.
+
+The following archives, including the two rejected captures, are retained in
+`output/pico-steamvr-session-20261022-v7/` with verified carriers and member
+manifests. Generation 48 is installed but not run; its replacement installer
+initially refuses the deliberately absent channel, then verifies the unused
+binary, environment identity, absent ring files and stopped processes before
+replacement. Neither event is counted as hardware acceptance.
+
+| Archive | SHA-256 |
+| --- | --- |
+| `export-refresh120-control.tar.gz` | `29a8f457116677382e5067bd7dea7a7027cd200bc5eb161eee352ae7c1d0d111` |
+| `export-realtime99-candidate.tar.gz` | `4f044744718309c30b0611e7ecdcb6366cc14d03415c4460ce20fb985b758cb6` |
+| `export-realtime99-budget.tar.gz` | `a9f1071744c4c31d213adff776f6e38f8ea3cbebe348da2bc4ed30d685d8c2d0` |
+| `export-refresh90-realtime.tar.gz` | `54eb5bd7326c7a5e3db9c8c920163bf260b8eebba252542e58b866dcb64da063` |
+| `export-refresh120-realtime-repeat.tar.gz` | `0bd17f6fe787eebed82d7eac10d4faaff50ce31cc296ec2f7219f2ec110e42b7` |
+| `export-refresh90-control.tar.gz` | `de9e1b527d2279695f192ffeb5574d2d4b71b7fe295d6302ed453a4b2d312569` |
+| `export-refresh90-control-repeat.tar.gz` | `89fcf40d61febab7071044c84eafcc15092d3745124b2f794e060bb9f49403c6` |
+| `export-refresh90-nice10.tar.gz` | `72e000cd50acea6c170f9e2ac0e82274bf9098fe5d7873b42a043a04ef45bddd` |
+| `export-refresh120-nice10.tar.gz` | `cd7a84927ecdbeca82a238ed859fba28b6cb70c580561bfd23c46f198acafff1` |
+
+Final full BOOT/DTBO readbacks match the recovery inputs. CDSP and SLPI are
+`OFFLINE`, MCU references are zero and the original 305 MHz GPU minimum is
+restored before reboot. Stock b1977 returns at 2026-10-22 08:43:28 UTC with a new
+boot UUID, Wi-Fi off, updater disabled and `flash.locked=0`; see this session's
+`stock-return-final.json`. No firmware partition is flashed. The Quest is
+untouched. Physical motion, optical acceptance, controls and longer presentation
+stress tests remain outstanding.
