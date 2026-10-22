@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import tarfile
 
@@ -54,6 +55,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     sources = ['tools/pico-controller-input.c', 'tools/build-pico-controller-input.py',
+               'tools/pico-controller-session.py',
                'profiles/pico-fastrpc.json', 'tests/pico-controller-ring.c', 'tests/pico-sensor-rpc.c']
     sources += ['src/' + unit + suffix for unit in UNITS for suffix in ('.c', '.h')]
     report = {'status': 'started', 'device_actions': [],
@@ -107,7 +109,12 @@ def main():
         verify_runtime(prefix, runtime)
         if report['source_sha256'] != {name: digest(ROOT / name) for name in sources}:
             raise ValueError('Build inputs changed')
+        helper = output / 'pico-controller-session.py'
+        shutil.copyfile(ROOT / 'tools/pico-controller-session.py', helper)
+        if digest(helper) != report['source_sha256']['tools/pico-controller-session.py']:
+            raise ValueError('Session helper changed while copying')
         report.update(status='compiled', binary_sha256=digest(binary),
+                      session_sha256=digest(helper),
                       sdk_archive_sha256=profile['source_archive_sha256'])
     except Exception as error:
         report.update(status='failed', error=str(error))

@@ -275,6 +275,56 @@ The Pico returned to stock b1977 with Wi-Fi off, updater disabled and music/syst
 volume verified at zero. The return and mute receipts are retained alongside
 the archives. No partitions were written.
 
+### Parent-controlled worker shutdown
+
+The maintained [session helper](pico-controller-protocol.md#parent-session-lifecycle)
+was tested in RAM-only boot `fce28462-0f36-451a-9d41-33e1c7763c6e`.
+Its build packaged the helper with SHA-256
+`d0f55992a856b675af60681d1118b0e7e3799b9c8fe06adefe9aa571bcb6278e`;
+all 22 worker inputs and 28 driver inputs matched the current source. The worker
+and SteamVR driver binaries retained their previously verified hashes. Native
+ring/RPC tests and the retained physical-record channel replay passed again.
+The host controller/SteamVR suites passed 34 tests, including eight subprocess
+fixtures for the new session lifecycle.
+
+The parent requested SIGTERM after 20.036 seconds of the input-client run,
+before the worker's 120-second duration limit. The worker delivered 7,250 left
+input publications; SteamVR reported a connected left controller at ticks 6–19
+of 55 one-second observations, then remained disconnected. Driver rejection
+counts stayed zero, and digital components stayed released. No new physical
+button presses or sleep/wake checks were performed.
+
+The head stream delivered 26,058 accelerometer and 26,058 gyroscope samples,
+with no session/ring failure. Each tracking camera delivered 247 frames and
+stopped successfully. The parent verified that the controller process was still
+alive and retained its buffers after all three RPC result codes returned zero,
+while SLPI remained `ONLINE`. At that point, the helper rejected a request for
+the stopped channel's SteamVR settings. The head client then joined, SLPI reached
+`OFFLINE`, and the worker acknowledged buffer release and exited zero. MCU power
+references returned to zero and every audio PCM remained closed.
+
+Shutdown still logged the existing ten-second SLPI shutdown-acknowledgment
+timeout, also present in both earlier receiver runs. The pinned kernel calls
+peripheral shutdown after the graceful request, then publishes `OFFLINE`; this
+test verifies that observed state and release ordering, not a successful
+firmware acknowledgment. It also retained the earlier camera ION-unmap warnings
+(ten per camera session). These issues remain separate from the zero controller
+RPC return codes. Source excerpts and provenance are retained in the evidence
+directory's `kernel-shutdown-source/`.
+
+This verifies the helper with concurrent live sensors and SteamVR input. The
+diagnostic head stream still used its mount-matrix fallback; the SteamVR HMD
+channel was inactive, controller poses stayed invalid, and the compositor was
+not started. Installed orchestration of a rendered session remains separate.
+
+Evidence: `output/pico-controller-session-20261022-v1/`. The 93-file archive
+`export-session.tar.gz` has SHA-256
+`f49e0ff7d32e573dc028cb328bcfa6ae9d1f6a29346bc9a227fbf938572a343f`;
+its inventory and every member hash were verified. `analysis.json` records the
+asserted lifecycle order and counts. Full boot/DTBO readbacks matched before and
+after the test. Stock-return and mute receipts record b1977, Wi-Fi off, updater
+disabled and music/system volume zero. No partitions were written.
+
 ## Compositor and server setup
 
 The bundle also includes `compositor.conf`, an opt-in systemd drop-in for the

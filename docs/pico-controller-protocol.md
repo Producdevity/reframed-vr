@@ -781,3 +781,36 @@ The [shared-sensor hardware test](pico-steamvr.md#maintained-receiver-and-shared
 verifies this worker with native SteamVR, head IMU and four-camera capture,
 including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate
 from physical failure recovery.
+
+### Parent session lifecycle
+
+The builder also packages [`pico-controller-session.py`](../tools/pico-controller-session.py)
+and records its hash. Its `ControllerSession` class coordinates one worker within
+an already verified native sensor session. It does not boot the headset, own the
+MCU, start head tracking, change audio or install a service.
+
+Construct it with the verified build directory, a new absolute session directory,
+current boot UUID, bounded `seconds`, and the verified worker environment. Keep
+that object available through cleanup, including when startup raises an error.
+
+1. `start()` verifies the worker against `build.json`, generates a fresh instance
+   and starts it with private log files. `session.json` records the process,
+   command, instance and binary hash. Regular files avoid blocking the receiver
+   on an undrained stdout/stderr pipe.
+2. `wait_ready(timeout)` checks the worker's identity and result, then verifies
+   channel size, owner, permissions and header. `steamvr_environment()` supplies
+   the two controller environment settings to merge into the SteamVR server's
+   environment before starting it. Later calls reject a replaced channel inode.
+3. `request_stop()` sends SIGTERM. `wait_rpc_stopped(timeout)` waits for the RPC
+   close result and buffer-retention acknowledgment. Inspect all three result
+   codes; a received acknowledgment does not itself mean every RPC succeeded.
+4. Stop and join the other head/camera clients, then stop the shared SLPI owner.
+   `finish(timeout)` requires the worker's release acknowledgment and process
+   exit. Check its return code before declaring a successful session.
+
+A timeout or failed startup does not kill or restart the worker: it can still
+own DSP-visible memory. The caller must complete the shared-sensor shutdown
+sequence. The helper deliberately offers no automatic restart or context-manager
+cleanup that could terminate a worker while another head client still uses SLPI.
+Host fixtures exercise these paths without hardware; live verification is
+recorded separately in the [SteamVR test notes](pico-steamvr.md).
