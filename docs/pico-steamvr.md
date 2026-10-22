@@ -69,6 +69,12 @@ library. It rejects the Neo3's `kona-iot MTP` platform during initialization.
 This isolation does not hide the separate vendor SLAM library or change the
 board model, optical profile or firmware.
 
+The drop-in also carries the tested diagnostic scheduling policy:
+`SDL_THREAD_PRIORITY_POLICY=other`, `LimitRTPRIO=0`, `LimitNICE=-20` and
+`RestrictRealtime=yes`. These avoid the observed SDL realtime-limit termination;
+they do not constitute a finished low-latency scheduling profile. Transient
+launches need the same properties and environment explicitly.
+
 The compatibility approach follows Florian Reintgen's
 [PicoFrame change `dd8a402`](https://github.com/TheReal-Flo/PicoFrame/commit/dd8a402ba14d67d58f0b9d13ced61c3f169b8e33),
 verified at PicoFrame `3affbc11ecaae56c56b7bd3eb13344c73a7a03da`.
@@ -144,6 +150,17 @@ loading logo while the patched build puts the login form into stereo scanout.
 The diagnostic client uses `-cef-disable-gpu` for its browser; Valve's compositor
 remains GPU accelerated. This browser workaround alone does not fix stale
 presentation, and it is not the final graphics-performance configuration.
+
+Use the bundle's `gamescope.conf` only as a drop-in for the patched gamescope
+overlay service. It sets `gamescope_vr_use_modifiers=false`, selecting gamescope's
+Vulkan overlay texture transport. The measured launch also supplies
+`--force-composition -e --backend openvr` and the named dashboard arguments.
+This is separate from `compositor.conf`; the environment setting belongs to
+gamescope. The per-buffer DMA import route retained gigabytes of gamescope-created
+buffers in the compositor during the comparison. The Vulkan route bounds that
+allocation in the 90-second test and presents an actual login-toggle change.
+The driver builder bundles these opt-in files but does not install or enable
+either service. See the verification record for exact results and limits.
 
 Compositor scheduling remains diagnostic. At the supported 587 MHz GPU operating
 point, sampled GPU work falls below the 120 Hz frame budget, but presentation

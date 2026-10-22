@@ -38,3 +38,12 @@ stereo scanout. See the [hardware record](../../docs/pico-steamvr-verification.m
 for evidence and remaining tracking, interaction and timing limits. This is a
 software browser-upload compatibility path, not evidence that wl_shm is the
 desired final high-performance rendering path.
+
+On the measured Neo3 stack, pair the patched binary with
+`gamescope_vr_use_modifiers=false` and `--force-composition`. Fresh shared-memory
+uploads otherwise create per-buffer DMA imports whose storage remains held in
+the compositor. Selecting gamescope's existing Vulkan overlay transport avoids
+that measured growth. The opt-in service environment is bundled as
+[`gamescope.conf`](../../system/steamvr-pico/gamescope.conf); it applies to the
+gamescope service, separately from Valve's compositor service. This is a tested
+transport workaround, not a claim that all DMA-BUF presentation is defective.

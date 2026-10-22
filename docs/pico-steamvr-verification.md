@@ -349,6 +349,58 @@ The manifest-checked archive is
 `output/pico-steamvr-session-20261022-v2/export-shm-ui.tar.gz`, SHA-256
 `ca19bc64b225364bd828fa5c17b95f47568852b2b7ed216b5a18f400dce64df8`.
 
+### Overlay transport and memory growth
+
+Increasing the IMU pairing capacity to 256 removes that overflow, but a later
+combined run fails closed with `ETIMEDOUT`. An initial full-composition comparison
+finishes camera and SLAM capture but still shows growing memory pressure and
+four invalid client samples in its late 2,000-sample check. Its IMU producer
+also fills its ring after the consumer stops, because VR cleanup precedes
+producer shutdown. That wrapper's zero status is not complete acceptance.
+The diagnostic now stops and joins the producer immediately after the consumer,
+before VR teardown, and checks all three component exit statuses.
+
+The next run adds DMA-buffer, ION, process-RSS and scheduler samples. With
+per-buffer DMA import enabled, gamescope-created DMA allocations grow from
+7.9 MiB at about 20 seconds to 2,525.3 MiB at 70 seconds. The kernel's DMA-process
+accounting shows these buffers held by `vrcompositor`. The vendor SLAM allocation
+is stable at 52.4 MiB before its shutdown. Available memory falls to 142,308 KiB;
+the late physical client reports 2,000 invalid samples and no valid samples.
+This identifies a retained-buffer path and correlated pressure, not the precise
+internal resource-lifetime defect in Valve's closed compositor. The checked
+archive is `output/pico-steamvr-session-20261022-v2/export-shm-resources.tar.gz`,
+SHA-256 `1c21cd8cabdb281f3bee94cb122d3b8f6bf7b14bd9221a15377985bf8624e75b`.
+
+Keeping the same patched gamescope binary, full composition, optics, freshness
+limits and ordinary scheduling, setting `gamescope_vr_use_modifiers=false` uses
+the existing Vulkan overlay texture path. Gamescope's DMA allocation now stays
+around 15.6–19.5 MiB after startup; compositor-created storage stays at 133.0 MiB.
+From 50 seconds onward, sampled available memory stays between 2,192,068 and
+2,474,944 KiB. Camera, SLAM and IMU all exit zero: 2,249 complete head-camera sets,
+92,347 matched IMU pairs, 90,066 published tracked poses, no publication failure
+and no ring overflow. The late client receives 2,000 valid poses and none invalid.
+An earlier dashboard-readiness check still has one invalid sample out of 500;
+the entire startup is therefore not claimed loss-free.
+
+Before/after native scanout captures show the login form's Remember-me toggle
+changing from on to off after a scoped X11 click. The input helper verifies the
+focused Steam window and its 1280×800 geometry, clicks the switch at `(1104,467)`
+and moves away before capture. An earlier `(1235,472)` click was outside the
+switch and did not establish interaction. The accepted before/after native hashes
+are respectively
+`4bf75b95c4166a0af233480711ff678b72819bb6f4d89b930328afa0d63dec4b` and
+`b983850265bb27ea65f82c8e145cc08f5173d33d76ff25c1221192295968c8f5`.
+This verifies a rendered UI response through Valve's compositor, not controller
+support or lens acceptance. The manifest-checked archive is
+`output/pico-steamvr-session-20261022-v2/export-shm-vulkan.tar.gz`, SHA-256
+`e404af746e738439dd639ed9c87ae0d300bec96af84a45d7059c214048095fc2`.
+
+The current opt-in gamescope environment selects that Vulkan transport.
+Sampled compositor GPU times remain around 10.6 ms in this diagnostic, above
+the 8.33 ms budget for 120 Hz. The frame-index cadence with `app_pid=0` still does
+not establish physical scanout FPS. This workaround closes the measured buffer
+growth for a bounded session; long-session performance remains unverified.
+
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.
