@@ -109,6 +109,23 @@ cannot start on the current kernel: its requested shadow/heap address exceeds
 the supported user address space. The separate IPC test replays all 27,794
 physical records and exercises concurrent publication without changing fields.
 
+The bundled `pico-steamvr-live` probe accepts `--left-controller` instead of
+`--dashboard` for a bounded shared-session check:
+
+```sh
+pico-steamvr-live PATH_TO_LIBOPENVR_API BOOT_SERIAL 30 --left-controller
+```
+
+Run it with the existing session's OpenVR environment. It identifies the physical
+left controller by serial, samples its legacy input and driver diagnostics once
+per 100 head-pose queries, and timestamps those observations with host monotonic
+time. Success requires more than 100 valid head-pose queries and at least one
+connected, readable controller state; exit code 10 indicates a missing controller
+interface or no such state. It reports controller pose validity without inventing a pose.
+It does not open the dashboard or start sensors. Correlate its timestamps with
+the separate compositor trace to establish concurrent presentation; this probe
+alone does not prove rendering, button interaction or wake-from-idle.
+
 ### Digital default bindings
 
 The profile supplies a Neo3-specific legacy binding and a driver default for
@@ -324,6 +341,53 @@ its inventory and every member hash were verified. `analysis.json` records the
 asserted lifecycle order and counts. Full boot/DTBO readbacks matched before and
 after the test. Stock-return and mute receipts record b1977, Wi-Fi off, updater
 disabled and music/system volume zero. No partitions were written.
+
+### Controller, live head tracking and compositor coexistence
+
+RAM-only boot `b1d94af3-6102-4e95-b04e-02192a9f5c96` ran the same worker
+and driver alongside the vendor head estimator, four cameras and Valve's Facet
+compositor at the configured 120 Hz mode. The new `--left-controller` probe
+observed a connected, readable left controller and valid head pose in 21 of 30
+observations. The compositor trace contains 2,080 successful presentation calls
+between the first and last connected observations, a 20.729-second interval.
+These are API submissions, not measured optical frames or proof of Steam UI
+visibility. The worker published 14,685 left records with zero RPC errors;
+SteamVR input-update failures stayed zero. No physical button interaction was
+verified, controller poses remained invalid, and sleep/wake acceptance is still pending.
+The last nine observations reported the controller disconnected.
+
+The full session failed at the head-camera feed, before successful dashboard
+selection or scanout capture. The probe recorded 2,536 valid head queries and
+464 invalid queries after tracking stopped. The retained camera ring and feed
+failure record identify the rejected transition: frame 1741 at
+`302419154468 ns` to frame 1747 at `302539157958 ns`, a `120003490 ns` gap
+against the configured `100000000 ns` limit. The rejected set was only
+`20421196 ns` old on arrival, with `52 ns` inter-camera skew and increasing
+frame numbers and timestamps. Thus the gap check caused `-EPROTO`; camera
+desynchronization and stale delivery did not cause that rejection. The cause
+of the missing frames is still unverified. Do not raise the gap limit and call
+this fixed: the next capture investigation needs request-refill timing and
+complete scheduling coverage of the camera process under compositor load.
+
+The parent closed the controller RPC clients, stopped the shared sensors and
+SLPI, then verified worker buffer release and exit zero. MCU power references
+returned to zero and the GPU minimum returned to 305 MHz. Audio stayed off.
+Boot and DTBO readbacks retained their pre-test hashes; stock boot
+`f5e84f7b-cf6c-4260-9264-364460f50e9a` was verified on b1977 with Wi-Fi off,
+the updater disabled and music/system volume zero.
+
+Evidence: `output/pico-controller-render-20261022-v1/`, including `analysis.json`
+and its assertion-based analyzer. The 171-file `export-render.tar.gz` has
+SHA-256 `4c2112cdf3592e1d381b332063c5f0fa76fef7495a6a56ac169d29c2f9998441`;
+`export-camera.tar.gz` preserves the stopped camera ring with SHA-256
+`0f771c115cdb800f2283d44542d3fcd08a1270f5f2b2a13dbde4ff69af955b76`.
+The 59-file camera-source archive has SHA-256
+`248386c7322879fbe376c2535a873ec44d3ef993872a26a58505c9d9a4896a05`.
+All three archive inventories and member hashes were verified. The native probe
+build matches its current source; 35 host controller, SteamVR and SLAM-feed tests
+passed with no skips, and its host syntax check passed with warnings as errors.
+This remains partial session acceptance, with no new optical or physical-motion
+validation.
 
 ## Compositor and server setup
 

@@ -42,9 +42,11 @@ int main(int argc,char **argv)
 {
     setvbuf(stdout,nullptr,_IOLBF,0);
     if ((argc!=4&&argc!=5&&argc!=6) || !board(argv[2])) return 22;
+    bool controllers=argc==5&&!std::strcmp(argv[4],"--left-controller");
+    bool dashboard=argc>=5&&!controllers;
     char *end=nullptr;long seconds=std::strtol(argv[3],&end,10);
     if (!*argv[3] || *end || seconds<1 || seconds>30 ||
-        (argc>=5&&std::strcmp(argv[4],"--dashboard")) ||
+        (dashboard&&std::strcmp(argv[4],"--dashboard")) ||
         (argc==6&&(!*argv[5] || std::strlen(argv[5])>128 ||
                    std::strspn(argv[5],"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-")!=std::strlen(argv[5])))) return 22;
     alarm(static_cast<unsigned>(seconds+40));
@@ -73,7 +75,7 @@ int main(int argc,char **argv)
         std::printf("PICO_STEAMVR_RENDERER_SETTING use_facet=%d error=%d\n",facet,setting_error);
     }
     vr::IVROverlay *overlay=nullptr;
-    if (argc>=5) {
+    if (dashboard) {
         auto *chaperone=static_cast<vr::IVRChaperone *>(get(vr::IVRChaperone_Version,&error));
         std::printf("PICO_STEAMVR_SESSION calibration=%d activity=%d\n",
                     chaperone&&error==vr::VRInitError_None?static_cast<int>(chaperone->GetCalibrationState()):-1,
@@ -98,6 +100,11 @@ int main(int argc,char **argv)
     };
     stats("begin");
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
+    unsigned controller_samples=0,controller_connected=0,controller_states=0,controller_poses=0;
+    char expected_controller[80];
+    std::snprintf(expected_controller,sizeof(expected_controller),"%s-left",argv[2]);
+    auto *input_debug=controllers?static_cast<vr::IVRDebug *>(get(vr::IVRDebug_Version,&error)):nullptr;
+    if (controllers&&(!input_debug||error!=vr::VRInitError_None)) {shutdown();return 10;}
     unsigned vsync_samples=0,vsync_invalid=0;
     unsigned vsync_unavailable=0,vsync_nonfinite=0,vsync_negative=0,vsync_overdue=0,vsync_bad_refresh=0;
     property=vr::TrackedProp_Success;
@@ -117,6 +124,33 @@ int main(int argc,char **argv)
             }
             max_distance=std::fmax(max_distance,std::sqrt(distance));++valid;
         } else ++invalid;
+        if (controllers&&i%100==0) {
+            ++controller_samples;
+            auto id=vr::k_unTrackedDeviceIndexInvalid;
+            for (uint32_t candidate=1;candidate<vr::k_unMaxTrackedDeviceCount;++candidate) {
+                if (system->GetTrackedDeviceClass(candidate)!=vr::TrackedDeviceClass_Controller) continue;
+                char serial[128]={0};vr::ETrackedPropertyError pe=vr::TrackedProp_Success;
+                system->GetStringTrackedDeviceProperty(candidate,vr::Prop_SerialNumber_String,serial,sizeof(serial),&pe);
+                if (pe==vr::TrackedProp_Success&&!std::strcmp(serial,expected_controller)) {id=candidate;break;}
+            }
+            bool connected=false,state_ok=false,pose_valid=false;
+            vr::VRControllerState_t state{};
+            char response[512]={0};
+            if (id<vr::k_unMaxTrackedDeviceCount) {
+                connected=poses[id].bDeviceIsConnected;
+                pose_valid=poses[id].bPoseIsValid;
+                state_ok=system->GetControllerState(id,&state,sizeof(state));
+                input_debug->DriverDebugRequest(id,"input",response,sizeof(response));
+            }
+            controller_connected+=connected;
+            controller_states+=connected&&state_ok;
+            controller_poses+=pose_valid;
+            std::printf("PICO_STEAMVR_CONTROLLER_SAMPLE monotonic_ns=%lld tick=%ld id=%u connected=%d state_ok=%d pose_valid=%d head_valid=%d pressed=%llu touched=%llu %s\n",
+                static_cast<long long>(monotonic_ns()),i/100,id,connected,state_ok,pose_valid,
+                head.bDeviceIsConnected&&head.bPoseIsValid,
+                static_cast<unsigned long long>(state.ulButtonPressed),
+                static_cast<unsigned long long>(state.ulButtonTouched),response);
+        }
         float since_vsync=0;uint64_t vsync_counter=0;bool vsync_available=false;
         uint64_t kernel_before=0,kernel_after=0;int64_t query_before=0,query_after=0;
         if (compositor) {
@@ -194,5 +228,7 @@ int main(int argc,char **argv)
     }
     shutdown();dlclose(library);
     std::printf("PICO_STEAMVR_LIVE_RESULT valid=%u invalid=%u max_position_delta_m=%.6f physical_motion_acceptance=0\n",valid,invalid,max_distance);
-    return valid<=100?8:dashboard_visible?0:9;
+    if (controllers) std::printf("PICO_STEAMVR_CONTROLLER_RESULT samples=%u connected=%u states=%u valid_poses=%u physical_input_acceptance=0\n",
+        controller_samples,controller_connected,controller_states,controller_poses);
+    return valid<=100?8:controllers&&!controller_states?10:dashboard_visible?0:9;
 }
