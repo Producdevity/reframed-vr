@@ -5,7 +5,8 @@ under the retained 4.19.81-perf kernel. The fresh-boot test exposes 35 PCM
 entries and 5,035 ALSA controls. A bounded, digitally muted speaker-route test
 has completed 48,000 silent PCM frames with matching hardware/application
 pointers and full mixer restoration. Audible speaker output, microphone capture
-and Steam/PipeWire routing have not been verified.
+and Steam session routing have not been verified. Frame's PipeWire stack also
+passes two ten-second muted tests against the physical backend, as detailed below.
 
 ## Verified startup blockers
 
@@ -169,6 +170,76 @@ These carriers and their member manifests are in
 `output/pico-audio-period-session-20261022-v1/`. The tested tool SHA-256 is
 `af8d2583416c92c36494279f086b3184f7a2da62f2f0232014c231674660fb5b`.
 Full BOOT and DTBO readbacks match the retained hashes after both sessions.
+
+## Frame PipeWire backend test
+
+The retained official
+[Steam Frame repair image](https://steamdeck-images.steamos.cloud/recovery/steamframe-oobe-repair-20260922.5153644-0.3.0.img.zip)
+supplies PipeWire/libpipewire/pipewire-pulse `1:1.6.8-1.2` and their native
+dependencies. The diagnostic exports 175 files, totaling 27,280,203 bytes, from
+that image into a private prefix. The source archive SHA-256 is
+`672df1b9c5c6b849df506c995a32fe136b53c4db688f924e6727639dd8b963a9`;
+the extracted root partition matches
+`668da2b1d32e9b779a1ee27ed570961ceaaf83a5dfeadd8129b62603223c319d`.
+The temporary root copy was removed after verification; the original repair
+archive and selected-file manifest remain retained. The current diagnostic root
+is Fedora 44 with selected Frame components; full Frame base integration remains.
+
+Container validation establishes private PipeWire IPC, an explicitly linked
+silent client and a responding PulseAudio compatibility server. The physical
+test uses the same private libraries under a bounded systemd unit, while the
+existing diagnostic owns the speaker route and both digital mutes. Links are
+created explicitly; no UCM or WirePlumber policy is installed. The private
+root-only socket uses the documented
+[`access.legacy` mode](https://github.com/PipeWire/pipewire/blob/1.6.8/src/modules/module-access.c).
+That access policy is specific to this diagnostic, not a desktop-session policy.
+
+The native comparison exposed two further timing requirements:
+
+- Read/write mode repeatedly underruns with this PipeWire client. The vendor
+  mmap path recycles complete DSP periods, bypassing the partial-copy path.
+- PipeWire rounds a requested 600-frame graph quantum down to 512 by default,
+  while the hardware retains 600-frame periods. The captured graph log and
+  hardware parameters confirm that mismatch. Disabling
+  [`clock.power-of-two-quantum`](https://docs.pipewire.org/page_man_pipewire_conf_5.html)
+  preserves 600 frames. A ten-second run then has one startup underrun followed
+  by 197 RUNNING samples. One period of headroom still records a startup reset.
+  Two periods of headroom pass the strict repeated test.
+
+The verified candidate values are:
+
+| Setting | Value |
+| --- | --- |
+| Graph rate; quantum/minimum/maximum | 48,000 Hz; 600 frames each |
+| `clock.power-of-two-quantum` | `false` |
+| ALSA path; format; channels | `hw:0,0`; `S16_LE`; stereo |
+| `api.alsa.period-size`; `api.alsa.period-num` | `600`; `4` |
+| `api.alsa.headroom` | `1200` frames |
+| `api.alsa.disable-mmap` | `false` |
+| `api.alsa.soft-mixer`; `api.alsa.disable-mixer-path` | `true`; `true` |
+
+[Headroom](https://docs.pipewire.org/page_man_pipewire-props_7.html) adds buffering
+to protect the hardware queue. The configured 1,200 frames equal 25 ms at
+48 kHz; end-to-end audio latency has not been measured. These values remain a
+diagnostic candidate rather than an installed production policy.
+
+On the same native boot, two identical ten-second tests each submit 480,000
+zero-valued client frames. Their 198 hardware-status samples each remain RUNNING,
+with monotonic hardware progress of 478,200 and 479,400 frames during observation.
+Neither captured PipeWire log records `XRun!`; neither status capture records
+XRUN. Both PulseAudio compatibility servers respond, all 21 mixer controls are
+restored, and every PCM is closed afterward. These are light-load audio tests;
+concurrent SteamVR/6DoF load, audible output and microphone capture remain
+unverified.
+
+All attempts, including the rejected configurations, are retained under
+`output/pico-frame-audio-session-20261022-v1/`. The final carrier is
+`export-frame-audio-final.tar.gz`, 668,553 bytes, SHA-256
+`c07fdf44773230d4049298cc3975126e3406415eebaaf6524e0160b12d6c9353`;
+all 130 member hashes verify. The tested session script SHA-256 is
+`f4686ab71a231151df8b8e760580d6e6f74560f49325e52ae6222c1dbfa82938`.
+The ADSP owner releases cleanly, full BOOT/DTBO readbacks remain unchanged,
+and stock b1977 returns with Wi-Fi off and the updater disabled.
 
 ## Remaining integration
 
