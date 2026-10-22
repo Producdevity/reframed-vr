@@ -8,8 +8,9 @@ Peripheral integration is tracked separately: the
 [controller receiver](pico-controller-protocol.md#bounded-physical-receiver)
 has bounded native transport tests but still needs connected-controller input,
 calibration, poses and SteamVR bindings. The
-[native audio startup](pico-native-audio.md) now registers the ALSA card;
-speaker/microphone routes and the Frame audio session remain unverified.
+[native audio diagnostic](pico-native-audio.md) now registers the ALSA card and
+completes a muted speaker-route PCM test. Audible playback, microphone capture
+and the Frame audio session remain unverified.
 
 The display component reads the existing private Neo3 optical-profile format
 (schema 2 or 3, `PICOA7H10`, analytic `pico-radial-2`). It preserves each eye's
