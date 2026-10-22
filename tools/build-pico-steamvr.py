@@ -35,11 +35,14 @@ def main():
     cjson = json.loads((ROOT / 'profiles/pico-steamvr-cjson.json').read_text())
     verify(args.cjson, cjson['sha256'])
     sources = ['src/pico-steamvr-driver.cpp', 'src/pico-steamvr-display.cpp', 'src/pico-steamvr-config.cpp',
+               'src/pico-steamvr-controller.cpp', 'src/pico-steamvr-controller.h',
+               'src/pico-controller-channel.c', 'src/pico-controller-channel.h', 'src/pico-controller.h',
                'src/pico-steamvr-display.h', 'src/pico-steamvr-pose.cpp', 'src/pico-steamvr-pose.h',
                'src/pico-slam-channel.c', 'src/pico-slam-channel.h', 'src/pico-slam-pose.c',
                'src/pico-slam-pose.h', 'src/pico-slam-result.h', 'profiles/openvr.json',
                'profiles/pico-steamvr-cjson.json', 'profiles/pico-steamvr.json',
                'system/steamvr-pico/driver.vrdrivermanifest',
+               'system/steamvr-pico/resources/input/neo3_profile.json',
                'system/steamvr-pico/compositor.conf',
                'system/steamvr-pico/gamescope.conf',
                'system/steamvr-pico/vrserver',
@@ -52,10 +55,11 @@ def main():
                  '-I', str(ROOT / 'src'), '-isystem', str(args.sdk), '-I', str(args.cjson)]
         objects = []
         units = [(ROOT / 'src' / (name + '.c'), args.cc, 'c11')
-                 for name in ['pico-slam-channel', 'pico-slam-pose']]
+                 for name in ['pico-slam-channel', 'pico-slam-pose', 'pico-controller-channel']]
         units += [(args.cjson / 'cJSON.c', args.cc, 'c11')]
         units += [(ROOT / 'src' / (name + '.cpp'), args.cxx, 'c++17')
-                  for name in ['pico-steamvr-driver', 'pico-steamvr-display', 'pico-steamvr-config', 'pico-steamvr-pose']]
+                  for name in ['pico-steamvr-driver', 'pico-steamvr-display', 'pico-steamvr-config',
+                               'pico-steamvr-pose', 'pico-steamvr-controller']]
         for source, compiler, standard in units:
             target = work / (source.stem + '.o')
             command = [compiler, '-std=' + standard, *flags, '-c', str(source), '-o', str(target)]
@@ -71,6 +75,7 @@ def main():
         shutil.copyfile(binary, destination / binary.name)
         shutil.copyfile(ROOT / 'system/steamvr-pico/driver.vrdrivermanifest',
                         args.output / 'reframed_pico/driver.vrdrivermanifest')
+        shutil.copytree(ROOT / 'system/steamvr-pico/resources', args.output / 'reframed_pico/resources')
         probe = args.output / 'pico-steamvr-live'
         command = [args.cxx, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                    '-isystem', str(args.sdk), str(ROOT / 'tests/pico-steamvr-live.cpp'),

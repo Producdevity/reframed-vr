@@ -1,5 +1,6 @@
 #include "pico-steamvr-display.h"
 #include "pico-steamvr-pose.h"
+#include "pico-steamvr-controller.h"
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -135,7 +136,9 @@ static bool identifier(const char *text, uint64_t &value)
 
 class PicoProvider final : public vr::IServerTrackedDeviceProvider {
     std::unique_ptr<PicoHeadset> headset;
+    std::unique_ptr<PicoSteamvrController> left_controller;
     pico_slam_channel *channel=nullptr;
+    pico_controller_channel *controller_channel=nullptr;
 public:
     vr::EVRInitError Init(vr::IVRDriverContext *context) override {
         VR_INIT_SERVER_DRIVER_CONTEXT(context);
@@ -171,19 +174,49 @@ public:
         close(fd);
         if (mapping==MAP_FAILED) return vr::VRInitError_Driver_Failed;
         channel=static_cast<pico_slam_channel *>(mapping);
+        const char *controller_file=std::getenv("PICO_STEAMVR_CONTROLLER_CHANNEL");
+        if (controller_file) {
+            uint64_t controller_instance=0;
+            if (!identifier(std::getenv("PICO_STEAMVR_CONTROLLER_INSTANCE"),controller_instance)) {
+                Cleanup();return vr::VRInitError_Driver_Failed;
+            }
+            int input_fd=open(controller_file,O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK);
+            struct stat input_stat{};
+            bool input_valid=input_fd>=0 && !fstat(input_fd,&input_stat) &&
+                S_ISREG(input_stat.st_mode) && input_stat.st_size==sizeof(*controller_channel) &&
+                (input_stat.st_uid==0 || input_stat.st_uid==geteuid()) && !(input_stat.st_mode&0022);
+            void *input_mapping=input_valid?mmap(nullptr,sizeof(*controller_channel),PROT_READ,
+                                                 MAP_SHARED,input_fd,0):MAP_FAILED;
+            if (input_fd>=0) close(input_fd);
+            if (input_mapping==MAP_FAILED) {Cleanup();return vr::VRInitError_Driver_Failed;}
+            controller_channel=static_cast<pico_controller_channel *>(input_mapping);
+            left_controller=std::make_unique<PicoSteamvrController>(controller_channel,controller_instance,1);
+        }
         headset=std::make_unique<PicoHeadset>(optics,channel,instance,generation,max_age);
         if (!vr::VRServerDriverHost()->TrackedDeviceAdded(optics.serial,vr::TrackedDeviceClass_HMD,headset.get())) {
             Cleanup();return vr::VRInitError_Driver_Failed;
         }
+        if (left_controller) {
+            char controller_serial[256];
+            int length=std::snprintf(controller_serial,sizeof(controller_serial),"%s-left",optics.serial);
+            if (length<0 || static_cast<size_t>(length)>=sizeof(controller_serial) ||
+                !vr::VRServerDriverHost()->TrackedDeviceAdded(controller_serial,vr::TrackedDeviceClass_Controller,
+                                                             left_controller.get())) {
+                Cleanup();return vr::VRInitError_Driver_Failed;
+            }
+        }
         return vr::VRInitError_None;
     }
     void Cleanup() override {
+        left_controller.reset();
+        if (controller_channel) {munmap(controller_channel,sizeof(*controller_channel));controller_channel=nullptr;}
         headset.reset();
         if (channel) {munmap(channel,sizeof(*channel));channel=nullptr;}
         VR_CLEANUP_SERVER_DRIVER_CONTEXT();
     }
     const char *const *GetInterfaceVersions() override { return vr::k_InterfaceVersions; }
     void RunFrame() override {
+        if (left_controller) left_controller->Update();
         vr::VREvent_t event;
         while (vr::VRServerDriverHost()->PollNextEvent(&event,sizeof(event))) {}
     }

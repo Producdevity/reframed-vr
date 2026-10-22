@@ -6,8 +6,9 @@ not use Monado. Nothing enables or installs it automatically.
 
 Peripheral integration is tracked separately: the
 [controller receiver](pico-controller-protocol.md#bounded-physical-receiver)
-has bounded native transport tests but still needs connected-controller input,
-calibration, poses and SteamVR bindings. The
+has verified physical left-controller button, touch and analog reports through
+the native FastRPC path. Calibration, poses and SteamVR application bindings
+remain separate work. The
 [native audio diagnostic](pico-native-audio.md) routes the native Steam client through Frame PipeWire to the Pico speakers;
 the owner confirmed hearing Steam's startup sound. Installed session wiring,
 microphone capture and concurrent SteamVR/audio load remain unverified. The
@@ -71,6 +72,87 @@ Provide all of:
 | `PICO_STEAMVR_INSTANCE` | Nonzero process-instance identifier, 16 lowercase hex digits |
 | `PICO_STEAMVR_GENERATION` | Nonzero estimator generation, 16 lowercase hex digits |
 | `PICO_STEAMVR_MAX_AGE_NS` | Explicit maximum pose age, at most 100 ms |
+
+## Optional controller input
+
+The physical driver can register a left Neo3 controller when both
+`PICO_STEAMVR_CONTROLLER_CHANNEL` and `PICO_STEAMVR_CONTROLLER_INSTANCE` are
+provided. The instance is a nonzero 16-digit lowercase hex identifier. Without
+these variables, the driver retains its HMD-only behaviour.
+
+The channel is a separate 128-byte `pico_controller_channel` mapping. Its owner
+initializes a new file once and publishes samples accepted by the maintained
+controller decoder, with the host monotonic receipt time. The driver requires a
+regular, exact-sized file owned by root or its own user and not writable by
+group/others. The mapping and instance remain bound until driver shutdown.
+A restarted producer must use a new instance and file and restart the driver.
+The channel implementation does not open hardware or start a DSP.
+
+The adapter exposes twelve digital button/touch components through the
+[OpenVR input profile](https://github.com/ValveSoftware/openvr/wiki/Input-Profiles).
+Input older than 250 ms, a stopped producer or an invalid channel clears the
+components and marks the controller disconnected. A rejected SteamVR input
+update also attempts to release every component and marks it disconnected;
+the debug response counts rejected calls. The timeout uses host receipt time,
+not an established controller capture-clock mapping.
+
+The controller reports `poseIsValid=false` throughout. No controller position,
+orientation, haptics, analog calibration, render model or application bindings
+are supplied by this step. Raw analog endpoints were captured but axis sign,
+center and dead zone still need physical calibration. Enabling this adapter
+does not yet provide a tracked dashboard pointer.
+
+Host tests exercise real adapter methods against mocked OpenVR callbacks under
+ASan/UBSan, including stale input, failed updates, disconnect/reconnect and
+invalid pose. The same callbacks pass native UBSan on the Pico. Native ASan
+cannot start on the current kernel: its requested shadow/heap address exceeds
+the supported user address space. The separate IPC test replays all 27,794
+physical records and exercises concurrent publication without changing fields.
+
+### Native controller input verification
+
+A fresh RAM-only Pico session loaded the new physical driver in native ARM64
+SteamVR 2.17.10. A diagnostic receiver using the maintained FastRPC wrapper and
+MCU pacing request delivered 14,991 valid left-controller records. An independent
+OpenVR client observed the controller connected, with successful legacy state
+reads, for 30 one-second samples. After stationary delivery stopped, both the
+driver and client reported it disconnected. Driver input updates had zero errors.
+No button presses occurred in this stationary run.
+
+A separate replay sent the earlier 27,794 physical movement/button records
+through a new channel and instance. With explicit diagnostic action bindings,
+SteamVR's `IVRInput` returned all eleven tested controls: X/Y, menu, grip,
+stick click, trigger click, and X/Y/stick/thumbrest/trigger touches. The client
+observed 126 action transitions; the driver accepted 144 component changes with
+zero update errors. All actions were released after replay stopped. Home was
+exposed by the driver but was not pressed in that physical capture.
+
+This is live transport acceptance plus recorded-input action acceptance, not
+a new simultaneous physical button test. The diagnostic uses an inactive head
+pose and starts neither the compositor nor audio. Controller pose remains
+invalid. Default Steam dashboard and game bindings are not supplied: the stock
+generic legacy fallback asks for unsupported analog/trackpad/haptic components.
+The capture owner and its MCU/DSP lifecycle still need integration into the
+normal session before this opt-in adapter becomes an installed controller path.
+
+Evidence is in `output/pico-controller-steamvr-20261022-v1/`:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-input.tar.gz` | 45 | `233f960f8dd4883647207a507825dddbbdc59ab78f7c475af86b5bfb81088b93` |
+| `export-replay.tar.gz` | 20 | `40b595d468fee51c4744831ed8a612ab5dd3647d957e076dd9932ac5d85e7bb4` |
+
+Both archive inventories, member hashes and extracted bytes were verified.
+`analysis.json` summarizes the client observations. The tested driver SHA-256 is
+`eeb45594112e4de2a9194686a3d7ad5a980444208881d8232150e13401a4deac`;
+its build manifest matches every tracked build input. The diagnostics ran with
+ADSP/CDSP unbooted and closed audio devices. DMA allocations remained owned until
+SLPI was confirmed offline; MCU power references returned to zero. Full boot and
+DTBO readbacks still matched their pinned hashes. The headset returned to b1977
+stock with Wi-Fi off and the updater disabled, recorded in
+`stock-return-final.json`. No partitions were written.
+
+## Compositor and server setup
 
 The bundle also includes `compositor.conf`, an opt-in systemd drop-in for the
 compositor unit. At the documented runtime location `/opt/reframed-vr/steamvr`,

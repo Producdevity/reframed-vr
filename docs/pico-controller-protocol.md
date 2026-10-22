@@ -174,8 +174,10 @@ controller is still disconnected; its zero fields do not establish its
 connected settings. The read-only receipt is
 `output/pico-peripheral-integration-20261022-v1/stock-controller-connected.json`,
 SHA-256 `98678b9403989e1cca70a40b8d3c65053b20642a20c9dbb1f4bec6c88c3589b1`.
-This establishes stock configuration only; connected native reports, analog
-calibration, controller poses and SteamVR input still need validation.
+This establishes stock configuration only. Later native FastRPC captures
+validated connected input, followed by [SteamVR digital-input tests](pico-steamvr.md#native-controller-input-verification).
+Analog calibration, controller poses and default application bindings remain
+unverified.
 
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter
@@ -696,3 +698,25 @@ The private firmware, analysis, comparison runner and results are retained in
 startup and lifetime, physical station-driver operation, pairing, haptics and optical
 controller tracking remain unverified. This decoder establishes offline parsing
 compatibility, not a working physical controller driver or flash readiness.
+
+## Input transport to SteamVR
+
+`pico-controller-channel` is a separate 128-byte shared-memory input channel.
+It stores the latest decoded sample for each hand in two alternating slots.
+A single producer owns a new mapping and nonzero instance for its lifetime;
+restarting it requires a new file and instance. Atomic publication lets readers
+retain the last completed slot while the writer is preempted, with bounded
+retries if another publication occurs during a read.
+
+A producer validates complete reports with `pico_controller_decode` and supplies
+host `CLOCK_MONOTONIC` receipt times that increase per hand. The channel rejects
+unsupported hands/fields, duplicate or regressing times, and a writer already
+publishing. A reader binds the instance and hand, samples its clock after a
+consistent copy, and rejects inactive, future or stale data without changing
+its output. Disconnect clears activity while retaining the last receipt time.
+Receipt age does not establish capture latency or controller clock calibration.
+
+This module neither starts the MCU/DSP nor derives a controller pose. The native
+input diagnostic supplies records through the verified FastRPC path. Its
+production capture-owner integration and application bindings remain separate
+from this channel API. See [SteamVR input integration](pico-steamvr.md#optional-controller-input).
