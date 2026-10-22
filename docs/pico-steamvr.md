@@ -164,7 +164,11 @@ either service. See the verification record for exact results and limits.
 
 Compositor scheduling remains diagnostic. At the supported 587 MHz GPU operating
 point, sampled GPU work falls below the 120 Hz frame budget, but presentation
-pacing remains unresolved. The original GPU policy is restored after each test.
+pacing remains unresolved. An API trace identifies a blocking four-query read
+between each present submission and its present wait. Setting
+`disableLinuxWaitForPresent=true` does not suppress these waits on the measured
+direct-display path, even though OpenVR reads that setting successfully; it is
+not added to the template. The original GPU policy is restored after each test.
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.
 

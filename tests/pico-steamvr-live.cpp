@@ -46,6 +46,12 @@ int main(int argc,char **argv)
     char tracking[128]={0};vr::ETrackedPropertyError property=vr::TrackedProp_Success;
     system->GetStringTrackedDeviceProperty(0,vr::Prop_TrackingSystemName_String,tracking,sizeof(tracking),&property);
     if (property!=vr::TrackedProp_Success||std::strcmp(tracking,"reframed_pico")) {shutdown();return 5;}
+    auto *settings=static_cast<vr::IVRSettings *>(get(vr::IVRSettings_Version,&error));
+    if (settings&&error==vr::VRInitError_None) {
+        vr::EVRSettingsError setting_error=vr::VRSettingsError_None;
+        bool disabled=settings->GetBool("steamvr","disableLinuxWaitForPresent",&setting_error);
+        std::printf("PICO_STEAMVR_SETTINGS present_wait_disabled=%d error=%d\n",disabled,setting_error);
+    }
     vr::IVROverlay *overlay=nullptr;
     if (argc>=5) {
         auto *chaperone=static_cast<vr::IVRChaperone *>(get(vr::IVRChaperone_Version,&error));

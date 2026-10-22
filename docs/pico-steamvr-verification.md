@@ -448,3 +448,127 @@ in `output/pico-steamvr-session-20261022-v2/stock-return-final.json`.
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.
+
+### Present-wait setting and API-level measurement
+
+A fresh RAM boot compares `steamvr.disableLinuxWaitForPresent` as false, true,
+then false again. The kernel, patched gamescope Vulkan transport, 587 MHz GPU
+minimum, optical profile, freshness limits and ordinary scheduling are retained.
+Each 90-second run completes 2,249 head-camera sets, and camera, SLAM and IMU
+processes all exit zero. The original 305 MHz GPU minimum is restored each time.
+
+| Setting | Logged present-wait failures | Late valid / invalid poses | Median sampled compositor GPU time |
+| --- | --- | --- | --- |
+| false, first control | 49 | 2,000 / 0 | 6.760 ms |
+| true | 61 | 2,000 / 0 | 6.670 ms |
+| false, repeat control | 64 | 1,999 / 1 | 6.721 ms |
+
+All three compositor logs still report `Enabling eKHRPresentWait support!`.
+The repeat's one invalid pose is retained as a failure of loss-free acceptance.
+This comparison establishes no benefit from that setting on this path and does
+not justify adding it to the session template. It does not identify the cause
+of the variation in error counts.
+
+Valve documents the contingency setting in
+[SteamVR-for-Linux issue 948](https://github.com/ValveSoftware/SteamVR-for-Linux/issues/948).
+That report concerns an Index/RADV/DRM-lease stack, and its reporter subsequently
+retracts the setting as the cause of recovery. It supplies a supported option
+to test, not a diagnosis of this Neo3.
+
+The manifest-checked archives under
+`output/pico-steamvr-session-20261022-v3/` are:
+
+| Archive | SHA-256 |
+| --- | --- |
+| `export-present-enabled-a.tar.gz` | `52444dc194c787053b3e0d250de54367aea7e614eae44fd966461a311d91e3cd` |
+| `export-present-disabled.tar.gz` | `12a3f1acffeb57156d8e1f7125c4723a05138c32d4976fb3ec635d2c94278713` |
+| `export-present-enabled-b.tar.gz` | `dbcdfef1cc48306fc30dfe37a1491036d61549e1c886f9a5ceb59f00dd39e314` |
+
+A fourth bounded run adds a private, explicit Vulkan diagnostic layer only to
+`vrcompositor`. It records call arguments, monotonic entry/return times, present
+IDs and return codes, forwarding the calls unchanged. The loader chain first
+passes an offline ARM64 Lavapipe test with two instances and devices, including
+preserved fence timeout and success results. This follows Khronos's
+[loader/layer interface](https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderLayerInterface.md).
+The layer and VM harness remain private experiment artifacts, not installed
+runtime dependencies or part of the driver bundle.
+
+The maintained live probe now reads the setting through `IVRSettings`.
+On this run it reports `present_wait_disabled=1 error=0`; nevertheless the
+compositor's `CHmdWindowVulkanWSI` path makes 5,985 `vkWaitForPresentKHR` calls.
+All use a 15,000,000 ns timeout: 5,928 succeed and 57 return `VK_TIMEOUT`.
+Those 57 returns match the 57 compositor log failures. This directly establishes
+that reading the option as true does not disable these calls in this runtime.
+It does not establish why Valve handles this direct-display path differently.
+
+Between dashboard readiness and the late probe's end, the 24.772-second trace
+contains 1,800 swapchain present submissions, about 72.66 per second, and 2,972
+CRTC-0 vblank events. Submitted present IDs identify queued frames, unlike the
+earlier undifferentiated DRM callbacks; they still do not establish photon
+latency, clean lens output or physical motion acceptance. The trace records
+a median 6.653 ms from present return to entry into the wait for that present.
+This first trace alone does not identify what occupies that gap.
+Instrumentation overhead is not separately calibrated, so this is a diagnostic
+measurement rather than an uninstrumented performance benchmark.
+
+Camera, SLAM and IMU again exit zero. The late probe receives 2,000 valid poses
+and no invalid samples. The manifest-checked archive is
+`output/pico-steamvr-session-20261022-v3/export-present-api.tar.gz`, SHA-256
+`ee0970305b97db5203ced7d740572f2cabd5689cc1c18747f7561f93d789873d`.
+
+A second trace also records query-result, semaphore and idle waits, without
+changing their arguments or return values. Its 55,529 records stay below the
+200,000-record diagnostic limit. In the 24.823-second active window, each of
+the 1,799 present submissions is followed on the same render thread by
+`vkGetQueryPoolResults` for four queries with flags `3`:
+`VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT`. These calls take a median
+6.456 ms, 95th percentile 6.915 ms, totaling 11.366 seconds in that window.
+The present wait follows afterward. This identifies a host-blocking query read
+in the previously unmeasured gap; its precise internal purpose is not exposed
+by the trace. Calling it a GPU-timestamp read remains an inference rather than
+a recorded query-pool type.
+
+Khronos's [query-result contract](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetQueryPoolResults.html)
+requires the requested wait. Removing that flag or returning invented query
+results in a wrapper would change the application's synchronization semantics,
+so the diagnostic does neither. A correct pacing change must account for this
+serialization, rather than treating GPU duration alone as the complete frame
+budget. The trace establishes 72.47 submitted presents per second in that
+window, not an uninstrumented FPS result or proof of an unavoidable ceiling.
+
+The second trace contains 76 present-wait timeouts. Its camera, SLAM and IMU
+processes all exit zero, but its late check has 1,998 valid poses and two invalid
+samples. It is not accepted as loss-free tracking. The checked archive is
+`output/pico-steamvr-session-20261022-v3/export-present-sync.tar.gz`, SHA-256
+`1a73d7011b32cd41cd7ead1c8b84d156a638b417710d70979bca7a145090f8a7`.
+
+A final bounded comparison uses the kernel-advertised 90 Hz mode. A private copy
+of the optical profile changes only `screen.frame_interval_ns` from 8,333,333
+to 11,111,111; the session's `preferredRefreshRate` is also set to 90.
+The original profile is unchanged and the original session settings are restored
+afterward. The compositor selects `1920x3664@90.000008Hz`, and the trace measures
+89.999984 Hz vblank cadence. This verifies the requested hardware mode, rather
+than assuming the settings selected it.
+
+The 24.784-second active window contains 1,490 submitted presents, about 60.12
+per second. The four-query read still blocks for a median 6.323 ms. The full run
+has 14 present-wait timeouts; fewer logged failures therefore do not establish
+better throughput. All three capture components exit zero, with 2,249 camera
+sets and 2,000 valid late poses without invalid samples. The 90 Hz comparison is
+not adopted as a pacing fix. Its checked archive is
+`output/pico-steamvr-session-20261022-v3/export-present-90hz.tar.gz`, SHA-256
+`88372ece2fbffedce4711db2f41cf253c38b296f989f526fd6cf02de070eb615`.
+
+The updated driver bundle builds offline in the cached ARM64 container. All nine
+artifact hashes match its manifest, and the packaged live probe has the same
+SHA-256 as the probe that reads both true and false successfully on this Pico:
+`41a12ca6394f3856fb4fe5e5c8684f9ea0e23230644d6ad2c470f781227ffd72`.
+The output is `output/pico-steamvr-bundle-20261022-v3/`.
+
+After these RAM-only comparisons, the full BOOT and DTBO hashes still match the
+retained recovery inputs. All VR cgroups are empty; MCU references are zero,
+SLPI and CDSP are offline, and the GPU minimum is back at 305 MHz. Stock b1977
+returns at 2026-10-22 01:06:41 UTC with Wi-Fi off, updater disabled and
+`flash.locked=0`. The receipt is
+`output/pico-steamvr-session-20261022-v3/stock-return-final.json`.
+No partitions are written, and the Quest is untouched.
