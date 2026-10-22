@@ -303,7 +303,7 @@ calibration to the controller ring.
 
 The stock station parser also carries two raw controller IMU slots. The native
 `pico_controller_decode_imu` decoder preserves their signed gyroscope,
-accelerometer and temperature counts, sequence bytes, microsecond timestamps
+accelerometer and temperature counts, sequence and flag bytes, microsecond timestamps
 and separate station time. `pico_controller_decode_imu_ssc` accepts the existing
 SSC message 1024 payload and returns its accuracy separately. Both reject
 malformed records without changing caller outputs.
@@ -353,6 +353,34 @@ native reports are still required. The stock process multiplies controller
 sample timestamps by 1,000 before delivering Android events; this establishes
 the wire unit but does not establish an origin shared with the host or head IMU.
 Station time must not be substituted for capture time.
+
+The native [`pico-controller-motion`](../src/pico-controller-motion.h) conversion
+now reproduces the nine b1977 controller-tracker inputs: gyro, acceleration,
+temperature, flag bit 0 and the remaining flag bits. Temperature is converted
+through stock's double-precision division by `132.48`, addition of `25`, then
+float32 rounding. The six vector components preserve stock float32 rounding
+and signed zero before widening to double. A comparison against the retained
+stock-execution corpus passed all nine values for 10,368 records / 18,144
+samples. Host sanitizer checks also cover flag extraction, temperature limits
+and unchanged outputs on rejection. This applies stock's intermediate units
+and axis selection; the vendor tracker still owns factory calibration.
+
+A fresh native capture on 2026-10-22 established the timestamp mapping for the
+connected left controller on this unit: `timestamp_us * 1000` uses the CPU
+counter origin. Adding the measured CPU-counter-to-monotonic offset placed
+all 5,006 unique, CRC-valid samples between recorded head poses, with bracket
+widths of 0.973–0.977 ms. Receive age was 2.54 ms median and 20.60 ms maximum.
+Five unstable 100-byte records were excluded; none of the stable controller
+records failed CRC. Evidence is retained under
+`output/pico-controller-tracking-20261022-v1/` with archive and member hashes.
+
+`pico_controller_motion_time` accepts an explicitly calibrated CPU clock and
+adds one microsecond of quantization uncertainty. It rejects overflowing,
+future and old intervals. Callers must establish the clock relationship again
+after reset/resume/reconnect, enforce per-hand ordering and verify connection
+lifetime. This capture does not establish clocks for other units or firmware,
+or a valid controller pose. Its recorded controller-image window fell after
+the receive stream stopped, so it is not a synchronized optical-tracking test.
 
 ## Native SSC IMU reports
 

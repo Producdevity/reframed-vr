@@ -59,7 +59,7 @@ bool pico_controller_decode_ssc(const void *payload, size_t length,
 struct pico_controller_imu_sample {
     uint64_t timestamp_us;
     int16_t gyroscope[3], acceleration[3], temperature;
-    uint8_t hand, sequence;
+    uint8_t hand, sequence, flags;
 };
 
 struct pico_controller_imu_batch {
@@ -68,11 +68,11 @@ struct pico_controller_imu_batch {
     unsigned count;
 };
 
-/* Decode raw IMU counts from a complete b1977 station record. connected_mask
+/* Decode raw IMU counts and per-slot flags from a b1977 station record. connected_mask
  * uses bit 0 for left and bit 1 for right; MCU/radio types must be explicit.
  * Samples retain wire order. A valid packet may contain no nonzero timestamps.
- * Controller timestamps are microseconds, but their host-clock mapping is not
- * established. Station time has a separate, unresolved clock. No vector units, bias,
+ * Controller timestamps are microseconds; this decoder does not map their clock.
+ * Station time is preserved separately. No vector units, bias,
  * hardware axis reversal, freshness or pose are inferred; failure preserves batch. */
 bool pico_controller_decode_imu(const void *record, size_t length, unsigned mcu_type,
                                 unsigned radio_type, unsigned connected_mask,
