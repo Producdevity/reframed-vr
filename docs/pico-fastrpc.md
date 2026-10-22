@@ -220,7 +220,8 @@ five seconds into a fresh subscription. Its `BB 01 19` reply was captured and
 acknowledged. Records began immediately without starting the cameras: 1,734
 valid left-hand records arrived before delivery stopped about 3.4 seconds later.
 The MCU continued reporting increasing left-radio packet counts after the ring
-stopped, so controller sleep alone does not explain that stall.
+stopped. Those counters do not establish continuing controller motion reports;
+the later activity test below limits conclusions about sleep or idle behaviour.
 
 A third test combined that command with a concurrent head-accelerometer
 channel. It received 7,567 valid left-hand records continuously for the remaining
@@ -250,8 +251,50 @@ Additional v4 archives, verified with the same per-file manifest checks:
 | `export-pacing-accel.tar.gz` | 24 | `17591bd9367bf3a2ca9fd9974cb405e46569c0871f0f0c1174959c870d94d985` |
 
 The decoder receipts are `decode-camera-records.txt`, `decode-pacing-only.txt`
-and `decode-pacing-accel.txt`. The native source FastRPC wrapper and SteamVR
-integration still require a live test with this corrected startup sequence.
+and `decode-pacing-accel.txt`.
+
+### Native receive path and physical input
+
+The maintained native FastRPC wrapper subsequently received controller records
+with the same pacing request, a 1,000-byte controller ring and the concurrent
+head-accelerometer channel. Longer stationary captures stopped after about
+30 seconds of delivery. Starting head IMU or cameras, changing accelerometer
+startup order, and repeating the pacing request did not extend those stationary
+captures. At the transition, the DSP diagnostic trace stopped showing controller
+notifications and ISR callbacks without a logged SPI/CRC error in that interval.
+This narrows the observation to incoming delivery; it does not prove a DSP fault.
+
+During a user-operated movement/button test, the unchanged receiver accepted
+**27,794 CRC-valid left-controller records over 54.904193 seconds**, continuing
+to the end of the 60-second capture after pacing began at five seconds.
+The maintained key decoder accepted every record. Recorded input included
+X/Y, menu, stick click, trigger and grip changes, plus the five touch fields.
+Trigger, grip and both stick bytes each reached 0 and 255. The replay counted
+82 button-state changes. These endpoints do not establish axis direction,
+center, dead zones or pose calibration.
+
+This supports activity-dependent idle behaviour as an explanation for the
+longer stationary captures. It does **not** establish the exact sleep mechanism,
+recovery after a previously idle stream, or the cause of the shorter pacing-only
+stall. A missing polling call is not supported by the stock tracking library:
+its active reader waits on `/dev/stationdev`, while its loaded low-latency RPC
+entry points omit `sns_low_lat_stream_poll`.
+
+The receiver retained both DMA allocations until SLPI was confirmed `OFFLINE`.
+MCU power references returned to zero; audio and compute DSPs remained unbooted.
+The recovery timer returned the headset to b1977 stock firmware with Wi-Fi off
+and the updater disabled. The final readback request missed that timer, so this
+run has no new post-test full partition readback; it performed no partition
+writes. Controller pose and live SteamVR input remain unverified.
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-transition.tar.gz` | 59 | `92c2bf11f707a0fc85743806016004d8c4c6b39bcb80887efdc66b70bcec4485` |
+| `export-motion.tar.gz` | 47 | `8def996497dfa2300dceed61423813522a246537d2988a426c2a0a5e21926e74` |
+
+Both archives are in the same v4 evidence directory. Their inventories, every
+member hash and extracted bytes were rechecked. Physical-input analysis is in
+`export-motion/analysis.json`; stock return is in `stock-return-final.json`.
 
 ## Offline root installation
 

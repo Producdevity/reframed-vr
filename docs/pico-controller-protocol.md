@@ -31,8 +31,11 @@ That ordinary SSC route is distinct from the active b1977 tracking reader's
 period `100000` microseconds, flags `0` and sensor handle `1`. Acknowledged
 480 Hz SSC requests do not establish operation of that path. The
 [physical module-loading check](pico-fastrpc.md#physical-controller-module-loading)
-now verifies its source wrapper's channel lifecycle; controller records and
-SteamVR input remain unverified.
+verifies its source wrapper's channel lifecycle. The subsequent
+[physical input capture](pico-fastrpc.md#native-receive-path-and-physical-input)
+validated 27,794 left-controller records with button, touch and analog changes
+through the native FastRPC path. This does not validate the ordinary SSC route,
+controller pose or SteamVR input.
 
 The outer event timestamp at offset `0x10` uses SSC ticks multiplied by
 `52.083333333333336`, plus an offset measured from Android elapsed real time and
