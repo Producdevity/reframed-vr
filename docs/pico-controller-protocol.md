@@ -910,7 +910,7 @@ recorded separately in the [SteamVR test notes](pico-steamvr.md).
 [`pico-controller-head`](../src/pico-controller-head.h) owns a bounded history
 of 512 raw b1977 head results. Its caller serializes access and supplies the
 current generation, monotonic time and measured timestamp uncertainty. It
-requires 20 consecutive state-1/confidence-1 results with no vendor error,
+requires 20 consecutive state-1/confidence-1 results,
 matching the stock head-history startup threshold. A tracking loss or excessive
 head gap clears readiness; malformed or regressing input stops that generation.
 
@@ -921,8 +921,14 @@ the output buffers. There is no extrapolation, identity fallback, image-type
 mutation or head-to-eye transform. Stop invalidates the history permanently.
 
 ASan/UBSan host tests and a device-denied Bionic unit harness on the Pico cover
-startup, wraparound, duplicates, uncertainty boundaries, loss/error recovery,
+startup, wraparound, duplicates, uncertainty boundaries, tracking-loss recovery,
 regressions and stop. A recorded-time check brackets 5,005 of 5,006 retained
 controller samples; one awaits a later head result. This is a recording replay,
 not evidence of live callback arrival order or a SteamVR controller pose.
 Evidence: `output/pico-controller-integration-20261023-v1/`.
+
+The vendor field at `0x44` is preserved without interpretation, as in the head
+pose converter. The recording contains consecutive tracked head results with
+value `0x200`; treating every nonzero value as a fatal error incorrectly empties
+the history. A replay reproduced that refusal, and the regression test retains
+the exact status bytes through matching. This field is not a readiness gate.

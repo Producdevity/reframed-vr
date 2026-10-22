@@ -70,7 +70,7 @@ int pico_controller_head_push(struct pico_controller_head *h, uint64_t generatio
         return fail(h, -EPROTO);
     if (result.timestamp_ns < h->last_time) return fail(h, -EPROTO);
     if (result.timestamp_ns == h->last_time) {
-        if (result.state != 1 || result.confidence != 1 || result.error) {
+        if (result.state != 1 || result.confidence != 1) {
             h->count = 0;
             return 0;
         }
@@ -80,7 +80,7 @@ int pico_controller_head_push(struct pico_controller_head *h, uint64_t generatio
     }
     if (h->last_time && result.timestamp_ns - h->last_time > h->max_gap) h->count = 0;
     h->last_time = result.timestamp_ns;
-    if (result.state != 1 || result.confidence != 1 || result.error) {
+    if (result.state != 1 || result.confidence != 1) {
         h->count = 0;
         return 0;
     }

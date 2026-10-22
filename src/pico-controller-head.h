@@ -14,7 +14,9 @@ struct pico_controller_head;
  * Twenty consecutive tracked results are required after startup or tracking
  * loss. Match copies the last result before and first result after the input's
  * entire uncertainty interval. No identity fallback, interpolation, prediction,
- * image-type mutation or head extrinsic is applied. All times are monotonic. */
+ * image-type mutation or head extrinsic is applied. The vendor status field at
+ * 0x44 remains opaque: tracked b1977 results also contain 0x200. All times are
+ * monotonic. */
 struct pico_controller_head *pico_controller_head_create(uint64_t generation,
     int64_t max_age_ns, int64_t max_gap_ns);
 

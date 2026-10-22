@@ -98,18 +98,17 @@ int main(void)
     unchanged(h, (struct ssc_timestamp){base + 50500000, 100}, now, -EAGAIN);
     assert(pico_controller_head_match(h, 7, (struct ssc_timestamp){base + 590500000, 100}, now, a, a) == -EINVAL);
     result(raw, 600, true);
-    raw[0x44] = 1;
-    assert(pico_controller_head_push(h, 7, raw, sizeof(raw), 20, now + 1000) == 0);
-    unchanged(h, (struct ssc_timestamp){base + 590500000, 100}, now + 1000, -EAGAIN);
+    raw[0x45] = 2;
+    assert(pico_controller_head_push(h, 7, raw, sizeof(raw), 20, now + 1000) == 1);
+    assert(!pico_controller_head_match(h, 7, (struct ssc_timestamp){base + 599500000, 100}, now + 1000, a, b));
+    assert(!memcmp(b, raw, sizeof(raw)));
     for (unsigned i = 601; i <= 620; ++i) {
         result(raw, i, true);
         assert(pico_controller_head_push(h, 7, raw, sizeof(raw), 20, base + i * period + 1000)
-               == (i == 620));
+               == 1);
     }
-    raw[0x44] = 1;
     now = base + 620 * period + 1000;
-    assert(pico_controller_head_push(h, 7, raw, sizeof(raw), 20, now) == 0);
-    unchanged(h, (struct ssc_timestamp){base + 615500000, 100}, now, -EAGAIN);
+    assert(pico_controller_head_push(h, 7, raw, sizeof(raw), 20, now) == -EALREADY);
     pico_controller_head_stop(h);
     unchanged(h, (struct ssc_timestamp){base + 590500000, 100}, now, -ESHUTDOWN);
     pico_controller_head_destroy(h);
