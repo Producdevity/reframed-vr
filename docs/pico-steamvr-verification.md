@@ -661,7 +661,7 @@ photon latency and simplified/achromatic shader settings are not imported.
 Facet scanout contains the Steam login UI in both distorted eye buffers; the
 CPU copy is not proven coherent or optically correct.
 
-Facet is not adopted: `GetTimeSinceLastVsync` returns true and an advancing
+At this stage, Facet was not adopted: `GetTimeSinceLastVsync` returns true and an advancing
 counter, but its sampled age is 506–526 seconds, matching device monotonic uptime
 rather than time since vblank. Both legacy controls return millisecond ages.
 A private experiment reports real timestamps from the vendor kernel's read-only
@@ -671,15 +671,15 @@ adding explicit driver-vsync ownership leaves five of 20 invalid. Thus neither
 workaround is accepted. The first also has one invalid late pose; the ownership
 comparison has 2,000 valid poses and none invalid. All three capture components
 exit zero in both. Their tracked driver changes are removed; rejected sources,
-build manifests and binaries remain private. Competing timestamp updates are a
-hypothesis, not an established cause.
+build manifests and binaries remain private. Competing timestamp updates were a
+hypothesis; the subsequent ABI investigation below identifies the missing time output.
 
 A separate comparison enables Frame's `renderSystemLayerInDistortPass` option
 on the legacy renderer. The compositor reaches startup and then dies with
 SIGSEGV, confirmed by its unit journal and core-dump record. A missing monitor
 log also interrupts the private failure collector; this run is not accepted as
 a successful tracking or timing test. Its trace, journal, dump and stopped-state
-evidence are retained. The session template explicitly pins both renderer
+evidence are retained. For this control, the session template pinned both renderer
 options false rather than relying on runtime defaults.
 
 The manifest-checked archives below are under
@@ -722,3 +722,106 @@ GPU minimum is restored to 305 MHz before reboot. At 2026-10-22 02:05:28 UTC,
 stock b1977 returns with Wi-Fi off, updater disabled and `flash.locked=0`.
 The receipt is `output/pico-steamvr-session-20261022-v4/stock-return-final.json`.
 No firmware partitions are flashed; the Quest is untouched.
+
+### Frame counter ABI and pose read order
+
+A fresh 2026-10-22 RAM session identifies the Facet uptime-age fault in the
+retained ARM64 compositor, SHA-256
+`9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`.
+Its `PostVsyncEvent` requests private swapchain counter `0x7ffffffd` into a
+zero-initialized two-word output. Original Mesa writes only the sequence and
+returns success. The compositor subtracts the unwritten zero timestamp from
+CLOCK_MONOTONIC. API tracing confirms the private argument; disassembly confirms
+the two outputs and subtraction. Valve's official Frame Mesa independently
+confirms the paired DRM query, as recorded in the
+[Turnip ABI description](turnip.md#frame-compositor-counter-timing).
+
+A private guard-only comparison rejects the unsupported counter and forces the
+compositor's public-counter fallback. It removes uptime-sized ages, but its
+sampled timestamps differ from the same reported kernel counter by 47–485
+microseconds. Turnip patch 0015 instead implements the verified pair behind
+`MESA_VK_WSI_FRAME_COUNTER_TIMING=1`, scoped to the compositor. In two native
+captures, the absolute sampled discrepancy is at most 7.1 and 8.1 microseconds.
+This compares the timestamp of the **reported sequence** against kernel ftrace
+and brackets the client call with CLOCK_MONOTONIC reads; comparing against the
+latest kernel sequence would incorrectly count one-cycle notification delay as
+timestamp error. There are 20 matched samples per capture, not continuous
+microsecond-accuracy proof.
+
+The occasional invalid pose has a separate verified cause. The old reader
+sampled time before copying the channel. A concurrent writer could then publish
+between those operations, making valid current data appear to come from the
+future. A deterministic interleaving reproduces it. An instrumented old-order
+native control records 13 future-time rejections and nine contention rejections
+by its late observation point. The corrected driver samples time after a
+coherent copy, preserves all freshness/generation checks and bounds live retries
+at 64 without sleeping. It exposes read-only reason counters through
+`pose-read-stats`; failed reads still return invalid tracking.
+
+All four 90-second captures below consume 2,249 synchronized camera sets and
+return zero from camera, vendor SLAM and IMU. Each late 100 Hz client receives
+2,000 valid poses and none invalid. Counter failures below mean unavailable,
+non-finite, negative or greater-than-two-period ages. The last two runs no longer
+show the original zero-timestamp fault in sampled records, but their aggregate
+age checks do not classify each residual failure. Some sampled client counters
+are one vblank behind the latest kernel sequence.
+
+| Configuration | Submitted presents/sec | Invalid late vsync ages / 2,000 | Driver future / busy reads at late probe |
+| --- | ---: | ---: | ---: |
+| Original Mesa, instrumented old-order reader | 90.25 | 2,000 | 13 / 9 |
+| Guard-only fallback, old-order reader | 89.79 | 13 | 3 / 5 |
+| Paired counter, clock-after-copy reader | 97.60 | 8 | 0 / 4 |
+| Same paired configuration, fresh-generation repeat | 104.27 | 10 | 0 / 1 |
+
+These present rates cover the marked approximately 25-second instrumented
+window, not physical FPS. Kernel vblank remains 120 Hz. Both paired runs have
+zero failed present waits in that active window, with two earlier startup
+failures each. Median sampled compositor GPU time is 6.220 and 6.106 ms.
+The first paired run's four busy reads occur before its late 20-second client
+check; the repeat gains one busy read during that check. The 100 Hz client can
+miss short invalid publications by the faster driver. Thus the future-time race
+is fixed, but loss-free tracking and sustained 120 Hz presentation remain open.
+No stale-pose fallback is introduced.
+
+The tested paired Mesa has SHA-256
+`1e14b9b9390e30227ef787f6516c464c85565cda3a35091dd095a78b16e72c5e`.
+The final rebuild `output/mesa/pico-frame-counter-20261022-v3/` produces the same
+library and passes twelve helper suites plus five Freedreno tests. Before the
+capture, native GPU interop and four 4 MiB cross-exec buffer-sharing cases pass:
+binary and timeline OPAQUE_FD, each with exportable and import-only receivers.
+The tested driver has SHA-256
+`2b3f2c937390e966bde8561c78e5664e39a7b8ede1a74fb0f8f26e3bbe86e22c`;
+the timing/pose probe has SHA-256
+`16d7a09304af17aafcaad173f8faeddecc72591bf35583ee87d9afd5a080d5a3`.
+The instrumented old-order control is retained privately, SHA-256
+`267c63e6e46e54f9b283c91c11860e36c238d30a7118e95d5fc9712db2d5f3b4`.
+It is not the original shipping binary and is not packaged as the candidate.
+
+The manifest-checked archives are in
+`output/pico-steamvr-session-20261022-v5/`:
+
+| Archive | SHA-256 |
+| --- | --- |
+| `export-facet-baseline.tar.gz` | `e6f56acbab3332c0be470c012414d854b35f1544846b22045bd6107af7aafa64` |
+| `export-facet-counter-fallback.tar.gz` | `7b2632642b634afc1cc8683125872df0e07d53a990bdfff3e8d50282d8150f60` |
+| `export-facet-paired-clock.tar.gz` | `6d319b61b323cdb9af124afc92f30af9da2398d426b65f9656751dafd2d7c7cf` |
+| `export-facet-paired-repeat.tar.gz` | `34028dd55132c9103a83951f51a84b28981b3efb4db861ee95a34402fdc67c65` |
+
+The first paired run's hash-checked XR24 scanout contains Steam's login form in
+both distorted eye buffers. Its read-only synchronized CPU copy is not proven
+coherent or optically correct. Clean lens output, measured motion scale/direction
+and sustained compositor pacing remain separate acceptance gates.
+
+The final `output/pico-steamvr-bundle-20261022-v6/` manifest matches all nine
+artifacts and 20 source hashes. Its driver and probe are byte-identical to the
+native-tested candidate. The opt-in session template now selects Facet and the
+compositor drop-in enables paired counter timing; the layer option stays off.
+The host optical-profile and pose/channel sanitizer suites also pass.
+
+Full BOOT and DTBO readbacks still match the retained recovery backups. All VR
+cgroups are empty, MCU references are zero, CDSP/SLPI report `OFFLINE` and the
+GPU minimum is restored to 305 MHz before normal reboot. At 2026-10-22 05:43:33
+UTC, stock b1977 returns under a new boot UUID with Wi-Fi off, updater disabled
+and `flash.locked=0`. The receipt is
+`output/pico-steamvr-session-20261022-v5/stock-return-final.json`.
+No firmware partitions are flashed; the Quest remains untouched.

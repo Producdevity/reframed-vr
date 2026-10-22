@@ -609,6 +609,19 @@ callback cannot publish into or stop the replacement generation. Readers reject
 stale, future, malformed and clock-uncertain samples without returning an old
 pose as tracked.
 
+Live SteamVR reads copy a coherent channel snapshot before sampling the reader's
+monotonic clock. Sampling time first can falsely reject a publication made
+between the clock read and the copy as future data. The live reader makes at
+most 64 snapshot attempts without sleeping; the fixed-time replay API retains
+its four-attempt bound. Neither path caches a successful pose on failure.
+`pose-read-stats` is a read-only OpenVR driver debug request that distinguishes
+contention, inactive generation, future time, stale data and malformed data.
+Native controls reproduced the clock-order failure; two corrected runs had no
+future-time rejections but retained four and one contention rejections at the
+late observation point. Their 100 Hz clients each received 2,000 valid late
+poses, which does not establish loss-free publication by the faster driver.
+See the [timing and pose verification](pico-steamvr-verification.md#frame-counter-abi-and-pose-read-order).
+
 `pico-steamvr-pose` converts that channel into the actual OpenVR `DriverPose_t`.
 It carries the capture age in `poseTimeOffset`, maps quaternion component order,
 and supplies no invented height, neck model, velocity or prediction. The input

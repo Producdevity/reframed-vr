@@ -47,11 +47,12 @@ Neo3 calibration and pose conventions are established separately.
 Register the resulting `reframed_pico` directory in the session's OpenVR path
 registry and copy the template to that session's configuration directory. It
 selects `reframed_pico`, Valve's asynchronous Vulkan path and 120 Hz. It disables
-the Frame sensor driver and motion smoothing. It explicitly selects the tested
-legacy renderer and disables `renderSystemLayerInDistortPass`: the measured
-Facet path has invalid client vsync ages, and the layer option crashes the legacy
-compositor. These settings are specific to the retained runtime and Neo3 path;
-Frame's renderer settings are not interchangeable defaults. Provide all of:
+the Frame sensor driver and motion smoothing. It selects Facet with the paired
+counter timing support in Turnip patch 0015 and disables
+`renderSystemLayerInDistortPass`. The layer option crashed the legacy compositor
+and remains unvalidated on Facet. These settings are specific to the retained
+runtime and Neo3 path; Frame's renderer settings are not interchangeable defaults.
+Provide all of:
 
 | Environment variable | Required value |
 | --- | --- |
@@ -78,6 +79,13 @@ The drop-in also carries the tested diagnostic scheduling policy:
 `RestrictRealtime=yes`. These avoid the observed SDL realtime-limit termination;
 they do not constitute a finished low-latency scheduling profile. Transient
 launches need the same properties and environment explicitly.
+
+The compositor drop-in also sets `MESA_VK_WSI_FRAME_COUNTER_TIMING=1`. It requires
+Turnip patch 0015 from this tree: the retained Frame compositor requests a private
+two-word vblank counter/time pair. Unpatched Mesa reports success after writing
+only the counter, causing uptime-sized vsync ages. Keep this opt-in scoped to
+the compositor; the public Vulkan counter remains a one-word output. See the
+[ABI and evidence](turnip.md#frame-compositor-counter-timing).
 
 The compatibility approach follows Florian Reintgen's
 [PicoFrame change `dd8a402`](https://github.com/TheReal-Flo/PicoFrame/commit/dd8a402ba14d67d58f0b9d13ced61c3f169b8e33),
@@ -178,14 +186,23 @@ second. The compositor's lower cadence therefore needs investigation with its
 actual rendering and scheduling workload; the query read alone is not proven
 to explain it.
 
-The subsequent legacy/Facet/legacy comparison raises submitted presents from
-66–72 to about 103 per second at the same bounded 587 MHz request, while exposing
-the Facet client-timing failure. That candidate and two ineffective driver-vsync
-workarounds are not adopted. The physical probe now records renderer selection,
-GPU/CPU timing phases and vsync age/counter, and checks vsync age at its 100 Hz
-sampling rate. Its `PICO_STEAMVR_VSYNC_RESULT` counts unavailable, non-finite,
-negative or greater-than-two-period ages as invalid. These diagnostics do not
-change its pose/dashboard exit criteria or establish physical display cadence.
+The legacy/Facet/legacy comparison raised submitted presents from 66–72 to about
+103 per second while exposing a private counter ABI mismatch. Turnip patch 0015
+fixes that mismatch. Two subsequent Facet runs submit about 98 and 104 presents
+per second; sampled timestamps match the reported kernel vblank sequence within
+9 microseconds. The template selects this corrected path. Some client counters
+lag the latest kernel vblank, and 8 and 10 of 2,000 age checks still fail. These
+aggregate checks do not distinguish every failure reason. The physical
+probe records renderer selection, timing phases, vsync age/counter and a bracketed
+read-only kernel timestamp. `PICO_STEAMVR_VSYNC_RESULT` counts unavailable,
+non-finite, negative or greater-than-two-period ages as invalid. These diagnostics
+do not change its pose/dashboard exit criteria or establish physical display FPS.
+
+The live pose reader now samples time after copying the channel, preventing a
+concurrent publication from being mistaken for future data. Both corrected runs
+receive 2,000 valid late client poses and no future-time driver rejections.
+Bounded snapshot contention still produces occasional invalid driver reads;
+the slower client can miss those. No old pose is substituted on failure.
 
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.

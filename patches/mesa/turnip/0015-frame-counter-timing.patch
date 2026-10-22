@@ -1,0 +1,45 @@
+From: Reframed VR contributors
+Subject: [PATCH] wsi/display: opt in to Frame paired vblank counters
+
+The retained Valve Frame compositor and official Frame Mesa agree on a private
+0x7ffffffd query returning two uint64_t values: sequence and monotonic DRM time.
+Support that observed ABI only with MESA_VK_WSI_FRAME_COUNTER_TIMING=1. Use one
+DRM query for the pair, leave outputs untouched on failure, and reject other
+unsupported counters rather than reporting partial success. Standard vblank
+queries retain their existing behavior. The public Vulkan API is unchanged.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -4534,6 +4534,13 @@
+                            VkSurfaceCounterFlagBitsEXT counter,
+                            uint64_t *pCounterValue)
+ {
++   const char *option = getenv("MESA_VK_WSI_FRAME_COUNTER_TIMING");
++   /* Frame's private query returns sequence, then CLOCK_MONOTONIC nanoseconds. */
++   bool timing = counter == (VkSurfaceCounterFlagBitsEXT)0x7ffffffd &&
++                 option && !strcmp(option, "1");
++   if (counter != VK_SURFACE_COUNTER_VBLANK_BIT_EXT && !timing)
++      return VK_ERROR_UNKNOWN;
++
+    VK_FROM_HANDLE(vk_device, device, _device);
+    struct wsi_device *wsi_device = device->physical->wsi_device;
+    struct wsi_display *wsi =
+@@ -4547,7 +4554,18 @@
+       return VK_ERROR_INITIALIZATION_FAILED;
+ 
+    if (!connector->active) {
++      if (timing)
++         return VK_ERROR_UNKNOWN;
+       *pCounterValue = 0;
++      return VK_SUCCESS;
++   }
++
++   if (timing) {
++      uint64_t values[2] = {0};
++      if (drmCrtcGetSequence(wsi->fd, connector->crtc_id, &values[0], &values[1]) ||
++          !values[1])
++         return VK_ERROR_UNKNOWN;
++      memcpy(pCounterValue, values, sizeof(values));
+       return VK_SUCCESS;
+    }
+ 

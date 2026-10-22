@@ -194,6 +194,18 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "display-refresh-under-test.h"),
                 "executable_sha256": digest(output / "mesa-display-refresh-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/mesa-display-counter-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-counter-tests.log", timeout=120)
+            report["display_counter_tests"] = {
+                "status": "passed",
+                "scope": "actual WSI counter dispatch; modeled DRM queries and output bounds",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-counter-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-counter-tests.c"),
+                "helpers_sha256": digest(output / "display-counter-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-counter-tests"),
+            }
+
             run([sys.executable, str(ROOT / "tests/mesa-display-master-tests.py"),
                  str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
                 "mesa-display-master-tests.log", timeout=120)
