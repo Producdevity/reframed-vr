@@ -1,5 +1,7 @@
 import importlib.util
+import math
 from pathlib import Path
+import struct
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -181,3 +183,92 @@ class PicoControllerMotionConfigTests(unittest.TestCase):
         for reply in cases:
             with self.subTest(reply=reply), self.assertRaises(ValueError):
                 CONFIG.motion_status(reply)
+
+    def calibration_replies(self):
+        for path, digest in CONFIG.MOTION_LIBRARIES:
+            self.replies[('sha256sum', path)] = digest + '  ' + path
+        self.replies[('service', 'call', 'PicoStation-new', '19')] = status_reply()
+        self.replies[('service', 'call', 'PicoStation-new', '12', 'i32', '1')] = calibration_reply()
+
+    def test_complete_cached_calibration(self):
+        self.calibration_replies()
+        report = CONFIG.collect(self.read, calibration_hand='left')
+        result = report['calibration']
+        self.assertEqual(result['source'], 'stock_service_cache')
+        self.assertEqual(result['hand'], 'left')
+        self.assertEqual(result['generation'], 0)
+        self.assertEqual({k: len(v) for k, v in result['sections'].items()},
+                         {'imu': 24, 'ir': 48, 'imu_ir': 7})
+        self.assertEqual(len(result['raw_cv3_hex']), 1320)
+        self.assertEqual(self.commands.count(('service', 'call', 'PicoStation-new', '12', 'i32', '1')), 2)
+        inline = calibration_reply().removesuffix('\n)') + ')'
+        self.assertEqual(CONFIG.calibration(inline), CONFIG.calibration(calibration_reply()))
+
+    def test_calibration_flags_counts_generation_and_finiteness(self):
+        raw = calibration_raw()
+        for offset, value in [(0, 1), (4, 0), (8, 48), (204, 0), (208, 60),
+                              (596, 0), (600, -1)]:
+            changed = bytearray(raw)
+            struct.pack_into('<i', changed, offset, value)
+            with self.subTest(offset=offset), self.assertRaises(ValueError):
+                CONFIG.calibration(calibration_reply(changed))
+        for offset in (12, 212, 604):
+            for value in (math.nan, math.inf, -math.inf):
+                changed = bytearray(raw)
+                struct.pack_into('<f', changed, offset, value)
+                with self.subTest(offset=offset, value=value), self.assertRaises(ValueError):
+                    CONFIG.calibration(calibration_reply(changed))
+
+    def test_calibration_failed_getter_and_framing(self):
+        valid = calibration_reply()
+        for header in ((1, 0, 1, 14), (0, 1, 1, 14), (0, 0, 0, 14), (0, 0, 1, 18)):
+            with self.subTest(header=header), self.assertRaises(ValueError):
+                CONFIG.calibration(calibration_reply(header=header))
+        for text in (valid + ')', valid + 'extra', valid.replace('0x00000010', '0x00000000'),
+                     valid.replace('0000000e ', '', 1),
+                     valid.replace("'................'", "'fake'\n0x00000000: 00000000", 1),
+                     '\n'.join(valid.splitlines()[:-2]) + '\n)'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                CONFIG.calibration(text)
+
+    def test_calibration_cache_or_station_change_refuses(self):
+        self.calibration_replies()
+        changed = calibration_raw()
+        struct.pack_into('<f', changed, 12, 2.0)
+        key = ('service', 'call', 'PicoStation-new', '12', 'i32', '1')
+        self.replies[key] = [calibration_reply(), calibration_reply(changed)]
+        with self.assertRaisesRegex(ValueError, 'calibration changed'):
+            CONFIG.collect(self.read, calibration_hand='left')
+        self.calibration_replies()
+        status = bytearray.fromhex(CONFIG.motion_status(status_reply())['raw_status_hex'])
+        status[20] ^= 1
+        self.replies[('service', 'call', 'PicoStation-new', '19')] = [status_reply(), status_reply(status)]
+        with self.assertRaisesRegex(ValueError, 'station record changed'):
+            CONFIG.collect(self.read, calibration_hand='left')
+
+    def test_calibration_explicit_hand_only(self):
+        with self.assertRaises(ValueError):
+            CONFIG.collect(self.read, calibration_hand='both')
+        self.assertEqual(self.commands, [])
+        self.calibration_replies()
+        self.replies[('service', 'call', 'PicoStation-new', '12', 'i32', '2')] = calibration_reply()
+        self.assertEqual(CONFIG.collect(self.read, calibration_hand='right')['calibration']['hand'], 'right')
+        self.assertNotIn(('service', 'call', 'PicoStation-new', '12', 'i32', '1'), self.commands)
+
+
+def calibration_raw():
+    raw = bytearray(660)
+    for offset, count in ((4, 24), (204, 48), (596, 7)):
+        struct.pack_into('<ii', raw, offset, 1, count)
+        struct.pack_into('<' + str(count) + 'f', raw, offset + 8, *([1.0] * count))
+    return raw
+
+
+def calibration_reply(raw=None, header=(0, 0, 1, 14)):
+    raw = calibration_raw() if raw is None else raw
+    words = list(header) + list(struct.unpack('<165I', raw))
+    lines = ['Result: Parcel(']
+    for start in range(0, len(words), 4):
+        lines.append('  0x%08x: %s  %r' %
+                     (start * 4, ' '.join('%08x' % v for v in words[start:start + 4]), '................'))
+    return '\n'.join(lines + [')'])

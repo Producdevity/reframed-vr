@@ -179,6 +179,43 @@ validated connected input, followed by [SteamVR digital-input tests](pico-steamv
 Analog calibration and controller poses remain unverified. Digital defaults are
 described in [SteamVR bindings](pico-steamvr.md#digital-default-bindings).
 
+### Cached controller tracking calibration
+
+The optional `--calibration-hand left|right` collector reads stock station
+transaction 12 twice for the selected hand. The hash-pinned b1977 getter copies
+its cached 660-byte `CV3_calibration_t`; it does not wake, pair or reconfigure
+the controller. The collector requires successful type-14 parcel replies,
+Neo3 generation 0, complete valid IMU/IR/IMU-to-IR sections with 24/48/7 floats,
+and finite active coefficients. Both calibration replies, both complete station
+status records, firmware identity and boot ID must remain consistent. Calibration
+failure leaves the report marked failed. Coefficients and device identifiers
+belong in ignored evidence, outside Git.
+
+```sh
+python3 tools/pico-controller-config.py --serial DEVICE_SERIAL \
+  --calibration-hand left --output output/NEW_CONTROLLER_CALIBRATION.json
+```
+
+A live read on 2026-10-22 passes with the left controller disconnected and a
+complete cached calibration. The raw calibration SHA-256 is
+`cf95d29f6109bad3f9a13d0d93d124cfa94f017f1915fe9f03545f69b14a773b`;
+the receipt is `output/pico-vsync-controller-20261022-v1/stock-controller-calibration-verified.json`.
+Nineteen collector tests pass, including incomplete sections, nonfinite values,
+failed getters, changed calibration and changed station records. A cached
+calibration does not establish a currently connected controller or a valid pose.
+
+[PicoFrame's controller-tracking research](https://github.com/TheReal-Flo/PicoFrame/blob/3affbc11ecaae56c56b7bd3eb13344c73a7a03da/research/ctrltrack/README.md)
+provided the reference for finding this cache and tracker interface. Its PICO 4
+5.13.7 adapter cannot be copied unchanged: b1977's
+`ControllerSlam::updateCalib` appends only gyro range, accelerometer range and
+protocol after the three sections. That makes 85 floats for a complete Neo3
+calibration; the newer PicoFrame adapter appends six metadata values. The Neo3
+also exports the corresponding controller init, calibration, IMU-with-head and
+image-with-head entry points. These library and adapter checks establish an
+integration path, not live optical controller tracking. Controller LED images,
+capture-clock mapping, head-pose matching and the SteamVR controller pose remain
+to be connected and verified.
+
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter
 returns 1; an empty property must not be interpreted as disabled. The MCU type
