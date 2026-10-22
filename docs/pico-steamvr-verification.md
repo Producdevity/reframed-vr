@@ -624,3 +624,101 @@ Complete BOOT/DTBO hashes still match the retained inputs. At 2026-10-22 01:20:4
 UTC, stock b1977 returns with Wi-Fi off, updater disabled and `flash.locked=0`,
 recorded in `output/pico-present-bench-20261022-v1/stock-return-final.json`.
 No partitions are written and the Quest remains untouched.
+
+
+### Renderer comparison and client vsync timing
+
+A 2026-10-22 legacy/Facet/legacy comparison uses the same native compositor,
+120 Hz optical profile, patched gamescope Vulkan transport, ordinary scheduling
+and bounded 587 MHz GPU minimum. Each complete capture lasts 90 seconds; the
+rates below cover the approximately 25-second marked dashboard/probe window.
+They count submitted present IDs under instrumentation, not physical FPS.
+The private diagnostic now records query-pool creation: all observed pools are
+`VK_QUERY_TYPE_TIMESTAMP` (2), confirming the query type that the earlier trace
+could only infer.
+
+| Renderer | Submitted presents/sec | Median sampled GPU time | Median four-query wait |
+| --- | ---: | ---: | ---: |
+| Legacy control | 66.42 | 6.883 ms | 6.552 ms |
+| Facet candidate | 102.54 | 6.189 ms | 0.000989 ms |
+| Legacy repeat | 71.56 | 6.758 ms | 6.453 ms |
+
+All three consume 2,249 camera sets, return zero from camera, SLAM and IMU
+processes, and receive 2,000 valid late poses without invalid samples. Kernel
+vblank remains approximately 120 Hz. Every traced swapchain-counter read matches
+the latest kernel CRTC-0 sequence. Facet's active-window present waits all
+succeed; the two legacy windows have seven and ten timeouts respectively.
+This identifies a faster renderer path, without proving the blocking query read
+alone explains the difference.
+
+The renderer choice comes from Valve's retained Frame runtime resource
+`drivers/frame_hmd/resources/frame_hmd_additional.vrsettings`, SHA-256
+`c3d5351b1f15c1f39a75fbcd419fadeb9b362737de54e2d8cf9f54aa2335df12`.
+The unchanged compositor has SHA-256
+`9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`.
+Only `useFacetRenderer` changes in the initial comparison. Frame's optics,
+photon latency and simplified/achromatic shader settings are not imported.
+Facet scanout contains the Steam login UI in both distorted eye buffers; the
+CPU copy is not proven coherent or optically correct.
+
+Facet is not adopted: `GetTimeSinceLastVsync` returns true and an advancing
+counter, but its sampled age is 506–526 seconds, matching device monotonic uptime
+rather than time since vblank. Both legacy controls return millisecond ages.
+A private experiment reports real timestamps from the vendor kernel's read-only
+CRTC-0 `vsync_event` attribute through OpenVR driver notifications. It does not
+open a DRM node or acquire master. Two of 20 sampled ages still return uptime;
+adding explicit driver-vsync ownership leaves five of 20 invalid. Thus neither
+workaround is accepted. The first also has one invalid late pose; the ownership
+comparison has 2,000 valid poses and none invalid. All three capture components
+exit zero in both. Their tracked driver changes are removed; rejected sources,
+build manifests and binaries remain private. Competing timestamp updates are a
+hypothesis, not an established cause.
+
+A separate comparison enables Frame's `renderSystemLayerInDistortPass` option
+on the legacy renderer. The compositor reaches startup and then dies with
+SIGSEGV, confirmed by its unit journal and core-dump record. A missing monitor
+log also interrupts the private failure collector; this run is not accepted as
+a successful tracking or timing test. Its trace, journal, dump and stopped-state
+evidence are retained. The session template explicitly pins both renderer
+options false rather than relying on runtime defaults.
+
+The manifest-checked archives below are under
+`output/pico-steamvr-session-20261022-v4/`:
+
+| Archive | SHA-256 |
+| --- | --- |
+| `export-legacy-control.tar.gz` | `ef5260781c38b5a547525587e22a06a8a982eb1814100e438dc5c76cf28cec97` |
+| `export-facet-candidate.tar.gz` | `a00608d94efc0eddc972700383c96082f06dfee54001160539d446f81cbc787a` |
+| `export-legacy-repeat.tar.gz` | `f957aef7127ca7ce26a03b2e8dfecd77db708d7278c362f1c0abbeee199e32e1` |
+| `export-facet-vsync.tar.gz` | `bc8fcc2adc9a44cab73f3be1cf53932f40eb66b24a3d4df2675cb5157c96fd6d` |
+| `export-facet-vsync-owner.tar.gz` | `ac6e780a5c6e1ee368ebc01c90be6f679d0a89ae06cb8a133b8059b8e0dff9f8` |
+| `export-legacy-fused.tar.gz` | `6e465cc7885ca3aae5f0240b8312c70636abd4f104422a3f1c843e8f6cf977d2` |
+
+
+With the layer option disabled again, the clean driver and denser probe complete
+another 90-second capture. The control submits 72.74 presents/sec in its marked
+window, with median GPU time 6.594 ms and a 6.397 ms four-query wait. Its 2,000
+vsync-age samples contain zero invalid values against the two-period bound
+(16.667 ms). The named Steam dashboard is active and visible. Tracking has
+1,999 valid poses and one invalid sample, so this is not accepted as loss-free
+tracking; camera, SLAM and IMU nevertheless all exit zero. Disabling the layer
+option removes the observed startup crash in this control; its exact failing
+internal resource remains unidentified.
+
+The final archive is `export-legacy-dense-control.tar.gz`, SHA-256
+`b75f6815a73e61fb9dac003ca699f11a05b02d279ef4df22c68ed14bfb898532`.
+The clean ARM64 bundle is `output/pico-steamvr-bundle-20261022-v5/`; all nine
+artifact hashes match its manifest. Its driver and live probe are byte-identical
+to the final control's binaries. The probe has SHA-256
+`e3c95f5fcdcab9ca0e3f0336ff3aea055947c6a12dbfdc0ab6f9842223a2d805`.
+Host ASan/UBSan optical-profile and pose tests also pass. The diagnostic adds
+renderer, timing-phase and dense vsync-age reporting without changing the
+existing pose/dashboard exit criteria. Physical motion, clean lens output and
+sustained frame pacing remain separate acceptance gates.
+
+Complete BOOT/DTBO readbacks still match the retained recovery inputs. All VR
+cgroups are empty, MCU references are zero, CDSP/SLPI report `OFFLINE`, and the
+GPU minimum is restored to 305 MHz before reboot. At 2026-10-22 02:05:28 UTC,
+stock b1977 returns with Wi-Fi off, updater disabled and `flash.locked=0`.
+The receipt is `output/pico-steamvr-session-20261022-v4/stock-return-final.json`.
+No firmware partitions are flashed; the Quest is untouched.

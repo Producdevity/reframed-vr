@@ -47,7 +47,11 @@ Neo3 calibration and pose conventions are established separately.
 Register the resulting `reframed_pico` directory in the session's OpenVR path
 registry and copy the template to that session's configuration directory. It
 selects `reframed_pico`, Valve's asynchronous Vulkan path and 120 Hz. It disables
-the Frame sensor driver and motion smoothing. Provide all of:
+the Frame sensor driver and motion smoothing. It explicitly selects the tested
+legacy renderer and disables `renderSystemLayerInDistortPass`: the measured
+Facet path has invalid client vsync ages, and the layer option crashes the legacy
+compositor. These settings are specific to the retained runtime and Neo3 path;
+Frame's renderer settings are not interchangeable defaults. Provide all of:
 
 | Environment variable | Required value |
 | --- | --- |
@@ -173,6 +177,16 @@ A separate light direct-display test completes approximately 120 presents per
 second. The compositor's lower cadence therefore needs investigation with its
 actual rendering and scheduling workload; the query read alone is not proven
 to explain it.
+
+The subsequent legacy/Facet/legacy comparison raises submitted presents from
+66–72 to about 103 per second at the same bounded 587 MHz request, while exposing
+the Facet client-timing failure. That candidate and two ineffective driver-vsync
+workarounds are not adopted. The physical probe now records renderer selection,
+GPU/CPU timing phases and vsync age/counter, and checks vsync age at its 100 Hz
+sampling rate. Its `PICO_STEAMVR_VSYNC_RESULT` counts unavailable, non-finite,
+negative or greater-than-two-period ages as invalid. These diagnostics do not
+change its pose/dashboard exit criteria or establish physical display cadence.
+
 Measured physical motion, clean lens output, controls and sustained performance
 are still acceptance gates. Nothing installs or enables the driver automatically.
 

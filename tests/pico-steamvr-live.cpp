@@ -51,6 +51,9 @@ int main(int argc,char **argv)
         vr::EVRSettingsError setting_error=vr::VRSettingsError_None;
         bool disabled=settings->GetBool("steamvr","disableLinuxWaitForPresent",&setting_error);
         std::printf("PICO_STEAMVR_SETTINGS present_wait_disabled=%d error=%d\n",disabled,setting_error);
+        setting_error=vr::VRSettingsError_None;
+        bool facet=settings->GetBool("steamvr","useFacetRenderer",&setting_error);
+        std::printf("PICO_STEAMVR_RENDERER_SETTING use_facet=%d error=%d\n",facet,setting_error);
     }
     vr::IVROverlay *overlay=nullptr;
     if (argc>=5) {
@@ -76,6 +79,10 @@ int main(int argc,char **argv)
     };
     stats("begin");
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
+    unsigned vsync_samples=0,vsync_invalid=0;
+    property=vr::TrackedProp_Success;
+    float refresh=system->GetFloatTrackedDeviceProperty(0,vr::Prop_DisplayFrequency_Float,&property);
+    double max_vsync_age=property==vr::TrackedProp_Success&&std::isfinite(refresh)&&refresh>0?2.0/refresh:0;
     for (long i=0;i<seconds*100;++i) {
         vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount]{};
         system->GetDeviceToAbsoluteTrackingPose(vr::TrackingUniverseRawAndUncalibrated,0,poses,vr::k_unMaxTrackedDeviceCount);
@@ -90,17 +97,30 @@ int main(int argc,char **argv)
             }
             max_distance=std::fmax(max_distance,std::sqrt(distance));++valid;
         } else ++invalid;
+        float since_vsync=0;uint64_t vsync_counter=0;bool vsync_available=false;
+        if (compositor) {
+            vsync_available=system->GetTimeSinceLastVsync(&since_vsync,&vsync_counter);
+            ++vsync_samples;
+            if (!vsync_available || !std::isfinite(since_vsync) || since_vsync<0 ||
+                max_vsync_age<=0 || since_vsync>max_vsync_age) ++vsync_invalid;
+        }
         if (compositor&&i%100==0) {
             vr::Compositor_FrameTiming timing{};timing.m_nSize=sizeof(timing);
             bool available=compositor->GetFrameTiming(&timing,1);
-            std::printf("PICO_STEAMVR_FRAME_TIMING available=%d index=%u system_s=%.9f presents=%u mispresented=%u dropped=%u compositor_gpu_ms=%.6f compositor_cpu_ms=%.6f wait_present_cpu_ms=%.6f\n",
+            std::printf("PICO_STEAMVR_FRAME_TIMING available=%d index=%u system_s=%.9f presents=%u mispresented=%u dropped=%u compositor_gpu_ms=%.6f compositor_cpu_ms=%.6f wait_present_cpu_ms=%.6f compositor_idle_cpu_ms=%.6f render_start_ms=%.6f update_start_ms=%.6f update_end_ms=%.6f vsync_ready=%u vsync_first_view=%u vsync_available=%d since_vsync_s=%.9f vsync_counter=%llu\n",
                         available,timing.m_nFrameIndex,timing.m_flSystemTimeInSeconds,
                         timing.m_nNumFramePresents,timing.m_nNumMisPresented,timing.m_nNumDroppedFrames,
-                        timing.m_flCompositorRenderGpuMs,timing.m_flCompositorRenderCpuMs,timing.m_flWaitForPresentCpuMs);
+                        timing.m_flCompositorRenderGpuMs,timing.m_flCompositorRenderCpuMs,timing.m_flWaitForPresentCpuMs,
+                        timing.m_flCompositorIdleCpuMs,timing.m_flCompositorRenderStartMs,
+                        timing.m_flCompositorUpdateStartMs,timing.m_flCompositorUpdateEndMs,
+                        timing.m_nNumVSyncsReadyForUse,timing.m_nNumVSyncsToFirstView,
+                        vsync_available,since_vsync,static_cast<unsigned long long>(vsync_counter));
         }
         usleep(10000);
     }
     stats("end");
+    if (compositor) std::printf("PICO_STEAMVR_VSYNC_RESULT samples=%u invalid=%u max_age_s=%.9f\n",
+                                vsync_samples,vsync_invalid,max_vsync_age);
     bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
     if (overlay) {
         std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);

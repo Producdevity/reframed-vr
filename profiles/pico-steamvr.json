@@ -5,6 +5,8 @@
     "requireHmd": true,
     "enableHomeApp": false,
     "enableLinuxVulkanAsync": true,
+    "useFacetRenderer": false,
+    "renderSystemLayerInDistortPass": false,
     "motionSmoothing": false,
     "startCompositorFromAppLaunch": false,
     "preferredRefreshRate": 120.0
