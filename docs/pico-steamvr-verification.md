@@ -311,6 +311,44 @@ as a verified fix. The manifest-checked archive is
 `output/pico-steamvr-session-20261022-v1/export-cef-software.tar.gz`
 (SHA-256 `846c23c57c392a66fe39b2ddce0cb447fcc0a6fad28171581cf91c253a5675b0`).
 
+The next comparison isolates stale gamescope shared-memory uploads. X11 window
+pixels contain the login form, and the focused window is Steam Big Picture
+(`STEAM_GAME=769`). The Wayland trace shows repeated 1280×800 `wl_shm` buffer
+reuse. In gamescope 3.16.29, `import_commit()` memoizes the uploaded snapshot by
+buffer identity, even when the next commit supplies new pixels. The local
+[patch](../patches/gamescope/README.md) retains DMA-BUF memoization and uploads
+each shared-memory commit into a new texture, preserving in-flight ownership.
+
+Both the control and candidate use the same Fedora source, compiler,
+dependencies and Meson configuration. The unmodified rebuild still shows the
+loading logo; the patched rebuild renders Steam's login form into the distorted
+stereo scanout. The early native buffer has SHA-256
+`3bc999029bab24bda9cf1a4ee0d3d8ec6339bfcdbe9a056ded4398208f630913`.
+Later in that candidate run the physical probe receives 2,000 valid head poses
+without invalid samples, but CEF diagnostic capture times out. This closes the
+isolated stale-image failure, not the complete session's stability or input
+acceptance. The binary/source hashes and license notices accompany the patch.
+The manifest-checked control and candidate archives are respectively:
+
+- `output/pico-steamvr-session-20261022-v2/export-control.tar.gz`, SHA-256
+  `f13edc4b3c40a88033843c419ca74d4d5f95199c03ca342e554bb436b946c3c5`.
+- `output/pico-steamvr-session-20261022-v2/export-shm-ready-result.tar.gz`, SHA-256
+  `62143791e4d1a4c8a1ee15d8a189a9c18d5bce541dde993dd10ea1129c2197d3`.
+
+A subsequent run omits CEF debugging. It receives another 2,000 valid head poses,
+then the vendor feed stops with `ENOBUFS` after 69,930 matched IMU pairs. Its
+32-sample IMU pairing limit is exhausted; the camera queue has one pending set
+against a limit of eight. After subtracting 708 startup discards and twice the
+pair count, the consumed-record counter identifies the 33rd unpaired input.
+The ring has overwritten that failed record by export time, so its exact values
+are unavailable. The surviving matching gyro burst supports batched sensor
+delivery. Both before/after input captures are grey: input delivery succeeds,
+but the intended toggle's rendered effect is unverified. The wrapper's zero
+exit status is not acceptance: the SLAM consumer exits 4 and camera helper 1.
+The manifest-checked archive is
+`output/pico-steamvr-session-20261022-v2/export-shm-ui.tar.gz`, SHA-256
+`ca19bc64b225364bd828fa5c17b95f47568852b2b7ed216b5a18f400dce64df8`.
+
 Clean lens output, measured motion scale/direction, sustained compositor timing
 and usable Steam UI remain hardware acceptance steps. The default configuration
 remains disabled until explicitly supplied.

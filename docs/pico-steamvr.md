@@ -137,6 +137,14 @@ and an explicit dashboard selection; process startup alone does not show the UI.
 The monitor uses the compatible Frame Qt 5.15 bundle. Both DMA planes and the DRM
 timeline backport are required by the measured configuration.
 
+Presenting the subsequent Linux login form also requires the opt-in
+[gamescope shared-memory upload patch](../patches/gamescope/README.md) on the
+measured Xwayland software path. An unmodified source rebuild remains on the
+loading logo while the patched build puts the login form into stereo scanout.
+The diagnostic client uses `-cef-disable-gpu` for its browser; Valve's compositor
+remains GPU accelerated. This browser workaround alone does not fix stale
+presentation, and it is not the final graphics-performance configuration.
+
 Compositor scheduling remains diagnostic. At the supported 587 MHz GPU operating
 point, sampled GPU work falls below the 120 Hz frame budget, but presentation
 pacing remains unresolved. The original GPU policy is restored after each test.
