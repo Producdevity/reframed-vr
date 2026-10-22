@@ -110,6 +110,18 @@ class PicoControllerMotionConfigTests(unittest.TestCase):
         self.assertEqual(len(report['motion_status'][0]['raw_status_hex']), 192)
         self.assertEqual(self.commands.count(('service', 'call', 'PicoStation-new', '19')), 2)
 
+    def test_inline_parcel_terminator(self):
+        separate = status_reply()
+        inline = separate.removesuffix('\n)') + ')'
+        self.assertEqual(CONFIG.motion_status(inline), CONFIG.motion_status(separate))
+        self.replies[('service', 'call', 'PicoStation-new', '19')] = inline
+        report = CONFIG.collect(self.read, include_motion_status=True)
+        self.assertEqual(report['motion_status'][0], report['motion_status'][1])
+        for malformed in (inline + ')', inline + '\n)', inline + 'extra',
+                          inline.replace('0x00000060', '0x00000050')):
+            with self.subTest(reply=malformed), self.assertRaises(ValueError):
+                CONFIG.motion_status(malformed)
+
     def test_status_not_requested_by_default(self):
         report = CONFIG.collect(self.read)
         self.assertNotIn('motion_status', report)

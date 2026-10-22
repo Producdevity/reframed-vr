@@ -139,8 +139,18 @@ observed code behavior; they do not establish a particular controller model.
 Disconnected status cannot establish a connected controller's calibration.
 The collector does not install these values, convert motion samples or enable
 controller poses. Native execution of the stock serializer and deserializer
-and 256 comparisons with the collector pass offline. Transaction access and
-actual controller settings still require a capture on the device.
+and 256 comparisons with the collector pass offline. Connected-controller
+settings still require a capture on the device.
+
+The 2026-10-22 physical b1977 capture prints the final Parcel terminator on the
+last data row. The reader accepts that form and the separate terminator line,
+while still requiring exactly seven addressed rows, a successful header and
+two complete 48-byte records. Fourteen host tests and two live snapshots pass.
+This unit reports MCU type 1, radio type 2 and touch enabled, with both
+controllers disconnected. The zero motion-setting bytes in that state do not
+establish connected-controller calibration. The failed original read and
+successful receipts are retained in
+`output/pico-steamvr-session-20261022-v8/stock-controller-config*.json`.
 
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter

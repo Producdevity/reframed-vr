@@ -26,6 +26,9 @@ MOTION_LIBRARIES = (
 
 def motion_status(text):
     lines = text.strip().splitlines()
+    if len(lines) == 8 and lines[-1].endswith(')'):
+        lines[-1] = lines[-1][:-1]
+        lines.append(')')
     if len(lines) != 9 or lines[0] != 'Result: Parcel(' or lines[-1] != ')':
         raise ValueError('Unexpected controller status reply')
     words = []
