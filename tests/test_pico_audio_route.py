@@ -100,6 +100,74 @@ class AudioRouteTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'hash-pinned'):
                 audio.speaker_route(path)
 
+    def test_ucm_applies_and_disables_route_before_fallback_restoration(self):
+        mixer, report, calls = Mixer(), {}, []
+        controls = self.controls
+        class Manager:
+            def __init__(self, alsa, directory):
+                self.alsa = alsa
+                self.asserted_config = (directory / 'PicoNeo3ProEye/HiFi.conf').read_text()
+            def set(self, key, value):
+                calls.append((key, value))
+                if key == '_enadev':
+                    for c in controls:
+                        self.alsa.value(c, c['target'])
+                elif key == '_disdev':
+                    for c in reversed(controls):
+                        self.alsa.value(c, c['numid'] * 10)
+            def close(self):
+                calls.append(('close', ''))
+            def get(self, key): return 'hw:konamtpsndcard,0'
+        def play(_):
+            self.assertEqual(mixer.state, {1: 1, 2: 1, 3: 1})
+        with tempfile.TemporaryDirectory() as tmp, patch.object(audio, 'UseCase', Manager):
+            audio.ucm_transaction(mixer, controls, Path(tmp) / 'ucm2', play, report)
+        self.assertEqual(calls, [('_verb', 'HiFi'), ('_enadev', 'Speaker'),
+                                 ('_disdev', 'Speaker'), ('_verb', 'Inactive'), ('close', '')])
+        self.assertTrue(report['ucm_enabled'] and report['ucm_disable_restored'])
+        self.assertEqual(mixer.state, {1: 10, 2: 20, 3: 30})
+
+    def test_partial_ucm_enable_failure_restores_the_complete_snapshot(self):
+        mixer, report = Mixer(), {}
+        class Manager:
+            def __init__(self, alsa, directory): self.alsa = alsa
+            def set(self, key, value):
+                if key == '_enadev':
+                    self.alsa.state[1] = 1
+                    raise OSError('UCM failed part way through route')
+            def close(self): pass
+            def get(self, key): return 'hw:konamtpsndcard,0'
+        with tempfile.TemporaryDirectory() as tmp, patch.object(audio, 'UseCase', Manager):
+            with self.assertRaisesRegex(OSError, 'part way'):
+                audio.ucm_transaction(mixer, self.controls, Path(tmp) / 'ucm2', lambda _: self.fail(), report)
+        self.assertEqual(mixer.state, {1: 10, 2: 20, 3: 30})
+        self.assertEqual(mixer.restored, [3, 2, 1])
+
+    def test_ucm_disable_mismatch_fails_and_fallback_restores_values(self):
+        mixer, report = Mixer(), {}
+        controls = self.controls
+        class Manager:
+            def __init__(self, alsa, directory): self.alsa = alsa
+            def set(self, key, value):
+                if key == '_enadev':
+                    for c in controls:self.alsa.value(c, c['target'])
+            def close(self): pass
+            def get(self, key): return 'hw:konamtpsndcard,0'
+        with tempfile.TemporaryDirectory() as tmp, patch.object(audio, 'UseCase', Manager):
+            with self.assertRaisesRegex(ValueError, 'disable readback'):
+                audio.ucm_transaction(mixer, controls, Path(tmp) / 'ucm2', lambda _: None, report)
+        self.assertEqual(mixer.state, {1: 10, 2: 20, 3: 30})
+
+    def test_ucm_sequences_contain_only_numeric_controls_and_reverse_snapshot(self):
+        originals = [(c, c['numid'] * 10) for c in self.controls]
+        text = audio.ucm_configuration(originals)['PicoNeo3ProEye/HiFi.conf']
+        self.assertIn('cset "numid=1,iface=MIXER 1"', text)
+        self.assertLess(text.index('cset "numid=3,iface=MIXER 30"'), text.index('cset "numid=1,iface=MIXER 10"'))
+        for original in [[], [originals[0], originals[0]], [({'numid': 0, 'target': 1}, 0)],
+                         [({'numid': 1, 'target': '1" exec bad'}, 0)]]:
+            with self.subTest(original=original), self.assertRaises(ValueError):
+                audio.ucm_configuration(original)
+
     def test_pcm_geometry_bounds_and_period_alignment(self):
         self.assertEqual(audio.pcm_geometry(8192, 1024), 48128)
         self.assertEqual(audio.pcm_geometry(2400, 600), 48000)

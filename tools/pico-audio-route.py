@@ -220,34 +220,151 @@ class Alsa:
                 self.check(self.lib.snd_pcm_close(pcm))
 
 
+def restore_controls(alsa, originals, report):
+    restored = []
+    old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+    try:
+        for control, old in reversed(originals):
+            try:
+                alsa.value(control, old)
+                if alsa.value(control) != old:
+                    raise ValueError('Restore readback differs')
+                restored.append({'numid': control['numid'], 'restored': True})
+            except Exception as error:
+                restored.append({'numid': control['numid'], 'restored': False, 'error': str(error)})
+        report['rollback'] = restored
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
+    if any(not item['restored'] for item in restored):
+        raise RuntimeError('Audio mixer rollback incomplete')
+
+
 def transaction(alsa, controls, play, report):
     originals = [(control, alsa.value(control)) for control in controls]
     report['originals'] = [{'numid': c['numid'], 'value': v} for c, v in originals]
-    attempted, restored = [], []
+    attempted = []
     try:
         for control, old in originals:
             attempted.append((control, old))
             alsa.value(control, control['target'])
-            actual = alsa.value(control)
-            if actual != control['target']:
-                raise ValueError(f"Mixer write readback differs: {control['name']} expected={control['target']} actual={actual}")
+            if alsa.value(control) != control['target']:
+                raise ValueError('Mixer write readback differs: ' + control['name'])
         play(report)
     finally:
-        old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+        restore_controls(alsa, attempted, report)
+
+
+def ucm_configuration(originals):
+    if not originals or len({c['numid'] for c, _ in originals}) != len(originals):
+        raise ValueError('UCM needs distinct mixer controls')
+    for control, old in originals:
+        values = [control['numid'], control['target'], old]
+        if any(type(v) is not int or not 0 <= v <= 0x7fffffff for v in values) or not control['numid']:
+            raise ValueError('UCM requires bounded numeric mixer values')
+    # ALSA's numid parser consumes through the next comma, including whitespace.
+    enable = '\n'.join(f'        cset "numid={c["numid"]},iface=MIXER {c["target"]}"' for c, _ in originals)
+    disable = '\n'.join(f'        cset "numid={c["numid"]},iface=MIXER {old}"' for c, old in reversed(originals))
+    return {
+        'ucm.conf': 'Syntax 4\nUseCasePath.pico { Directory "PicoNeo3ProEye" File "PicoNeo3ProEye.conf" }\n',
+        'PicoNeo3ProEye/PicoNeo3ProEye.conf': 'Syntax 4\nSectionUseCase."HiFi" { File "HiFi.conf" Comment "Neo3 muted speaker diagnostic" }\n',
+        'PicoNeo3ProEye/HiFi.conf': '''SectionVerb { Value { TQ "HiFi" } }
+SectionDevice."Speaker" {
+    Comment "Neo3 speaker route with digital mute held"
+    EnableSequence [
+        cdev "hw:${CardId}"
+''' + enable + '''
+    ]
+    DisableSequence [
+        cdev "hw:${CardId}"
+''' + disable + '''
+    ]
+    Value {
+        PlaybackPCM "hw:${CardId},0"
+        PlaybackChannels 2
+        PlaybackRate 48000
+        PlaybackPriority 100
+    }
+}
+''',
+    }
+
+
+class UseCase:
+    def __init__(self, alsa, directory):
+        self.alsa, self.handle = alsa, C.c_void_p()
+        self.previous = os.environ.get('ALSA_CONFIG_UCM2')
+        for name, arguments in {
+            'snd_use_case_mgr_open': [C.POINTER(C.c_void_p), C.c_char_p],
+            'snd_use_case_set': [C.c_void_p, C.c_char_p, C.c_char_p],
+            'snd_use_case_get': [C.c_void_p, C.c_char_p, C.POINTER(C.c_char_p)],
+            'snd_use_case_mgr_close': [C.c_void_p],
+        }.items():
+            function = getattr(alsa.lib, name)
+            function.argtypes, function.restype = arguments, C.c_int
+        os.environ['ALSA_CONFIG_UCM2'] = str(directory)
         try:
-            for control, old in reversed(attempted):
-                try:
-                    alsa.value(control, old)
-                    if alsa.value(control) != old:
-                        raise ValueError('Restore readback differs')
-                    restored.append({'numid': control['numid'], 'restored': True})
-                except Exception as error:
-                    restored.append({'numid': control['numid'], 'restored': False, 'error': str(error)})
-            report['rollback'] = restored
+            alsa.check(alsa.lib.snd_use_case_mgr_open(C.byref(self.handle), b'hw:0'))
+        except BaseException:
+            self.restore_environment()
+            raise
+
+    def restore_environment(self):
+        if self.previous is None:
+            os.environ.pop('ALSA_CONFIG_UCM2', None)
+        else:
+            os.environ['ALSA_CONFIG_UCM2'] = self.previous
+
+    def set(self, key, value):
+        self.alsa.check(self.alsa.lib.snd_use_case_set(self.handle, key.encode(), value.encode()))
+
+    def get(self, key):
+        value = C.c_char_p()
+        self.alsa.check(self.alsa.lib.snd_use_case_get(self.handle, key.encode(), C.byref(value)))
+        try:
+            return value.value.decode()
         finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
-        if any(not item['restored'] for item in restored):
-            raise RuntimeError('Audio mixer rollback incomplete')
+            free = C.CDLL(None).free
+            free.argtypes, free.restype = [C.c_void_p], None
+            free(C.cast(value, C.c_void_p))
+
+    def close(self):
+        try:
+            self.alsa.check(self.alsa.lib.snd_use_case_mgr_close(self.handle))
+        finally:
+            self.restore_environment()
+
+
+def ucm_transaction(alsa, controls, directory, play, report):
+    originals = [(control, alsa.value(control)) for control in controls]
+    report['originals'] = [{'numid': c['numid'], 'value': v} for c, v in originals]
+    directory.mkdir(mode=0o700)
+    for name, content in ucm_configuration(originals).items():
+        path = directory / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(content)
+    manager = None
+    try:
+        manager = UseCase(alsa, directory)
+        manager.set('_verb', 'HiFi')
+        manager.set('_enadev', 'Speaker')
+        if any(alsa.value(c) != c['target'] for c in controls):
+            raise ValueError('UCM enable readback differs')
+        report['ucm_enabled'] = True
+        report['ucm_playback_pcm'] = manager.get('PlaybackPCM/Speaker')
+        if report['ucm_playback_pcm'] != 'hw:konamtpsndcard,0':
+            raise ValueError('UCM selected an unexpected playback PCM')
+        play(report)
+        manager.set('_disdev', 'Speaker')
+        if any(alsa.value(c) != old for c, old in originals):
+            raise ValueError('UCM disable readback differs')
+        report['ucm_disable_restored'] = True
+        manager.set('_verb', 'Inactive')
+    finally:
+        try:
+            if manager:
+                manager.close()
+        finally:
+            restore_controls(alsa, originals, report)
 
 
 def main():
@@ -256,7 +373,9 @@ def main():
     parser.add_argument('--boot-id', required=True)
     parser.add_argument('--mixer-xml', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
-    parser.add_argument('--test-silence', action='store_true')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--test-silence', action='store_true')
+    mode.add_argument('--test-ucm', action='store_true', help='test generated per-session UCM enable/playback/disable')
     args = parser.parse_args()
     if platform.system() != 'Linux' or platform.machine() != 'aarch64' or os.geteuid() != 0:
         parser.error('Requires native ARM64 Linux root')
@@ -272,7 +391,8 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
     report = {'status': 'started', 'boot_id': args.boot_id, 'mixer_sha256': MIXER_SHA256,
               'source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-              'test_silence': args.test_silence, 'audible_output_verified': False}
+              'test_silence': args.test_silence, 'test_ucm': args.test_ucm,
+              'audible_output_verified': False}
     def interrupted(number, frame):
         raise KeyboardInterrupt('Interrupted by signal ' + str(number))
     signal.signal(signal.SIGTERM, interrupted)
@@ -288,12 +408,16 @@ def main():
         alsa = Alsa()
         controls = [alsa.resolve(name, value) for name, value in operations]
         report['controls'] = controls
-        if args.test_silence:
+        if args.test_silence or args.test_ucm:
             statuses = list(Path('/proc/asound/card0').glob('pcm*/sub*/status'))
             if not statuses or any(p.read_text().strip() != 'closed' for p in statuses):
                 raise ValueError('Requires an idle sound card owned by this diagnostic session')
-            transaction(alsa, controls, alsa.silence, report)
-        report['status'] = 'silent-pcm-passed' if args.test_silence else 'preflight-passed'
+            if args.test_ucm:
+                ucm_transaction(alsa, controls, args.output / 'ucm2', alsa.silence, report)
+            else:
+                transaction(alsa, controls, alsa.silence, report)
+        report['status'] = ('ucm-silent-pcm-passed' if args.test_ucm else
+                            'silent-pcm-passed' if args.test_silence else 'preflight-passed')
     except BaseException as error:
         report.update(status='failed', error=str(error))
         raise

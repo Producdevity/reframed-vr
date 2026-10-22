@@ -152,10 +152,12 @@ python3 tools/pico-audio-route.py \
   --output /tmp/NEW_AUDIO_PREFLIGHT
 ```
 
-Add `--test-silence` for the bounded muted test. The tool does not start ADSP,
+Add `--test-silence` for the bounded muted test, or `--test-ucm` for the
+per-session UCM enable/playback/disable test described below. These switches
+are mutually exclusive. The tool does not start ADSP,
 install routes globally, unmute the speakers or capture microphone audio.
-Nine host tests cover rollback, deferred termination, full-period writes,
-drain completion and input refusal.
+Thirteen host tests cover rollback, deferred termination, full-period writes,
+drain completion, input refusal and UCM failure/restoration paths.
 
 Private HAL/XML selection evidence is retained in
 `output/pico-audio-routing-20261022-v1/`. Additional verified carriers:
@@ -189,7 +191,8 @@ Container validation establishes private PipeWire IPC, an explicitly linked
 silent client and a responding PulseAudio compatibility server. The physical
 test uses the same private libraries under a bounded systemd unit, while the
 existing diagnostic owns the speaker route and both digital mutes. Links are
-created explicitly; no UCM or WirePlumber policy is installed. The private
+created explicitly in that earlier test; no UCM or WirePlumber policy is installed
+by it. The private
 root-only socket uses the documented
 [`access.legacy` mode](https://github.com/PipeWire/pipewire/blob/1.6.8/src/modules/module-access.c).
 That access policy is specific to this diagnostic, not a desktop-session policy.
@@ -241,10 +244,72 @@ all 130 member hashes verify. The tested session script SHA-256 is
 The ADSP owner releases cleanly, full BOOT/DTBO readbacks remain unchanged,
 and stock b1977 returns with Wi-Fi off and the updater disabled.
 
+## Per-session UCM and Steam-user routing
+
+The optional `--test-ucm` mode generates a private UCM configuration from the
+same 21 resolved controls and their live original values. It enables the `HiFi`
+verb and `Speaker` device, verifies every applied value, and requires the
+selected PCM to be `hw:konamtpsndcard,0`. After playback it disables the device,
+verifies that UCM restored the originals, and sets the verb inactive. An
+independent reverse-order restoration still runs if enabling, playback,
+disabling or manager cleanup fails. Both digital mutes remain held throughout
+the test. These snapshots are per-session data, not portable mixer defaults.
+
+The first physical attempt failed before playback because ALSA's numeric-ID
+parser consumed the following value as part of the ID. The generated sequences
+now delimit it explicitly, for example `numid=205,iface=MIXER 1`, matching the
+[ALSA control parser](https://github.com/alsa-project/alsa-lib/blob/master/src/control/ctlparse.c).
+All 21 original values were restored after that failure. The corrected test
+completed 48,000 silent frames, with matching completed hardware/application
+pointers, successful UCM disable and full fallback readback.
+
+The candidate session configuration is maintained in
+[`system/pico/audio`](../system/pico/audio/):
+
+- `pipewire.conf.in` retains the physically verified PCM and graph timing and
+  accepts the UCM-selected PCM in `@PLAYBACK_PCM@` as a quoted configuration
+  string. It exposes a single static `ReframedPicoSpeaker` sink.
+- `client.conf` provides the private PipeWire client configuration.
+- `wireplumber.conf.d/50-reframed-pico.conf` defines a `pico` policy profile for
+  default-node selection and stream linking. It does not enumerate audio,
+  Bluetooth or camera hardware; the root UCM owner selects the route, and the
+  static sink owns playback PCM.
+
+These files are opt-in templates, not installed services. The tested deployment
+uses Frame's private PipeWire 1.6.8 and WirePlumber `0.5.14-1.3` with their
+matching configuration, modules and dependencies. The expanded selected-file
+manifest contains 275 files, totaling 29,567,966 bytes, from the same verified
+repair image. The retained library prefix is selected explicitly; host or
+system libraries are not replaced.
+
+The physical test starts PipeWire, WirePlumber and a normal PulseAudio `pacat`
+client as Steam's `vr` user, UID/GID 1000, with supplementary `audio` group 63.
+Their private runtime directory has mode 0700. The root UCM owner holds the
+route separately. WirePlumber selects `ReframedPicoSpeaker` as the default sink
+and creates both active stereo links without an explicit target or manual
+link command. The client submits 480,000 zero-valued frames over ten seconds.
+Observed hardware progress is 462,600 frames, monotonic, with no captured ALSA
+XRUN state or PipeWire `XRun!` message. The actual hardware parameters are
+MMAP_INTERLEAVED, stereo S16_LE, 48 kHz, 600-frame periods and a 2,400-frame
+buffer. UCM disable restores all 21 controls, the independent readback passes,
+and every PCM closes. This validates a client under Steam's user; it does not
+establish that Steam itself played audio.
+
+Private evidence is in `output/pico-peripheral-session-20261022-v1/`.
+`export-policy.tar.gz` is 222,575 bytes, SHA-256
+`ce37922ba80bc0306cae410f88b394e5eecc4c5e64fb929884ef96da21787bcd`;
+all 112 member hashes verify, including the failed first UCM attempt. The tested
+route tool SHA-256 is
+`7cede99dfd5d79612a88ab35f58c3a50778b688d45cbcb13a643d811b3e359b1`.
+The ADSP owner releases to OFFLINE, MCU references remain zero, and full BOOT
+and DTBO hashes match the retained originals. Stock return is recorded
+separately in that session's receipt.
+
 ## Remaining integration
 
-Build a Neo3 ALSA/UCM policy and Frame audio session with explicit ADSP ownership,
-appropriate device permissions and period-aligned writes. Calibration and
+Install the bounded route and Frame audio policy into the production Steam
+session with explicit ADSP lifetime management, and validate a real Steam
+client under concurrent compositor/6DoF load. Calibration and
 speaker protection still need validation before an audible route is accepted.
 Speaker, headset-jack, microphone and suspend/resume behavior need separate
 hardware acceptance. The silent test establishes PCM progress and teardown,
