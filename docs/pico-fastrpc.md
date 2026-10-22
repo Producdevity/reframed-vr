@@ -95,12 +95,73 @@ unchanged. Audio remained inactive throughout these controller tests.
 A second bounded capture saved the synchronized final ring: all ten slots
 remained zero. MCU debug packets reported increasing left-controller packet
 counts, but that does not prove delivery from the MCU to SLPI or coherent DSP
-writes into this allocation. The final snapshot does not establish a key-decoder
-fault; stream delivery and buffer visibility remain unverified.
+writes into this allocation. That final snapshot did not establish a key-decoder
+fault; the subsequent isolation checks below distinguish buffer visibility
+from controller delivery.
 The follow-up again configured and closed successfully, released the MCU power
 reference to zero, and stopped the owned SLPI to `OFFLINE`. The audio and compute
 DSPs were never started. Its 98-file `export-controller-final.tar.gz` has SHA-256
 `fdf448f134e8b61525815ba235b342ed74896642027b25e784bb48e5dfa3b06d`.
+
+## Controller delivery isolation
+
+Further RAM-only tests on 2026-10-22 used the same b1977 Neo3 Pro Eye. These
+results narrow the failure; they do **not** establish working native controller
+input or SteamVR integration.
+
+| Check | Observed result | Limit |
+| --- | --- | --- |
+| Cached and uncached ION buffers | Both 20-second controller captures retained 1,000 zero bytes | Cache policy alone did not restore delivery |
+| Accelerometer through the same low-latency wrapper | Previously zero memory contained nonzero data in every 100-byte region; one double-read mismatch was observed | Establishes DSP-to-CPU writes for that stream, not controller records or validated accelerometer decoding |
+| Live SSC discovery | `ble_mcu` SUID matched stock: low `f8d9a8908e5f4f1b`, high `f3e0cdbb766d3625` | Discovery does not prove controller interrupt or sample delivery |
+| Stock Bionic allocator, FastRPC runtime and low-latency stub | Initialization, configuration, stop and deinitialization returned zero; all 1,000 bytes stayed zero throughout 20 seconds | Replacing the glibc port alone is insufficient in the tested native environment |
+| Stock Android after return | Left controller connected; tracking service logged changing IMU samples | Radio pairing and the controller work in stock; native delivery remains unresolved |
+
+The accelerometer probe's textual result survives as
+`pico-controller-delivery-20261022-v1/capture-accel-result.log`; its raw ring was
+not exported before a later reboot. It used a different sensor layout, so the
+controller decoder's zero accepted records are expected. Do not treat its
+printed controller timestamps or CRC results as accelerometer measurements.
+
+The stock-library comparison used the readonly stock system/APEX files copied
+into RAM. Its manifest identifies every copied library. The system and vendor
+copies of `libsns_low_lat_stream_skel.so` matched SHA-256
+`bdf5cbe7328bf772eb143a38c214121847ddf7f97a11cae83301f2057e35830f`.
+The probe held its allocation until the parent stopped SLPI and independently
+verified `OFFLINE`, then freed it and exited successfully. This verifies that
+private probe's teardown sequence, not the maintained wrapper's failure path.
+
+Two separate legacy 32-bit-handle probes returned zero from close, then lost
+USB and returned to stock before printing buffer-release completion. The
+second reproduction omitted the first run's debugfs inspection. The retained
+partial logs do not identify which subsequent cleanup operation caused the
+reboot; clean teardown of that variant is unverified. It is not a replacement
+for the maintained domain-aware wrapper.
+
+The [optional IMU command](pico-controller-protocol.md#controller-imu-command)
+also failed to restore delivery. Stock logs report `hmd-freq:0` alongside live
+controller IMU samples, so that debug field alone is not evidence of a missing
+native prerequisite. The next comparison needs to establish whether the
+controller subscription reaches the DSP driver and enables its MCU interrupt
+and SPI receive path. GPIO snapshots taken before the native subscription and
+during stock tracking are not equivalent operating states and cannot justify
+a pinmux change.
+
+Evidence roots are `output/pico-controller-delivery-20261022-v1/`, `v2/` and
+`v3/`. Each archive's complete member inventory, sizes and SHA-256 hashes were
+checked against its embedded manifest and extracted files:
+
+| Session / archive | Files | SHA-256 |
+| --- | ---: | --- |
+| v1 / `export-cache.tar.gz` | 51 | `a15f464a3b5adc2777c99ab8ac2ec124d892465bdb3ea0617b73557aa3c338c0` |
+| v2 / `export-stream-enabled.tar.gz` | 40 | `1dc392b77e9993a2247c808868a8754c0773f3d4167302a7ae80411c26182e6d` |
+| v3 / `export-stock.tar.gz` | 14 | `15c31ac5aaf3e78d813a858fab71838b8fdddaba57e3cd47821f5a3941794dc0` |
+
+The final v3 run verified zero MCU power references and SLPI `OFFLINE`. Audio
+and compute DSPs were never started in that native session. Full boot and DTBO
+partition readbacks matched the retained stock hashes. The controlled return
+verified stock b1977, Wi-Fi off, updater disabled and speaker music/system/ring
+volumes zero. No controller fix is installed.
 
 ## Offline root installation
 
