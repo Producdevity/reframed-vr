@@ -92,6 +92,16 @@ The hash-verified `export-controller.tar.gz` contains 67 files and has SHA-256
 The private probe and rebuilt library stayed in RAM; the installed bundle was
 unchanged. Audio remained inactive throughout these controller tests.
 
+A second bounded capture saved the synchronized final ring: all ten slots
+remained zero. MCU debug packets reported increasing left-controller packet
+counts, but that does not prove delivery from the MCU to SLPI or coherent DSP
+writes into this allocation. The final snapshot does not establish a key-decoder
+fault; stream delivery and buffer visibility remain unverified.
+The follow-up again configured and closed successfully, released the MCU power
+reference to zero, and stopped the owned SLPI to `OFFLINE`. The audio and compute
+DSPs were never started. Its 98-file `export-controller-final.tar.gz` has SHA-256
+`fdf448f134e8b61525815ba235b342ed74896642027b25e784bb48e5dfa3b06d`.
+
 ## Offline root installation
 
 Pass `--fastrpc /path/to/verified/bundle` to `tools/build-headset-root.py` when
