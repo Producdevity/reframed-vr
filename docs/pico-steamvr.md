@@ -364,10 +364,10 @@ failure record identify the rejected transition: frame 1741 at
 against the configured `100000000 ns` limit. The rejected set was only
 `20421196 ns` old on arrival, with `52 ns` inter-camera skew and increasing
 frame numbers and timestamps. Thus the gap check caused `-EPROTO`; camera
-desynchronization and stale delivery did not cause that rejection. The cause
-of the missing frames is still unverified. Do not raise the gap limit and call
-this fixed: the next capture investigation needs request-refill timing and
-complete scheduling coverage of the camera process under compositor load.
+desynchronization and stale delivery did not cause that rejection. That run
+alone did not establish the missing-frame cause. The subsequent
+[camera queue comparison](pico-steamvr-verification.md#camera-queue-starvation-under-compositor-load)
+traces request starvation and tests immediate refill with the same gap limit.
 
 The parent closed the controller RPC clients, stopped the shared sensors and
 SLPI, then verified worker buffer release and exit zero. MCU power references

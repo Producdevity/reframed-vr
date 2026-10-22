@@ -535,6 +535,18 @@ reject it as future input. Clock failure or regression stops the generation,
 and empty event queues still receive a fresh timeout check. Timestamp-only
 polling remains available for fixed recorded batches.
 
+The four-camera vendor-backend capture uses two transports sharing CRM/sync
+descriptors. Its continuous event service calls
+`pico_camera_transport_event_refill()` for each transport before dequeuing the
+next event. This dispatches the event and fills available capacity, up to eight
+stereo pairs per transport, sampling the monotonic clock after callbacks and
+each queued pair. Every shared event must reach every transport in order; any
+failure requires stopping the whole capture owner. Queue-full is normal,
+whereas clock and other queue failures terminate the generation. This service
+opens no device, dequeues no events and does not poll the estimator. The caller
+still enforces silence timeouts and estimator freshness. See the
+[native queue-starvation comparison](pico-steamvr-verification.md#camera-queue-starvation-under-compositor-load).
+
 Stop invalidates poses and attempts all affected stream stops. The caller must
 then establish DMA quiescence independently before retiring requests,
 unsubscribing events and releasing command buffers and hardware handles. An

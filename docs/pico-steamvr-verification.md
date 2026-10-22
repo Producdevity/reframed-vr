@@ -4,7 +4,6 @@ These records distinguish source and VM checks from bounded native Pico tests.
 Private calibration, binary artifacts and hash manifests remain in gitignored
 `output/`. See [driver setup](pico-steamvr.md) for the opt-in configuration.
 
-
 Host ASan/UBSan and native ARM64 tests verify 52,272 UV comparisons across four
 panel rotations, identity and chromatic models, projection signs, eye transforms,
 profile refusal and the private optical profile's structural validity. Earlier
@@ -1026,3 +1025,75 @@ boot UUID, Wi-Fi off, updater disabled and `flash.locked=0`; see this session's
 `stock-return-final.json`. No firmware partition is flashed. The Quest is
 untouched. Physical motion, optical acceptance, controls and longer presentation
 stress tests remain outstanding.
+
+### Camera queue starvation under compositor load
+
+The 2026-10-22 comparison traces camera request preparation, submission, release
+and event service, together with scheduler events that include the camera PID.
+Baseline RAM boot `58dd91e5-1bdd-44f0-9b94-9dcc8dae8b9e` shows a
+`150240000 ns` interval between refills. Dispatching 112 transport events took
+`144978546 ns`; 28 request releases accounted for `131263434 ns` of that wall
+time, including any time blocked or descheduled. The old owner drained the
+completion batch before replenishing requests. SOFs 1830–1832 then carried
+request ID zero on all four cameras: the sensors continued producing frames
+without assigned capture buffers. The API trace lost no records. Some scheduler
+rings overwrote older entries, so they do not establish complete scheduler
+accounting for the run.
+
+This independently reproduces the missing-frame mechanism. The earlier fatal
+120 ms camera gap lacked per-request tracing, so its individual missing frames
+cannot be attributed retrospectively with the same precision. No feed age,
+gap, skew, calibration, display-mode or scheduling limits were changed.
+
+`pico_camera_transport_event_refill()` services free slots immediately after
+each event, before another completion is dequeued. It retains the existing
+eight-pair capacity, refreshes time around the refill work and propagates
+failures. The host fixture drains a full completion batch while checking that
+each newly free stereo pair is replenished immediately, that the capacity stays
+bounded and that allocation/clock failures stop the generation. All 17 camera
+tests passed under ASan/UBSan.
+
+A first same-boot comparison delivered synchronized camera sets without later
+request-zero SOFs, but the restarted vendor estimator published no confident
+poses. Its failed acceptance and logs remain preserved. The full comparison
+therefore used fresh RAM boot `8c51a77b-f086-4543-86f6-c7070e8497d9`, with
+the fixed capture built from the current transport source and header.
+
+| Check | Baseline | Immediate refill |
+| --- | ---: | ---: |
+| Session duration | 91.035 s | 91.006 s |
+| SOFs observed | 4,499 | 4,499 |
+| Request-zero SOFs after the first two startup SOFs | 3 | 0 |
+| Captured frames per camera | 4,494 | 4,497 |
+| Head-camera sets consumed | 2,248 | 2,249 |
+| Published tracked head poses | 90,145 | 90,062 |
+| Valid / invalid head queries in the controller probe | 3,000 / 0 | 3,000 / 0 |
+
+Both runs used the configured 120 Hz Facet path and the same Steam workload.
+The fixed run recorded 8,028 successful compositor presentation calls, selected
+the 1280×800 Steam overlay and captured the sign-in UI in both distorted eye
+views with both DMA planes active. API counts do not measure optical frame
+rate; the scanout copy is not guaranteed to be one coherent frame. Physical
+motion, lens acceptance and controller pointing remain separate gates. The left
+controller was connected/readable for 21 of 30 observations, with zero input
+update failures and invalid controller poses throughout. Vsync-age failures
+remain: the selected-overlay probe recorded six overdue samples out of 500.
+
+The fixed camera owner exited zero; its final diagnostic queue result `-EAGAIN`
+denotes full capacity at the timed stop, with `failed=0`, rather than a capture
+failure. The IMU producer joined without a ring failure. Controller RPC stops,
+sensor shutdown, MCU reference release and restoration of the GPU minimum
+passed. Full boot/DTBO readbacks matched before and after both RAM boots.
+The existing SLPI shutdown-acknowledgment timeout and ten camera ION unmap
+warnings remain; reported `OFFLINE` state and release ordering are the verified
+shutdown boundary. Stock-return and mute receipts are retained with the evidence.
+
+Baseline evidence: `output/pico-camera-gaps-20261022-v1/`; its 196-file export
+has SHA-256 `46ac1d8798ebd23ffb0c9f1f530f55d0d81ac115c4d42e83d83960a861aacd13`.
+The failed same-boot comparison's 160-file export has SHA-256
+`6daa298d28f5f2e10340b56fba434039932a2e1ffd4daf32dfde3790d5e58d4c`.
+Fresh fixed evidence: `output/pico-camera-gaps-20261022-v2/`; its 201-file export
+has SHA-256 `78bfe02ff8222f84810583fb24400f1757cc9a25a5366b65a68ee849cfa8a7d4`.
+Every archive/member hash was verified. `starvation.json` preserves the measured
+baseline interval; `comparison.json` and its assertion-based analyzer check both
+complete runs, trace continuity, source identity and the acceptance boundaries.
