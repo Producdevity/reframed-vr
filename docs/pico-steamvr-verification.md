@@ -1609,3 +1609,49 @@ match the recovery inputs. Stock return is verified as boot UUID
 `7806d93a-5079-437e-85d1-6f0f8f6b2062`, b1977, unlocked, Wi-Fi off and updater
 disabled. Effective music/system volume is restored to zero. No firmware
 partition is written and the Quest is untouched.
+
+### Complete traces of the remaining vsync-age faults
+
+The recovery trials replace the earlier startup-only CPU capture with bounded,
+continuously drained CPU and DRM streams on `/tmp`. Each run has its own Vulkan
+API trace path. In `export-early`, both overdue samples fall inside complete
+pre-exec-to-cleanup trace coverage; all eight CPU buffers report zero overruns
+and dropped events. The current compositor PID/TIDs match the API trace.
+
+| Probe | Reported age | Render-thread wait observed around the fault |
+| --- | ---: | --- |
+| Readiness, sample 176 | 24.865 ms | `vkWaitForPresentKHR` takes 15.101 ms and returns `VK_TIMEOUT`; its futex wait takes 15.055 ms and returns `-ETIMEDOUT` |
+| Late, sample 160 | 22.408 ms | A 10.752 ms DRM syncobj timeline wait is followed by a successful 9.798 ms `vkWaitForPresentKHR` call |
+
+For the first fault, the compositor's paired counter query returns sequence
+5,359 at monotonic 574.167 s. Kernel vblanks 5,360 and 5,361 occur at 574.176 s
+and 574.187 s while the render thread is waiting. The probe reads the old
+sequence at 574.190 s; the next compositor query gets 5,361 at 574.192 s.
+The second fault similarly reads 5,842 after kernel vblanks 5,843 and 5,844;
+the compositor queries 5,844 immediately afterward. The probe calls themselves
+take about one microsecond. These samples establish aged compositor timing
+data while the scanout clock continues, rather than a stopped vblank source.
+
+The render thread is sleeping in the recorded waits during those intervals.
+Its observed wake-to-run delays are tens to hundreds of microseconds, not the
+multi-millisecond intervals in question. This does not rule out other scheduler
+effects, but it does not support treating CPU starvation as the demonstrated
+cause of these two faults. The timeline wait uses `/dev/dri/renderD128`; the
+recorded ioctl matches `DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT` in the build header.
+Its elapsed duration is not a measurement of GPU execution time alone.
+
+The retained source path recorded by the deployed Mesa build is
+`/work/9cbe28c05f473600/mesa-26.1.8/src/vulkan/wsi/wsi_common_display.c`.
+Its SHA-256 is
+`fa0fb6b9c5961000796892e5c97af0e02b994bfc7f8842e1cf3bbe08f2fd6fb9`.
+The present-wait path first waits for its presentation semaphore, then waits for
+the requested present ID; the page-flip callback advances that ID and broadcasts
+completion. The traces do not yet identify why present 2,309 misses that
+completion deadline. The next targeted measurement needs present-ID/flip
+completion correlation and the timeline dependency, before changing wait
+semantics, scheduling or the two-frame acceptance bound.
+
+The clean repeat still has two overdue samples out of 2,500, so neither motion
+recovery nor complete trace coverage constitutes a timing fix. Raw evidence and
+the correlated windows are in `export-early/`, `export-clean/` and
+`timing-fault-analysis.json` under `output/pico-motion-recovery-20261023-v1/`.
