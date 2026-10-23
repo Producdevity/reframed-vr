@@ -19,10 +19,11 @@ ATTRIBUTES = ('nice', 'cpumask', 'max_active', 'numa')
 
 
 def validate_device(boot_serial, boot_id):
-    if (platform.system() != 'Linux' or os.geteuid() != 0 or
+    if (platform.system() != 'Linux' or platform.machine() != 'aarch64' or os.geteuid() != 0 or
             not re.fullmatch(r'[A-Za-z0-9]{1,32}', boot_serial) or
             'androidboot.serialno=' + boot_serial not in Path('/proc/cmdline').read_text().split() or
-            b'qcom,kona-iot' not in Path('/proc/device-tree/compatible').read_bytes().split(b'\0')):
+            Path('/proc/device-tree/compatible').read_bytes() !=
+            b'qcom,kona-iot-mtp\0qcom,kona-iot\0qcom,mtp\0'):
         raise ValueError('Requires the selected native Linux Pico Neo3 as root')
     if (str(uuid.UUID(boot_id)) != boot_id or
             Path('/proc/sys/kernel/random/boot_id').read_text().strip() != boot_id):

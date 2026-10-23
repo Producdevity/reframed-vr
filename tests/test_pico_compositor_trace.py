@@ -13,7 +13,7 @@ class PicoCompositorTraceTests(unittest.TestCase):
     def files(self, root):
         for name, content in [('tracing_on', '0'), ('set_event_pid', 'no pid\n'),
                               ('options/event-fork', '0'), ('trace_marker', ''),
-                              ('trace_clock', '[local] mono global')]:
+                              ('trace', 'old capture'), ('trace_clock', '[local] mono global')]:
             p = root / name
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
@@ -31,6 +31,10 @@ class PicoCompositorTraceTests(unittest.TestCase):
             self.assertEqual((root / 'options/event-fork').read_text(), '1')
             self.assertEqual((root / 'tracing_on').read_text(), '1')
             self.assertIn('PRE_EXEC pid=1234', (root / 'trace_marker').read_text())
+            self.assertEqual((root / 'trace_clock').read_text(), 'mono')
+            self.assertEqual((root / 'trace').read_text(), '')
+            self.assertEqual(MODULE.EVENTS, ('sched/sched_switch', 'sched/sched_wakeup',
+                                            'raw_syscalls/sys_enter', 'raw_syscalls/sys_exit'))
             for event in MODULE.EVENTS:
                 self.assertEqual((root / 'events' / event / 'enable').read_text(), '1')
 

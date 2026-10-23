@@ -79,5 +79,26 @@ class GpuEventsTests(unittest.TestCase):
         self.assertFalse((self.root / 'policy.lock').exists())
 
 
+class GpuDeviceIdentityTests(unittest.TestCase):
+    def test_exact_board_and_arm64_are_required(self):
+        boot='12345678-1234-1234-1234-123456789abc'
+        correct=b'qcom,kona-iot-mtp\0qcom,kona-iot\0qcom,mtp\0'
+        texts={'/proc/cmdline':'androidboot.serialno=fixture',
+               '/proc/sys/kernel/random/boot_id':boot}
+        with patch.object(policy.platform,'system',return_value='Linux'), \
+                patch.object(policy.os,'geteuid',return_value=0), \
+                patch.object(Path,'read_text',autospec=True,side_effect=lambda p: texts[str(p)]):
+            for machine,compatible in [('aarch64',correct),('x86_64',correct),
+                                       ('aarch64',b'qcom,kona-iot\0'),
+                                       ('aarch64',correct+b'other\0')]:
+                with self.subTest(machine=machine,compatible=compatible), \
+                        patch.object(policy.platform,'machine',return_value=machine), \
+                        patch.object(Path,'read_bytes',return_value=compatible):
+                    if machine=='aarch64' and compatible==correct:
+                        policy.validate_device('fixture',boot)
+                    else:
+                        with self.assertRaises(ValueError):policy.validate_device('fixture',boot)
+
+
 if __name__ == '__main__':
     unittest.main()

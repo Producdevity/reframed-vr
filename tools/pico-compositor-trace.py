@@ -25,6 +25,7 @@ def arm(instance, pid):
     if 'mono' not in clock.read_text().replace('[', '').replace(']', '').split():
         raise ValueError('Monotonic trace clock unavailable')
     clock.write_text('mono')
+    (instance / 'trace').write_text('')
     (instance / 'options/event-fork').write_text('1')
     if (instance / 'options/event-fork').read_text().strip() != '1':
         raise ValueError('Kernel did not enable PID inheritance')
@@ -64,7 +65,9 @@ def main():
     os.initgroups(user.pw_name, user.pw_gid)
     os.setgid(user.pw_gid)
     os.setuid(user.pw_uid)
-    os.execvpe(command[0], command, os.environ)
+    environment = os.environ | {'HOME': user.pw_dir, 'USER': user.pw_name,
+                                 'LOGNAME': user.pw_name, 'SHELL': user.pw_shell}
+    os.execvpe(command[0], command, environment)
 
 
 if __name__ == '__main__':
