@@ -660,7 +660,9 @@ The asset package's MIT license is retained in
 hashes are in `profiles/pico-controller-models.json`; converted-file hashes and
 modifications are recorded beside the models in `provenance.json`.
 
-To reproduce the static models from those two pinned GLBs, run:
+The converter requires Pillow (`python3-pillow` in the development container;
+`python3 -m pip install Pillow` in a host virtual environment). To reproduce
+the static models from those two pinned GLBs, run:
 
 ```sh
 python3 tools/convert-pico-controller-models.py --source /path/to/pico-neo3 \

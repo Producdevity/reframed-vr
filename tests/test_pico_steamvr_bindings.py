@@ -66,7 +66,8 @@ class PicoSteamvrBindingTests(unittest.TestCase):
                 else:
                     self.assertIn(action, (hand + 'click', hand + 'touch'))
 
-    @unittest.skipUnless((RUNTIME / 'vrcompositor_actions.json').is_file(),
+    @unittest.skipUnless(all((RUNTIME / name).is_file() for name in
+                             ('vrcompositor_actions.json', 'legacy_actions.json')),
                          'requires cached SteamVR action manifests')
     def test_targets_match_verified_runtime_actions(self):
         contracts = [

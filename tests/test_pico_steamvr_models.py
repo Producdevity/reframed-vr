@@ -10,7 +10,10 @@ MODELS = ROOT / 'system/steamvr-pico/resources/rendermodels'
 
 class PicoSteamvrModelTests(unittest.TestCase):
     def test_assets_match_pinned_conversion_and_license(self):
+        self.assertEqual(hashlib.sha256((MODELS / 'provenance.json').read_bytes()).hexdigest(),
+                         '1d150a427afb69f11f5ebb916876be2199b399076ae83bd47e4c1a96a24b366a')
         record = json.loads((MODELS / 'provenance.json').read_text())
+        self.assertEqual(set(record['models']), {'left', 'right'})
         self.assertEqual(record['upstream'], json.loads((ROOT / 'profiles/pico-controller-models.json').read_text()))
         self.assertEqual(hashlib.sha256((MODELS / 'LICENSE').read_bytes()).hexdigest(),
                          '0ef0c87e8ffdd0681f332dc3b39f284dee2166d1f853fabc3853884fe81a6f30')

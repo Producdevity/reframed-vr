@@ -52,56 +52,66 @@ def main():
                'system/steamvr-pico/vrserver',
                'tests/pico-steamvr-live.cpp',
                'tools/build-pico-steamvr.py']
-    commands = []
-    with tempfile.TemporaryDirectory() as temp:
-        work = Path(temp)
-        flags = ['-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden',
-                 '-I', str(ROOT / 'src'), '-isystem', str(args.sdk), '-I', str(args.cjson)]
-        objects = []
-        units = [(ROOT / 'src' / (name + '.c'), args.cc, 'c11')
-                 for name in ['pico-slam-channel', 'pico-slam-pose', 'pico-controller-channel']]
-        units += [(args.cjson / 'cJSON.c', args.cc, 'c11')]
-        units += [(ROOT / 'src' / (name + '.cpp'), args.cxx, 'c++17')
-                  for name in ['pico-steamvr-driver', 'pico-steamvr-display', 'pico-steamvr-config',
-                               'pico-steamvr-pose', 'pico-steamvr-controller']]
-        for source, compiler, standard in units:
-            target = work / (source.stem + '.o')
-            command = [compiler, '-std=' + standard, *flags, '-c', str(source), '-o', str(target)]
+    sources += [str(p.relative_to(ROOT)) for p in sorted(
+        (ROOT / 'system/steamvr-pico/resources').rglob('*')) if p.is_file()
+        and str(p.relative_to(ROOT)) not in sources]
+    bundle_output = args.output
+    bundle_output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.' + bundle_output.name + '-', dir=bundle_output.parent) as staging:
+        args.output = Path(staging) / 'bundle'
+        commands = []
+        with tempfile.TemporaryDirectory() as temp:
+            work = Path(temp)
+            flags = ['-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden',
+                     '-I', str(ROOT / 'src'), '-isystem', str(args.sdk), '-I', str(args.cjson)]
+            objects = []
+            units = [(ROOT / 'src' / (name + '.c'), args.cc, 'c11')
+                     for name in ['pico-slam-channel', 'pico-slam-pose', 'pico-controller-channel']]
+            units += [(args.cjson / 'cJSON.c', args.cc, 'c11')]
+            units += [(ROOT / 'src' / (name + '.cpp'), args.cxx, 'c++17')
+                      for name in ['pico-steamvr-driver', 'pico-steamvr-display', 'pico-steamvr-config',
+                                   'pico-steamvr-pose', 'pico-steamvr-controller']]
+            for source, compiler, standard in units:
+                target = work / (source.stem + '.o')
+                command = [compiler, '-std=' + standard, *flags, '-c', str(source), '-o', str(target)]
+                commands.append(command)
+                subprocess.run(command, check=True)
+                objects.append(str(target))
+            binary = work / 'driver_reframed_pico.so'
+            command = [args.cxx, '-shared', *objects, '-pthread', '-lm', '-Wl,-z,defs', '-o', str(binary)]
             commands.append(command)
             subprocess.run(command, check=True)
-            objects.append(str(target))
-        binary = work / 'driver_reframed_pico.so'
-        command = [args.cxx, '-shared', *objects, '-pthread', '-lm', '-Wl,-z,defs', '-o', str(binary)]
-        commands.append(command)
-        subprocess.run(command, check=True)
-        destination = args.output / 'reframed_pico/bin/linuxarm64'
-        destination.mkdir(parents=True)
-        shutil.copyfile(binary, destination / binary.name)
-        shutil.copyfile(ROOT / 'system/steamvr-pico/driver.vrdrivermanifest',
-                        args.output / 'reframed_pico/driver.vrdrivermanifest')
-        shutil.copytree(ROOT / 'system/steamvr-pico/resources', args.output / 'reframed_pico/resources')
-        probe = args.output / 'pico-steamvr-live'
-        command = [args.cxx, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
-                   '-isystem', str(args.sdk), str(ROOT / 'tests/pico-steamvr-live.cpp'),
-                   '-ldl', '-lm', '-o', str(probe)]
-        commands.append(command)
-        subprocess.run(command, check=True)
-    shutil.copyfile(args.sdk / 'LICENSE', args.output / 'OpenVR-LICENSE')
-    shutil.copyfile(ROOT / 'profiles/pico-steamvr.json', args.output / 'steamvr.vrsettings')
-    shutil.copyfile(ROOT / 'profiles/pico-steamvr-ui-90hz.json', args.output / 'steamvr-ui-90hz.vrsettings')
-    shutil.copyfile(ROOT / 'system/steamvr-pico/compositor.conf', args.output / 'compositor.conf')
-    shutil.copyfile(ROOT / 'system/steamvr-pico/gamescope.conf', args.output / 'gamescope.conf')
-    shutil.copyfile(ROOT / 'system/steamvr-pico/vrserver', args.output / 'vrserver')
-    (args.output / 'vrserver').chmod(0o755)
-    notice = (args.cjson / 'cJSON.h').read_text().split('*/', 1)[0].removeprefix('/*').strip()
-    (args.output / 'cJSON-LICENSE').write_text(notice + '\n')
-    record = {'architecture': 'aarch64-linux', 'physical_driver': True, 'device_actions': [],
-              'hardware_verified': False, 'commands': commands, 'openvr': sdk, 'cjson': cjson,
-              'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in sources},
-              'files_sha256': {p.relative_to(args.output).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                               for p in args.output.rglob('*') if p.is_file()}}
-    (args.output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
-    print('PICO_STEAMVR_DRIVER_BUILT ' + str(args.output))
+            destination = args.output / 'reframed_pico/bin/linuxarm64'
+            destination.mkdir(parents=True)
+            shutil.copyfile(binary, destination / binary.name)
+            shutil.copyfile(ROOT / 'system/steamvr-pico/driver.vrdrivermanifest',
+                            args.output / 'reframed_pico/driver.vrdrivermanifest')
+            shutil.copytree(ROOT / 'system/steamvr-pico/resources', args.output / 'reframed_pico/resources')
+            probe = args.output / 'pico-steamvr-live'
+            command = [args.cxx, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
+                       '-I', str(ROOT / 'src'), '-isystem', str(args.sdk), str(ROOT / 'tests/pico-steamvr-live.cpp'),
+                       '-ldl', '-lm', '-o', str(probe)]
+            commands.append(command)
+            subprocess.run(command, check=True)
+        shutil.copyfile(args.sdk / 'LICENSE', args.output / 'OpenVR-LICENSE')
+        shutil.copyfile(ROOT / 'profiles/pico-steamvr.json', args.output / 'steamvr.vrsettings')
+        shutil.copyfile(ROOT / 'profiles/pico-steamvr-ui-90hz.json', args.output / 'steamvr-ui-90hz.vrsettings')
+        shutil.copyfile(ROOT / 'system/steamvr-pico/compositor.conf', args.output / 'compositor.conf')
+        shutil.copyfile(ROOT / 'system/steamvr-pico/gamescope.conf', args.output / 'gamescope.conf')
+        shutil.copyfile(ROOT / 'system/steamvr-pico/vrserver', args.output / 'vrserver')
+        (args.output / 'vrserver').chmod(0o755)
+        notice = (args.cjson / 'cJSON.h').read_text().split('*/', 1)[0].removeprefix('/*').strip()
+        (args.output / 'cJSON-LICENSE').write_text(notice + '\n')
+        record = {'architecture': 'aarch64-linux', 'physical_driver': True, 'device_actions': [],
+                  'hardware_verified': False, 'commands': commands, 'openvr': sdk, 'cjson': cjson,
+                  'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in sources},
+                  'files_sha256': {p.relative_to(args.output).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                                   for p in args.output.rglob('*') if p.is_file()}}
+        (args.output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
+        if bundle_output.exists() or bundle_output.is_symlink():
+            raise ValueError('Output appeared during the build')
+        args.output.rename(bundle_output)
+    print('PICO_STEAMVR_DRIVER_BUILT ' + str(bundle_output))
 
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@ FROM ${FEX_PKG} AS fex
 FROM registry.fedoraproject.org/fedora:44@sha256:083414712cefa4ea7c219bb850b8d8027d0c7b8978bc743780269ebbdb700eb7 AS development
 RUN dnf -y install monado openxr-devel openxr-simple-playground \
     mesa-vulkan-drivers vulkan-tools vulkan-devel \
-    gcc-c++ cmake ninja-build python3 patch xorg-x11-server-Xvfb \
+    gcc-c++ cmake ninja-build python3 python3-pillow patch xorg-x11-server-Xvfb \
     xorg-x11-xauth xdpyinfo ImageMagick procps-ng \
     && dnf clean all
 WORKDIR /workspace
