@@ -1412,3 +1412,65 @@ zero, the GPU floor returns to 305 MHz and ADSP/PCM remain quiet. Full boot/DTBO
 readbacks match the recovery inputs. Offline stock b1977 returns at
 2026-10-22 23:05:05 UTC, with updater disabled. No partition is flashed and the
 Quest remains untouched.
+
+## Live Bionic controller inputs and pre-exec capture (2026-10-23 UTC)
+
+The native Linux boot `dc9cddc0-5cc9-4d56-bc7a-95724328e5e5` runs systemd
+as PID 1 without zygote, SurfaceFlinger or system_server. SteamVR owns display
+presentation; the Bionic process supplies the vendor tracking ABI. This does
+not place Steam inside a running Android system.
+
+The first combined run delivers all 23,352 received left-controller IMU samples
+to the stock controller estimator, with raw head poses bracketing each timestamp.
+It also submits 64 synchronized four-camera controller sets while head tracking
+and SteamVR run. Maximum observed input age is 20.778 ms, head-bracket wait
+13.969 ms and estimator-call elapsed time 10.547 ms. These maxima include
+scheduling time; they are not measurements of estimator CPU execution alone.
+Native radio report counters subsequently stop advancing and the motion producer
+terminates with `-ETIMEDOUT`. Bionic consumed every published motion sample before
+that stop. This establishes an upstream receive interruption, not its cause or
+that the controller was asleep. Optical controller poses remain unpublished.
+
+A second, 241.08-second run consumes 5,999 head-camera sets and publishes 243,651
+confident head poses. All 9,806 received controller IMU samples reach Bionic, then
+native reports again cease. The owner confirms Steam's sign-in UI through the
+lenses and that the left Home button hides it. The owner also reports the image
+upside down and apparent reversed head movement: this is physical display
+presence, **not calibrated or usable VR acceptance**. The controller model and
+pointer remain absent. Audio stays off. Both runs' successful readiness and late
+probes contain 500 and 2,000 valid head samples with zero overdue vsync ages at
+the unchanged two-refresh-period bound. This does not resolve the intermittent
+Facet timing fault.
+
+[`pico-compositor-trace.py`](../tools/pico-compositor-trace.py) now selects its own
+PID and enables `event-fork` in an idle dedicated trace instance before dropping
+to UID 1000 and executing the compositor. The second run verifies that all nine
+observed compositor TIDs are inherited. A pre-exec marker at monotonic
+1089.719039 s precedes their startup events. The bounded CPU capture ends at
+1120.824908 s, retaining 322,830 events with zero overruns or dropped events on
+all eight CPUs. The separate DRM trace remains unfiltered by PID. Raw syscall
+filters select ARM64 ioctl, futex, sleep and poll calls; stopping CPU capture
+when the dashboard becomes ready preserves startup coverage during the longer
+lens test. The earlier unfiltered CPU capture overflowed three buffers and must
+not be used to classify an early stall.
+
+The caller owns trace creation, explicit `tracing_on=0` initialization, buffer
+size, syscall filters, collection and removal. Two host fixture tests verify
+PID inheritance setup and refusal of an occupied or unsupported instance. The
+second run reused an old Vulkan API trace filename; that file contains the
+previous compositor's TIDs, so it cannot correlate this CPU trace with acquire
+or submit calls. Use a new API trace path for every run.
+
+Evidence in `output/pico-live-controller-timing-20261023-v2/` is exported with
+per-file SHA-256 verification:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-render.tar.gz` | 233 | `76327dcc8195e2281e444c39fff3e7d02787d979be415badfce5d483be6d2f7a` |
+| `export-long.tar.gz` | 281 | `32f793f178a4226a2f285bb9d1b6836b725f5a429b894cd10f5de9d2a415c5db` |
+
+Before the longer run, two diagnostic setup errors are preserved: an existing
+exclusive-create camera profiler file prevented startup, and an IMU duration
+above the helper's 300-second cap was rejected. Archiving the old profiler and
+using a four-minute capture with a five-minute IMU bound corrects those setup
+errors. They do not establish a camera or compositor hardware regression.
