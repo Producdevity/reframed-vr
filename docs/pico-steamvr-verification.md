@@ -1477,3 +1477,56 @@ exclusive-create camera profiler file prevented startup, and an IMU duration
 above the helper's 300-second cap was rejected. Archiving the old profiler and
 using a four-minute capture with a five-minute IMU bound corrects those setup
 errors. They do not establish a camera or compositor hardware regression.
+
+### Correct the inverse panel mapping
+
+The upside-down report exposes a coordinate-contract error: the shared optical
+profile's column-major rotation maps view vertices onto the panel, while
+`ComputeDistortion` needs the inverse map from panel coordinates into the view.
+The previous implementation applied the forward matrix in both directions.
+For the Neo3 quarter-turn, that differs from the inverse by 180 degrees. The
+adapter now uses the transpose without changing the profile, head transforms,
+projection, chromatic model or panel timing. Corner fixtures distinguish the
+forward and inverse maps. Host ASan/UBSan tests and a native ARM64 UBSan run pass
+52,272 UV checks across four rotations and two chromatic models.
+
+A RAM-only configuration trial first reverses the quarter-turn with the old
+driver. The rebuilt driver then restores the original profile and produces the
+same corrected mapping in code. Its SHA-256 is
+`046076c4381a3e5c14dc66498db5a6acc0fc924a5c13c2ecf8df5fb16efd70c7`.
+Software scanout and SteamVR readiness pass; the owner's later grey-view report
+**does not optically validate upright output or head-motion direction**.
+
+That last run exhausts the `/run` tmpfs: its pose recording ends with 176 bytes
+of a partial 368-byte record, after 139,987 complete records. The last complete
+record remains confident. The diagnostic callback treats a failed recording
+write as failure, and the feed ends with `rc=-1`, `bad_results=2`. Subsequently,
+receipt writes fail with `ENOSPC` and interrupt the owner's cleanup. This is a
+concrete diagnostic failure that stops tracking before the intended four-minute
+capture ends; the logs alone cannot prove the precise optical cause of grey.
+The unchanged v5 USB host also reaches its documented 1,900-second console
+limit, leaving final output unread until reconnect. Future runs need sufficient
+per-mount recording space, a live USB-console lease and cleanup independent of
+receipt-writing success before another physical acceptance attempt.
+
+After reconnecting to the same boot UUID, seven obsolete RAM copies are removed
+only after their sizes and hashes match the already verified host export.
+Recovery completes the worker's RPC stop, waits for SLPI/CDSP `OFFLINE`, verifies
+worker exit and its DMA-release marker, releases MCU references to zero,
+restores the GPU floor to 305 MHz and verifies closed PCM streams. Full boot and
+DTBO readback hashes still match the stock recovery inputs. No partition is
+written. The final export preserves 271 files in `export-fixed.tar.gz`, SHA-256
+`ec66d72f6ebc3b08f4ebe7bbebaeefbe02e855e62fd6b324bdee820bc17aedb5`.
+
+The final late probe has one overdue sample out of 2,000 (22.410 ms against the
+unchanged 22.222 ms bound); readiness has zero out of 500. CPU capture ends
+before that late sample and the prolonged DRM trace overruns, so this run still
+cannot attribute that fault. Neither the display-mapping fix nor the earlier
+zero-fault samples establish a compositor timing fix.
+
+Stock return is subsequently verified as boot UUID
+`ea575b8d-4f33-456b-8adf-0505dc2c85b5`, with
+`ro.pico.ota.version=5.8.4.0-202310092224-RELEASE-user-neo3-b1977`.
+The bootloader remains unlocked, Wi-Fi reads zero, the updater package remains
+disabled, no network route is reported, and the verified audio helper reads back
+zero effective music and system volumes. The Quest is untouched.

@@ -35,7 +35,7 @@ bool pico_steamvr_display_valid(const pico_steamvr_display_config &c)
         for (double k : v.chromatic) if (!std::isfinite(k) || std::fabs(k) > 1000000) return false;
         double extent[2]={0,0};
         for (double x : {-1.,1.}) for (double y : {-1.,1.}) {
-            double u=(r[0]*x+r[2]*y+1)*.5, w=(1-r[1]*x-r[3]*y)*.5;
+            double u=(r[0]*x+r[1]*y+1)*.5, w=(1-r[2]*x-r[3]*y)*.5;
             extent[0]=std::max(extent[0],std::fabs(v.tangent_scale[0]*u+v.tangent_offset[0]));
             extent[1]=std::max(extent[1],std::fabs(v.tangent_scale[1]*w+v.tangent_offset[1]));
         }
@@ -99,8 +99,9 @@ vr::DistortionCoordinates_t PicoSteamvrDisplay::ComputeDistortion(vr::EVREye eye
     const auto &view=config.views[eye==vr::Eye_Left?0:1];
     const auto &r=view.rotation;
     const double px=2*u-1, py=1-2*v;
-    const double logical_u=(r[0]*px+r[2]*py+1)*.5;
-    const double logical_v=(1-r[1]*px-r[3]*py)*.5;
+    // Profiles rotate view vertices onto the panel; texture lookup uses the inverse.
+    const double logical_u=(r[0]*px+r[1]*py+1)*.5;
+    const double logical_v=(1-r[2]*px-r[3]*py)*.5;
     const double x=view.tangent_scale[0]*logical_u+view.tangent_offset[0];
     const double y=view.tangent_scale[1]*logical_v+view.tangent_offset[1];
     const double rsq=x*x+y*y, radius=std::sqrt(rsq);

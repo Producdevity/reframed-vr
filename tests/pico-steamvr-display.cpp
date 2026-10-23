@@ -53,7 +53,7 @@ int main(int argc,char **argv)
         assert(pico_steamvr_display_valid(c));PicoSteamvrDisplay display(c);
         for (unsigned iy=0;iy<=32;++iy) for (unsigned ix=0;ix<=32;++ix) {
             const double u=ix/32.,v=iy/32.;double su=u,sv=v;
-            if(turn==1){su=v;sv=1-u;}else if(turn==2){su=1-u;sv=1-v;}else if(turn==3){su=1-v;sv=u;}
+            if(turn==1){su=1-v;sv=u;}else if(turn==2){su=1-u;sv=1-v;}else if(turn==3){su=v;sv=1-u;}
             const auto &view=c.views[0];
             double tx=view.tangent_scale[0]*su+view.tangent_offset[0],ty=view.tangent_scale[1]*sv+view.tangent_offset[1];
             double rsq=tx*tx+ty*ty,scale=0,power=1;
@@ -69,6 +69,16 @@ int main(int argc,char **argv)
             }
         }
     }
+    c=config();
+    for (auto &view:c.views) {
+        const double panel_from_view[4]={0,1,-1,0};
+        std::memcpy(view.rotation,panel_from_view,sizeof(view.rotation));
+    }
+    PicoSteamvrDisplay rotated(c);
+    auto top_left=rotated.ComputeDistortion(vr::Eye_Left,0,1);
+    near(top_left.rfGreen[0],0);near(top_left.rfGreen[1],0);
+    auto top_right=rotated.ComputeDistortion(vr::Eye_Right,0,0);
+    near(top_right.rfGreen[0],1);near(top_right.rfGreen[1],0);
     auto bad=d.ComputeDistortion(vr::Eye_Left,-.1f,.5f);assert(bad.rfRed[0]==-1);
     bad=d.ComputeDistortion(vr::Eye_Left,std::numeric_limits<float>::quiet_NaN(),.5f);assert(bad.rfGreen[1]==-1);
     vr::HmdVector2_t inverse{{42,42}};assert(!d.ComputeInverseDistortion(&inverse,vr::Eye_Left,0,.5f,.5f));assert(inverse.v[0]==42);

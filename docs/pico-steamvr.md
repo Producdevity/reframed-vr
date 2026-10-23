@@ -17,6 +17,10 @@ WSA digital mute readbacks did not guarantee silence; audio is currently stopped
 The display component reads the existing private Neo3 optical-profile format
 (schema 2 or 3, `PICOA7H10`, analytic `pico-radial-2`). It preserves each eye's
 viewport, projection, panel rotation, head-relative transform and RGB distortion.
+The column-major `rotation` maps view vertices onto the panel. SteamVR's
+distortion query maps panel coordinates back to view coordinates, so the adapter
+uses its inverse (transpose); using the forward quarter-turn there rotates the
+image by an extra 180 degrees.
 The runtime receives the actual panel dimensions; PICO 4 side-by-side dimensions
 are not defaults. The input profile owns the render-target recommendation and
 nominal display interval. These values must match the selected hardware mode.
