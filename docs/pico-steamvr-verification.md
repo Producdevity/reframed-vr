@@ -1370,6 +1370,24 @@ run's two readiness attempts contain 7 and 2 overdue samples. Both late probes
 have zero; this comparison does not reproduce or fix the earlier occasional
 late blocking fault. The unchanged age bound is two refresh periods.
 
+A later coverage check cannot classify the remaining 14.444 ms interval at
+monotonic 232.975341107–232.989785430 s. The trace contains hardware vblanks 76
+and 77 nearby, but no scheduler or syscall events for render TID 1897 before
+or during that interval. Its first recorded scheduler event is 239.699624 s;
+its first syscall event is 239.745808 s. An on-CPU, lock-wait or GPU attribution
+for this residual interval would therefore exceed the captured evidence.
+The coverage extraction is retained in
+`output/pico-controller-motion-20261023-v1/warm-stall-coverage.json`.
+
+The next capture should enable render-process scheduler/syscall coverage before
+its first frame. Linux 4.19 documents `set_event_pid` with `event-fork` to inherit
+the PID selection into children; this offers a way to prepare the launching
+parent before its compositor threads exist. Verify the option and inheritance
+on the selected vendor kernel before using the result. Keep the existing
+unfiltered DRM-event capture separate so interrupt-side vblanks remain visible.
+This is a capture plan, not a compositor fix. See the
+[Linux 4.19 ftrace documentation](https://www.kernel.org/doc/html/v4.19/trace/ftrace.html).
+
 The 90.93-second tracking session consumes 2,249 head-camera sets and publishes
 90,064 confident head poses. The native scanout copy contains Steam's sign-in
 panel in both distorted eye views and both DMA planes remain active. The copy
