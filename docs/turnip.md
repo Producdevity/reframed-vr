@@ -222,6 +222,23 @@ timestamp within 9 microseconds in the sampled checks. Some client notifications
 remain delayed; this is not proof of sustained 120 FPS or clean physical optics.
 See the [full verification](pico-steamvr-verification.md#frame-counter-abi-and-pose-read-order).
 
+### Presentation completion tracing
+
+Patch 0016 adds opt-in `MESA_VK_WSI_PRESENT_TRACE=1` diagnostics for display
+queueing, atomic commits, page-flip completion and both phases of present waits.
+Each line records monotonic time, thread, swapchain, image and present ID, plus
+the relevant flags, completed ID or result. It preserves `errno` and ignores
+write errors; wait and completion semantics are unchanged. Leave it disabled
+for normal operation. Enabled trace I/O adds overhead and is not a performance
+optimization.
+
+The isolated ARM64 build under
+`output/mesa/pico-present-trace-20261023-v1/` passes all twelve helper suites and
+five Freedreno tests. Its library SHA-256 is
+`85129536b1b05de22544f303a6799b5e63666f08491981aa449e52062998440b`.
+The native Pico combined trial retains 106,890 correlated events. See the
+[present-ID analysis](pico-steamvr-verification.md#present-id-correlation).
+
 ## Correction to earlier build evidence
 
 The September 10 `output/mesa/turnip-drm-v5/` driver compiled with

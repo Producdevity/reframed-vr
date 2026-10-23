@@ -1715,3 +1715,35 @@ on hardware. Natural radio sleep/wake, optical controller poses and pointing,
 physical head-motion scale, upright lens output and movement direction remain
 separate acceptance gates. Audio is not opened during these runs. No firmware
 partition is written.
+
+
+### Present-ID correlation
+
+Turnip patch 0016 records present IDs at queue, atomic commit, page flip,
+presentation-semaphore completion and final wait completion. The corrected
+controlled-recovery trial captures 106,890 events. Its CPU trace reports zero
+overruns/dropped events on all eight CPUs.
+
+The sole late-window age fault is sample 1,263: OpenVR reports counter 9,917,
+aged 22.356 ms, at monotonic 2,005.300374 s. Present 3,802 was queued at
+2,005.283132 s; its nonblocking atomic commit returned successfully at
+2,005.283214 s. The kernel advances through 9,918 at 2,005.289039 s without a
+flip completion, then delivers completion at 9,919 at 2,005.300177 s. Mesa's
+page-flip callback runs at 2,005.300384 s and wakes the requested present ID;
+the wait returns success at 2,005.300415 s. The next compositor counter query
+returns 9,919 at 2,005.300441 s.
+
+The presentation-semaphore phase takes only 17 microseconds. The final wait
+blocks 10.659 ms for the actual page flip; it is not waiting on the wrong
+present ID or failing to wake after completion in this sample. A preceding
+render-thread DRM timeline wait returns at 2,005.289544 s, after the missed
+boundary. This is consistent with a late rendering dependency, but those
+traces alone do not identify GPU execution time or the exact KMS fence that
+held that commit. They do establish delayed cached timing while scanout
+continues. The two-period age bound and synchronization semantics are unchanged.
+
+Raw evidence is in `export-controlled/`; the correlated event window is in
+`present-completion-analysis.json`, both under
+`output/pico-auto-recovery-20261023-v1/`. Clock notifications and reducing the
+rendering workload require independent controls; repairing a reported age
+would not by itself repair a missed scanout boundary.
