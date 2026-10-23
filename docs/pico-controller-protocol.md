@@ -923,7 +923,8 @@ measurements at the same hand/timestamp without advancing either hand. It also
 filters the explicitly connected hands. Initialize a fresh motion reader after
 connection, resume or DSP restart. Torn/CRC-invalid slots are skipped; missing
 samples and stale data still require downstream clock, age and gap checks.
-The existing digital worker is unchanged and does not yet publish this history.
+The default digital worker retains its newest-only behavior. Its optional motion
+mode below publishes this ordered history separately.
 
 Host ASan/UBSan tests and an Android ARM64 UBSan CPU test pass ordering, full-ring
 wrap, duplicate/conflicting samples, sequence-byte wrap and torn/corrupt records.
@@ -952,12 +953,54 @@ rather than silently skipping those failures. Consumers still need per-hand gap
 checks and fresh head-history brackets before calling the vendor estimator.
 
 The channel does not infer factory calibration, connection state or an optical
-pose, and does not yet enable a live motion producer automatically. Host
+pose, and does not enable a live motion producer automatically. Host
 ASan/UBSan and stock-Pico ARM64 UBSan tests pass timestamp/identity boundaries,
 overrun detection, torn publication, permanent stop and 100,000 cross-process
 events with every payload field checked. The native test uses recorded/synthetic
 inputs only; it does not start sensors. Evidence:
 `output/pico-controller-motion-20261023-v1/motion-channel-native-result.json`.
+
+### Optional worker motion producer
+
+The receiver accepts an explicit `--motion-channel` path, a nonzero 16-digit
+`--motion-generation`, and `--left-motion-config` and/or `--right-motion-config`.
+Each hand argument contains the verified revision, double-scale and axis-bypass
+bytes in lowercase hexadecimal, separated by colons. These are caller-supplied
+stock settings, not connection discovery or defaults. Use a fresh verified
+connected-controller status; disconnected cached settings are insufficient.
+
+[`pico-controller-motion-producer`](../src/pico-controller-motion-producer.h)
+joins stable snapshots, ordered raw slots, calibrated timestamp conversion,
+the nine stock tracker values and channel publication. It validates every event
+in a snapshot before publishing that batch. Any conflict, invalid clock/input,
+or later silence over 100 ms permanently stops motion. A selected hand that
+never supplies input within two seconds also stops it. Late data cannot revive
+that stream. Digital input may continue; normal shutdown still closes RPC
+clients and retains DMA buffers until the shared SLPI is offline. A motion
+failure is logged separately and makes the worker's eventual exit unsuccessful.
+
+The parent `ControllerSession` accepts an optional `motion` dictionary with the
+estimator's hexadecimal `generation` and each selected hand's complete connected
+stock byte settings. It records them and supplies the worker's arguments.
+`motion_endpoint()` declares the future path and binding before startup; it is
+not readiness. Prepare the Bionic consumer before starting the receiver so
+library/calibration startup cannot consume the bounded history window.
+`wait_motion_ready(timeout)` then requires initialization and samples from all
+selected hands. `motion_binding()` additionally checks file identity, generation,
+active state and capture age. The consumer must use the C channel reader to copy
+events and check uncertainty/overruns, then obtain fresh head brackets before
+calling the estimator. These settings do not enter SteamVR's pose environment.
+
+Host sanitizer tests, 12 parent-session lifecycle fixtures, and ARM64 Linux
+builder/unit/dependency checks pass. On both host and Pico ARM64 CPUs, 7,402
+saved snapshots pass through the complete producer/channel/reader path, yielding
+the same 7,446 samples and bit-identical nine-value conversions. The replay uses
+the recording's measured offset and a declared conservative 51,002 ns capture
+uncertainty. It tests recorded delivery, not a new live DMA session or an optical
+controller pose. The optional worker mode still needs an awake-controller live
+test and Bionic estimator integration. Evidence:
+`output/pico-controller-motion-20261023-v1/producer-native-result.json` and
+`worker-build/build.json` beside it.
 
 Duration expiry or SIGINT/SIGTERM disconnects both hands and closes RPC clients.
 `PICO_CONTROLLER_WAIT_DSP_OFFLINE` tells the session owner to stop its remaining

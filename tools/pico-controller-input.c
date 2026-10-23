@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "ion-buffer.h"
 #include "pico-controller-channel.h"
+#include "pico-controller-motion-producer.h"
 #include "pico-controller-ring.h"
 #include "pico-sensor-rpc.h"
 #include "rpcmem.h"
@@ -29,6 +30,21 @@ static int64_t now_ns(void)
     struct timespec time;
     if (clock_gettime(CLOCK_MONOTONIC, &time)) return -1;
     return (int64_t)time.tv_sec * 1000000000 + time.tv_nsec;
+}
+
+static bool motion_config(const char *text, struct pico_controller_motion_config *config)
+{
+    if (strlen(text) != 8 || text[2] != ':' || text[5] != ':') return false;
+    unsigned value[3] = {0};
+    for (unsigned i = 0; i < 3; ++i) for (unsigned j = 0; j < 2; ++j) {
+        char c = text[i * 3 + j];
+        unsigned digit = c >= '0' && c <= '9' ? (unsigned)(c - '0') :
+                         c >= 'a' && c <= 'f' ? (unsigned)(c - 'a' + 10) : 16;
+        if (digit > 15) return false;
+        value[i] = value[i] * 16 + digit;
+    }
+    *config = (struct pico_controller_motion_config){1, value[0], value[1], value[2]};
+    return true;
 }
 
 static bool file_equals(const char *path, const char *expected)
@@ -84,7 +100,10 @@ static int snapshot(const struct ion_buffer *buffer, uint8_t first[1000], uint8_
 int main(int argc, char **argv)
 {
     const char *boot_id = NULL, *path = NULL;
-    uint64_t instance = 0;
+    const char *motion_path = NULL;
+    uint64_t instance = 0, motion_generation = 0;
+    struct pico_controller_motion_config config[2] = {{0}};
+    unsigned motion_mask = 0;
     unsigned seconds = 0;
     bool companion = false;
     static const struct option options[] = {
@@ -93,6 +112,10 @@ int main(int argc, char **argv)
         {"instance", required_argument, NULL, 'i'},
         {"seconds", required_argument, NULL, 's'},
         {"companion-accel", no_argument, NULL, 'a'},
+        {"motion-channel", required_argument, NULL, 'm'},
+        {"motion-generation", required_argument, NULL, 'g'},
+        {"left-motion-config", required_argument, NULL, 'l'},
+        {"right-motion-config", required_argument, NULL, 'r'},
         {NULL, 0, NULL, 0}
     };
     int option;
@@ -111,13 +134,28 @@ int main(int argc, char **argv)
             seconds = (unsigned)value; break;
         }
         case 'a': companion = true; break;
+        case 'm': motion_path = optarg; break;
+        case 'g':
+            if (strlen(optarg) != 16 || strspn(optarg, "0123456789abcdef") != 16) return 2;
+            motion_generation = strtoull(optarg, NULL, 16); break;
+        case 'l': case 'r': {
+            unsigned hand = option == 'l' ? 0 : 1;
+            if ((motion_mask & (1U << hand)) || !motion_config(optarg, &config[hand])) return 2;
+            motion_mask |= 1U << hand;
+            break;
+        }
         default: return 2;
         }
     }
     if (optind != argc || !boot_id || strlen(boot_id) != 36 || !path || path[0] != '/' ||
-        !instance || !seconds || geteuid()) {
+        !instance || !seconds || geteuid() ||
+        (motion_path ? motion_path[0] != '/' || !strcmp(motion_path, path) ||
+                       !motion_generation || !motion_mask : motion_generation || motion_mask)) {
         fprintf(stderr, "Usage: %s --boot-id UUID --channel NEW_PATH --instance HEX16 "
-                        "--seconds 1..3600 [--companion-accel] (native Neo3 b1977)\n", argv[0]);
+                        "--seconds 1..3600 [--companion-accel] "
+                        "[--motion-channel NEW_PATH --motion-generation HEX16 "
+                        "--left-motion-config REV:SCALE:BYPASS and/or --right-motion-config ...] "
+                        "(config bytes are lowercase hex; native Neo3 b1977)\n", argv[0]);
         return 2;
     }
     char boot_line[38]; snprintf(boot_line, sizeof(boot_line), "%s\n", boot_id);
@@ -144,16 +182,33 @@ int main(int argc, char **argv)
                                                    MAP_SHARED, fd, 0);
     close(fd);
     if (channel == MAP_FAILED || !pico_controller_channel_init(channel, instance)) return 2;
+    struct pico_controller_motion_channel *motion_channel = NULL;
+    if (motion_path) {
+        fd = open(motion_path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
+        if (fd < 0 || ftruncate(fd, sizeof(*motion_channel)) || fchmod(fd, 0644)) return 2;
+        motion_channel = mmap(NULL, sizeof(*motion_channel), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        close(fd);
+        if (motion_channel == MAP_FAILED) return 2;
+    }
     setvbuf(stdout, NULL, _IONBF, 0);
     signal(SIGINT, interrupt); signal(SIGTERM, interrupt); signal(SIGPIPE, SIG_IGN);
     if (setenv("PICO_ION_HEAP_ID", "25", 1)) return 2;
     rpcmem_init();
     struct stream controller = {0}, accel = {0};
     struct pico_controller_ring ring = {0};
+    struct pico_controller_motion_producer motion = {0};
+    uint64_t motion_samples = 0;
+    int motion_error = 0;
     uint64_t published[2] = {0};
     int rc = start(&controller, offset, false);
     int64_t begin = now_ns(), last_report = begin;
     if (begin <= 0) rc = -EIO;
+    if (!rc && motion_channel) {
+        rc = pico_controller_motion_producer_init(&motion, motion_channel, instance, motion_generation,
+                                                   &clock, config, 1, 2, motion_mask, begin);
+        printf("PICO_CONTROLLER_MOTION_READY instance=%016" PRIx64 " generation=%016" PRIx64
+               " mask=%u rc=%d\n", instance, motion_generation, motion_mask, rc);
+    }
     printf("PICO_CONTROLLER_READY instance=%016" PRIx64 " companion_accel=%u rc=%d\n", instance, companion, rc);
     while (!rc && !interrupted) {
         int64_t now = now_ns();
@@ -169,6 +224,14 @@ int main(int argc, char **argv)
         struct pico_controller_sample samples[2];
         unsigned changed = pico_controller_ring_read(&ring, first, second, samples);
         int64_t received = now_ns();
+        if (motion.channel && !motion_error) {
+            int count = pico_controller_motion_producer_update(&motion, motion_generation,
+                                                               first, second, received);
+            if (count < 0) {
+                motion_error = count;
+                printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n", count, motion_samples);
+            } else motion_samples += (unsigned)count;
+        }
         for (unsigned hand = 0; hand < 2; ++hand) if (changed & (1U << hand)) {
             if (!pico_controller_channel_publish(channel, &samples[hand], received)) { rc = -EPROTO; break; }
             ++published[hand];
@@ -183,6 +246,9 @@ int main(int argc, char **argv)
     }
     pico_controller_channel_disconnect(channel, 1);
     pico_controller_channel_disconnect(channel, 2);
+    pico_controller_motion_producer_stop(&motion);
+    if (motion.channel && !motion_error)
+        printf("PICO_CONTROLLER_MOTION_STOP rc=0 samples=%" PRIu64 "\n", motion_samples);
     int accel_rc = pico_sensor_rpc_close(&accel.rpc);
     int controller_rc = pico_sensor_rpc_close(&controller.rpc);
     printf("PICO_CONTROLLER_STOP rc=%d controller_rc=%d accel_rc=%d left=%" PRIu64
@@ -196,5 +262,5 @@ int main(int argc, char **argv)
     if (accel.buffer.data) rpcmem_free(accel.buffer.data);
     if (controller.buffer.data) rpcmem_free(controller.buffer.data);
     puts("PICO_CONTROLLER_RELEASED_DSP_OFFLINE");
-    _Exit(rc || accel_rc || controller_rc ? 1 : 0);
+    _Exit(rc || accel_rc || controller_rc || motion_error ? 1 : 0);
 }

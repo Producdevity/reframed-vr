@@ -13,7 +13,8 @@ import uuid
 
 
 class ControllerSession:
-    def __init__(self, build, directory, boot_id, *, seconds, environment, companion_accel=False):
+    def __init__(self, build, directory, boot_id, *, seconds, environment,
+                 companion_accel=False, motion=None):
         if str(uuid.UUID(boot_id)) != boot_id or type(seconds) is not int or not 1 <= seconds <= 3600:
             raise ValueError('Invalid boot identity or duration')
         self.build = Path(build).resolve()
@@ -26,6 +27,28 @@ class ControllerSession:
         self.boot_id, self.seconds = boot_id, seconds
         self.environment = dict(environment)
         self.companion_accel = bool(companion_accel)
+        self.motion = None
+        if motion is not None:
+            if (not isinstance(motion, dict) or set(motion) - {'generation', 'left', 'right'} or
+                    not isinstance(motion.get('generation'), str) or
+                    not re.fullmatch('[0-9a-f]{16}', motion.get('generation', '')) or
+                    not int(motion['generation'], 16) or not (set(motion) & {'left', 'right'})):
+                raise ValueError('Motion requires an explicit generation and connected-hand settings')
+            self.motion = {'generation': motion['generation']}
+            fields = {'connected', 'revision_byte', 'double_scale_byte', 'axis_reversal_bypass_byte'}
+            for hand in ('left', 'right'):
+                if hand not in motion:
+                    continue
+                settings = motion[hand]
+                if (not isinstance(settings, dict) or set(settings) != fields or
+                        settings['connected'] is not True or any(
+                            type(settings[key]) is not int or not 0 <= settings[key] <= 255
+                            for key in fields - {'connected'})):
+                    raise ValueError('Each motion hand requires verified connected stock byte settings')
+                self.motion[hand] = dict(settings)
+        self.motion_channel = self.directory / 'motion.channel'
+        self.motion_ready = self.motion_stop_result = None
+        self.motion_channel_identity = None
         self.process = None
         self.reader = None
         self.pending = b''
@@ -48,6 +71,15 @@ class ControllerSession:
                    '--instance', self.instance, '--seconds', str(self.seconds)]
         if self.companion_accel:
             command.append('--companion-accel')
+        if self.motion:
+            command += ['--motion-channel', str(self.motion_channel),
+                        '--motion-generation', self.motion['generation']]
+            for hand in ('left', 'right'):
+                if hand in self.motion:
+                    settings = self.motion[hand]
+                    value = ':'.join(f'{settings[key]:02x}' for key in
+                                     ('revision_byte', 'double_scale_byte', 'axis_reversal_bypass_byte'))
+                    command += ['--' + hand + '-motion-config', value]
         outputs = []
         try:
             for name in ('stdout.log', 'stderr.log'):
@@ -61,7 +93,7 @@ class ControllerSession:
                 stream.close()
         self.reader = (self.directory / 'stdout.log').open('rb', buffering=0)
         record = {'pid': self.process.pid, 'boot_id': self.boot_id, 'instance': self.instance,
-                  'command': command, 'binary_sha256': manifest['binary_sha256']}
+                  'command': command, 'binary_sha256': manifest['binary_sha256'], 'motion': self.motion}
         fd = os.open(self.directory / 'session.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as stream:
             json.dump(record, stream, indent=2)
@@ -95,6 +127,21 @@ class ControllerSession:
                     raise RuntimeError('Invalid worker stop result')
                 self.stop_result = dict(zip(('rc', 'controller_rc', 'accel_rc', 'left', 'right'),
                                             map(int, match.groups())))
+            elif line.startswith('PICO_CONTROLLER_MOTION_READY '):
+                match = re.fullmatch(r'PICO_CONTROLLER_MOTION_READY instance=([0-9a-f]{16}) '
+                                     r'generation=([0-9a-f]{16}) mask=([1-3]) rc=(-?\d+)', line)
+                mask = sum(1 << i for i, hand in enumerate(('left', 'right'))
+                           if self.motion and hand in self.motion)
+                if (not match or not self.motion or self.motion_ready is not None or
+                        match[1] != self.instance or match[2] != self.motion['generation'] or
+                        int(match[3]) != mask):
+                    raise RuntimeError('Motion readiness identity differs')
+                self.motion_ready = int(match[4])
+            elif line.startswith('PICO_CONTROLLER_MOTION_STOP '):
+                match = re.fullmatch(r'PICO_CONTROLLER_MOTION_STOP rc=(-?\d+) samples=(\d+)', line)
+                if not match or not self.motion or self.motion_stop_result is not None:
+                    raise RuntimeError('Invalid motion stop result')
+                self.motion_stop_result = {'rc': int(match[1]), 'samples': int(match[2])}
             elif line == 'PICO_CONTROLLER_WAIT_DSP_OFFLINE':
                 if self.stop_result is None or self.waiting:
                     raise RuntimeError('Worker shutdown order differs')
@@ -153,6 +200,57 @@ class ControllerSession:
         self._verify_channel()
         return {'PICO_STEAMVR_CONTROLLER_CHANNEL': str(self.channel),
                 'PICO_STEAMVR_CONTROLLER_INSTANCE': self.instance}
+
+    def _motion_available(self):
+        if not self.motion:
+            raise RuntimeError('Motion was not enabled for this worker')
+        if (self.ready not in (None, 0) or self.motion_ready not in (None, 0) or
+                self.motion_stop_result is not None or self.waiting):
+            raise RuntimeError('Motion worker is stopped or failed')
+        if self.ready is None or self.motion_ready is None:
+            return False
+        if self.process is None or self.process.poll() is not None:
+            raise RuntimeError('Motion worker is stopped or failed')
+        fd = os.open(self.motion_channel, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            info = os.fstat(fd)
+            data = os.read(fd, 64)
+            identity = (info.st_dev, info.st_ino)
+            if (not stat.S_ISREG(info.st_mode) or info.st_size != 32832 or
+                    info.st_uid != os.geteuid() or info.st_mode & 0o022 or len(data) != 64 or
+                    self.motion_channel_identity not in (None, identity)):
+                raise RuntimeError('Motion channel identity or permissions differ')
+            magic, instance, generation, sequence, active, left, right, received = struct.unpack('<8Q', data)
+            if ((magic, instance, generation) !=
+                    (0x525650434d430001, int(self.instance, 16), int(self.motion['generation'], 16)) or
+                    active != 1 or sequence == (1 << 64) - 1):
+                raise RuntimeError('Motion channel binding or active state differs')
+            self.motion_channel_identity = identity
+            if not sequence or any(not stamp for hand, stamp in [('left', left), ('right', right)]
+                                   if hand in self.motion):
+                return False
+            now = time.monotonic_ns()
+            if not received or received > now or any(not 0 <= now - stamp <= 100000000
+                    for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
+                raise RuntimeError('Motion channel has no fresh capture times')
+            return True
+        finally:
+            os.close(fd)
+
+    def wait_motion_ready(self, timeout):
+        self._wait(self._motion_available, timeout)
+
+    def motion_endpoint(self):
+        if not self.motion:
+            raise RuntimeError('Motion was not enabled for this worker')
+        return {'path': str(self.motion_channel), 'instance': self.instance,
+                'generation': self.motion['generation']}
+
+    def motion_binding(self):
+        self._read_status()
+        if not self._motion_available():
+            raise RuntimeError('Motion has no samples yet')
+        return self.motion_endpoint()
 
     def request_stop(self):
         if self.process is None:

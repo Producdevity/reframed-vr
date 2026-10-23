@@ -12,6 +12,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 UNITS = ['pico-controller', 'pico-controller-channel', 'pico-controller-ring',
+         'pico-controller-motion', 'pico-controller-motion-channel', 'pico-controller-motion-producer',
          'pico-sensor-rpc', 'sns-low-latency', 'ion-buffer', 'ssc-clock', 'ssc-clock-linux']
 
 
@@ -57,7 +58,8 @@ def main():
     sources = ['tools/pico-controller-input.c', 'tools/build-pico-controller-input.py',
                'tools/pico-controller-session.py',
                'profiles/pico-fastrpc.json', 'tests/pico-controller-ring.c',
-               'tests/pico-controller-motion-ring.c', 'tests/pico-sensor-rpc.c']
+               'tests/pico-controller-motion-ring.c', 'tests/pico-controller-motion-channel.c',
+               'tests/pico-controller-motion-producer.c', 'tests/pico-sensor-rpc.c']
     sources += ['src/' + unit + suffix for unit in UNITS for suffix in ('.c', '.h')]
     report = {'status': 'started', 'device_actions': [],
               'source_sha256': {name: digest(ROOT / name) for name in sources}, 'commands': []}
@@ -96,6 +98,10 @@ def main():
              '-L', str(prefix / 'lib64'), '-lsdsprpc', '-o', str(binary)], 'compile.log')
         for name, units in [('ring', ['pico-controller', 'pico-controller-ring']),
                             ('motion-ring', ['pico-controller', 'pico-controller-ring']),
+                            ('motion-channel', ['pico-controller-motion-channel']),
+                            ('motion-producer', ['pico-controller', 'pico-controller-ring',
+                                'pico-controller-motion', 'pico-controller-motion-channel',
+                                'pico-controller-motion-producer']),
                             ('rpc', ['pico-sensor-rpc', 'sns-low-latency'])]:
             source = 'pico-sensor-rpc' if name == 'rpc' else 'pico-controller-' + name
             test = output / (name + '-test')

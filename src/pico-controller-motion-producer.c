@@ -1,0 +1,77 @@
+#include "pico-controller-motion-producer.h"
+
+#include <errno.h>
+#include <string.h>
+
+static int fail(struct pico_controller_motion_producer *p, int error)
+{
+    if (!p->error) p->error = error;
+    pico_controller_motion_channel_stop(p->channel);
+    return p->error;
+}
+
+int pico_controller_motion_producer_init(struct pico_controller_motion_producer *p,
+    struct pico_controller_motion_channel *channel, uint64_t instance, uint64_t generation,
+    const struct ssc_clock *clock, const struct pico_controller_motion_config config[2],
+    unsigned mcu_type, unsigned radio_type, unsigned mask, int64_t now)
+{
+    if (!p || !channel || !instance || !generation || !clock || !config || now <= 0 ||
+        !clock->initialized || !clock->counter_hz || clock->host_ns < 0 || clock->host_ns > now ||
+        clock->uncertainty_ns < 2 || clock->uncertainty_ns > PICO_CONTROLLER_MOTION_MAX_AGE_NS - 1000 ||
+        mcu_type < 1 || mcu_type > 2 || radio_type < 1 || radio_type > 2 || !mask || mask > 3)
+        return -EINVAL;
+    for (unsigned hand = 0; hand < 2; ++hand)
+        if ((mask & (1U << hand)) && config[hand].mcu_type != mcu_type) return -EINVAL;
+    struct pico_controller_motion_producer next = {
+        .channel = channel, .clock = *clock, .generation = generation,
+        .started = now, .now = now, .mcu_type = mcu_type, .radio_type = radio_type,
+        .connected_mask = mask};
+    memcpy(next.config, config, sizeof(next.config));
+    if (!pico_controller_motion_channel_init(channel, instance, generation)) return -EINVAL;
+    *p = next;
+    return 0;
+}
+
+int pico_controller_motion_producer_update(struct pico_controller_motion_producer *p,
+    uint64_t generation, const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now)
+{
+    if (!p || !p->channel) return -EINVAL;
+    if (generation != p->generation) return -ESTALE;
+    if (p->error) return p->error;
+    if (!first || !second) return fail(p, -EINVAL);
+    if (now <= 0 || now < p->now) return fail(p, -ETIME);
+    p->now = now;
+    for (unsigned hand = 0; hand < 2; ++hand) if (p->connected_mask & (1U << hand)) {
+        if ((p->received[hand] && now - p->received[hand] > PICO_CONTROLLER_MOTION_MAX_AGE_NS) ||
+            (!p->received[hand] && now - p->started >= INT64_C(2000000000)))
+            return fail(p, -ETIMEDOUT);
+    }
+    struct pico_controller_motion_ring ring = p->ring;
+    struct pico_controller_imu_sample samples[PICO_CONTROLLER_RING_MAX_IMU];
+    int count = pico_controller_ring_read_motion(&ring, first, second,
+        p->mcu_type, p->radio_type, p->connected_mask, samples);
+    if (count < 0) return fail(p, count);
+    struct pico_controller_motion_event pending[PICO_CONTROLLER_RING_MAX_IMU];
+    for (int i = 0; i < count; ++i) {
+        const struct pico_controller_imu_sample *s = &samples[i];
+        struct pico_controller_motion_event *e = &pending[i];
+        *e = (struct pico_controller_motion_event){.timestamp_us = s->timestamp_us,
+            .received_ns = now, .hand = s->hand, .sequence = s->sequence, .flags = s->flags};
+        if (!pico_controller_motion_time(&p->clock, s->timestamp_us, now,
+                PICO_CONTROLLER_MOTION_MAX_AGE_NS, &e->time) ||
+            !pico_controller_motion_values(s, &p->config[s->hand - 1], e->values))
+            return fail(p, -EPROTO);
+    }
+    for (int i = 0; i < count; ++i) {
+        if (!pico_controller_motion_channel_publish(p->channel, &pending[i])) return fail(p, -EPROTO);
+        p->received[pending[i].hand - 1] = now;
+    }
+    p->ring = ring;
+    return count;
+}
+
+void pico_controller_motion_producer_stop(struct pico_controller_motion_producer *p)
+{
+    if (p && p->channel) fail(p, -ESHUTDOWN);
+}
