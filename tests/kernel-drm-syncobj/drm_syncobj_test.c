@@ -209,12 +209,59 @@ out:
     return ret;
 }
 
+static int empty_container_iteration(void)
+{
+    struct dma_fence_unwrap cursor = {0};
+    struct dma_fence_array *empty;
+    struct dma_fence *source = new_fence(), *head = NULL, *found;
+    unsigned int refs, i;
+    int ret = -ENOMEM;
+
+    empty = dma_fence_array_create(0, NULL, dma_fence_context_alloc(1), 1, false);
+    if (!source || !empty)
+        goto out;
+    refs = kref_read(&empty->base.refcount);
+    found = dma_fence_unwrap_first(&empty->base, &cursor);
+    ret = -EINVAL;
+    if (found || cursor.chain || kref_read(&empty->base.refcount) != refs) {
+        pr_err("DRM_SYNCOBJ_EMPTY_CONTAINER_FAIL direct refs=%u expected=%u\n",
+               kref_read(&empty->base.refcount), refs);
+        goto out;
+    }
+    head = dma_fence_get(source);
+    for (i = 0; i < 2; ++i) {
+        struct dma_fence_chain *chain = kzalloc(sizeof(*chain), GFP_KERNEL);
+        if (!chain) {
+            ret = -ENOMEM;
+            goto out;
+        }
+        dma_fence_chain_init(chain, head, dma_fence_get(&empty->base), i + 2);
+        head = &chain->base;
+    }
+    found = dma_fence_unwrap_first(head, &cursor);
+    if (found != source || dma_fence_unwrap_next(&cursor) || cursor.chain) {
+        pr_err("DRM_SYNCOBJ_EMPTY_CONTAINER_FAIL later_dependency\n");
+        goto out;
+    }
+    ret = 0;
+    pr_info("DRM_SYNCOBJ_UNWRAP_EMPTY_PASS\n");
+out:
+    dma_fence_put(cursor.chain);
+    dma_fence_put(head);
+    if (empty)
+        dma_fence_put(&empty->base);
+    dma_fence_put(source);
+    return ret;
+}
+
 static int __init test_start(void)
 {
     int ret;
     if (!of_machine_is_compatible("linux,dummy-virt"))
         return -ENODEV;
     ret = sequence_width_and_release();
+    if (!ret)
+        ret = empty_container_iteration();
     if (!ret)
         ret = array_completion(false);
     if (!ret)

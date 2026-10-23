@@ -252,10 +252,37 @@ applies without fuzz, and both changed objects compile against the pinned
 4.19 configuration. An ASan/UBSan host test extracts the changed iterator from
 the patch and checks consecutive empty containers and reference release.
 
-The existing QEMU kernel also passes the ioctl suite with the shared build
-cache mounted read-only. The test init now installs a SIGALRM handler; a
+At review time, the existing QEMU kernel also passed the ioctl suite with the
+shared build cache mounted read-only. The test init installs a SIGALRM handler; a
 separate forced-timeout run verifies its failure marker and power-off as PID 1.
 These runs validate the test fixture on the existing kernel, not a boot of the
-newly corrected series. The corrected kernel still needs a complete rebuild
-and its own VM and physical acceptance. Review evidence is retained in
+newly corrected series. Review evidence is retained in
 `output/pr-2-review-20261023-v1/`.
+
+On 2026-10-24, the complete corrected series builds for the physical Pico with
+38 modules and for QEMU with 40 modules. The physical build is
+`output/kernel/pico-neo3/linux-review-20261024-v2/`; its configuration, exported
+symbol CRCs, module names and vermagic match the previously tested physical
+build. All 518 audio symbol CRCs, names and export types also match; the audio
+symbol-table bytes differ because their module paths include temporary build
+directories. This does not replace the requirement to package the rebuilt
+modules with their matching kernel.
+
+The expanded kernel fixture constructs a zero-child fence array directly and
+checks that iteration releases its reference. It then places two empty
+containers before a real unsignaled dependency and requires that dependency
+to remain reachable. Against the previous QEMU kernel, the direct case fails
+with reference count 2 instead of 1. The test init now powers off on assertion
+failure as PID 1 rather than exiting into a guest kernel panic.
+
+The corrected QEMU build, `output/kernel/pico-neo3/qemu-review-20261024-v1/`,
+passes the expanded suite, including `DRM_SYNCOBJ_UNWRAP_EMPTY_PASS`, the
+existing AND/OR, width, transfer and opaque-FD cases, and query references
+remaining 2 to 2. The fixture unloads and the guest powers off without kernel
+warnings. The shared build cache is mounted read-only, and its Image,
+configuration and symbol-table hashes match before and after the run. Positive
+and negative evidence is retained under
+`output/pico-controller-image-lifetime-20261023-v1/`. The rebuilt physical
+kernel has not yet been packaged into a matching root or booted on the Pico;
+GPU completion, compositor timing and live controller tracking remain hardware
+acceptance gates for this revision.

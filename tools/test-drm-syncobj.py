@@ -115,7 +115,7 @@ def run(args):
                  (' reframed.query_leak=expected' if args.expect_query_leak else '')], 'boot.log', 60)
         text = (output / 'boot.log').read_text(errors='replace')
         cases = ['FUTURE_AND_OPAQUE_FD', 'TRANSFER_COMPLETION', 'COUNTERS_AND_CLEANUP',
-                 'WIDTH_AND_RELEASE', 'UNWRAP_AND', 'UNWRAP_OR', 'FIXTURE_UNLOAD', 'ALL']
+                 'WIDTH_AND_RELEASE', 'UNWRAP_EMPTY', 'UNWRAP_AND', 'UNWRAP_OR', 'FIXTURE_UNLOAD', 'ALL']
         cases.append('QUERY_LEAK_REPRODUCED' if args.expect_query_leak else 'QUERY_REFS')
         if any('DRM_SYNCOBJ_' + name + '_PASS' not in text for name in cases):
             raise RuntimeError('Missing syncobj acceptance; inspect boot.log')

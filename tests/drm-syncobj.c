@@ -22,7 +22,8 @@
 
 #define CHECK(x) do { if (!(x)) { \
     fprintf(stderr, "DRM_SYNCOBJ_FAIL line %d: %s errno=%d\n", __LINE__, #x, errno); \
-    exit(1); } } while (0)
+    if (getpid() == 1) (void)reboot(RB_POWER_OFF); \
+    _exit(1); } } while (0)
 
 struct sw_fence { uint32_t value; char name[32]; int32_t fence; };
 #define SW_CREATE _IOWR('W', 0, struct sw_fence)
