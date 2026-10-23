@@ -7,7 +7,7 @@ struct pico_vendor_slam_output {
     pthread_mutex_t mutex;
     struct pico_vendor_slam_output_config config;
     struct pico_vendor_slam_output_status status;
-    int64_t last_now;
+    int64_t last_now, last_result;
 };
 
 static bool config_valid(const struct pico_vendor_slam_output_config *c)
@@ -51,8 +51,9 @@ enum pico_slam_channel_result pico_vendor_slam_output_callback(struct pico_vendo
     if (o->config.get_result(o->config.handle, bytes) ||
         !pico_slam_result_decode(bytes, sizeof(bytes), &result)) goto fail;
     int64_t now = o->config.monotonic_ns(o->config.clock_data);
-    if (now <= 0 || now < o->last_now) goto fail;
+    if (now <= 0 || now < o->last_now || result.timestamp_ns < o->last_result) goto fail;
     o->last_now = now;
+    o->last_result = result.timestamp_ns;
     rc = pico_slam_channel_publish_result(o->config.channel, o->config.generation,
                                          &o->config.pose, &result, o->config.uncertainty_ns, now);
     if (rc == PICO_SLAM_CHANNEL_REFUSED) goto fail;

@@ -110,6 +110,13 @@ int main(int argc, char **argv)
     assert(status.callbacks == 3 && status.published == 1 && status.waiting == 1 && status.failed && status.stopped);
     assert(!pico_vendor_slam_output_release(&o) && !o);
 
+    c=config(&channel,&b);
+    assert(!pico_vendor_slam_output_create(&c,&o));
+    assert(pico_vendor_slam_output_callback(o)==PICO_SLAM_CHANNEL_WAITING);
+    int64_t older=999999999;memcpy(b.bytes,&older,sizeof(older));b.bytes[65]=1;
+    assert(pico_vendor_slam_output_callback(o)==PICO_SLAM_CHANNEL_REFUSED);
+    absent(&channel,b.now);assert(!pico_vendor_slam_output_release(&o));
+
     for (unsigned fault = 0; fault < 8; ++fault) {
         c = config(&channel, &b); b.bytes[65] = 1;
         assert(!pico_vendor_slam_output_create(&c, &o));
@@ -162,15 +169,24 @@ int main(int argc, char **argv)
         FILE *file = fopen(argv[1], "rb"); assert(file);
         c = config(&channel, &b);
         assert(!pico_vendor_slam_output_create(&c, &o));
+        bool stopped=false, published=false;int64_t previous_timestamp=0;
         size_t n;
         while ((n = fread(b.bytes, 1, sizeof(b.bytes), file))) {
             assert(n == sizeof(b.bytes));
             struct pico_slam_result decoded;
             assert(pico_slam_result_decode(b.bytes, n, &decoded));
+            assert(decoded.timestamp_ns<=INT64_MAX-2000000);
             b.now = decoded.timestamp_ns + 2000000;
             bool tracked = decoded.state == 1 && decoded.confidence == 1;
+            bool refused=stopped || decoded.state!=1 || decoded.confidence>1 ||
+                decoded.timestamp_ns<previous_timestamp ||
+                (published && (!tracked || decoded.timestamp_ns==previous_timestamp));
+            enum pico_slam_channel_result expected=refused?PICO_SLAM_CHANNEL_REFUSED:
+                tracked?PICO_SLAM_CHANNEL_PUBLISHED:PICO_SLAM_CHANNEL_WAITING;
             enum pico_slam_channel_result rc = pico_vendor_slam_output_callback(o);
-            assert(rc == (tracked ? PICO_SLAM_CHANNEL_PUBLISHED : PICO_SLAM_CHANNEL_WAITING));
+            assert(rc == expected);
+            stopped=refused;tracked=rc==PICO_SLAM_CHANNEL_PUBLISHED;
+            published|=tracked;previous_timestamp=decoded.timestamp_ns;
             assert(pico_slam_channel_read(&channel, 42, 1, b.now, 100000000, &sample) == tracked);
             if (tracked) {
                 for (unsigned i = 0; i < 3; ++i) assert(fabs(sample.pose.position[i] - decoded.position[i]) < 1e-9);
@@ -178,7 +194,7 @@ int main(int argc, char **argv)
             }
             ++records;
         }
-        assert(!ferror(file)); fclose(file);
+        assert(records && !ferror(file)); fclose(file);
         pico_vendor_slam_output_stop(o);
         assert(!pico_vendor_slam_output_release(&o));
     }

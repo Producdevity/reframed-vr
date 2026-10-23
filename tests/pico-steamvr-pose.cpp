@@ -178,14 +178,22 @@ int main(int argc, char **argv)
         config.get_result=get_result;config.monotonic_ns=clock_ns;
         pico_vendor_slam_output *output=nullptr;
         assert(!pico_vendor_slam_output_create(&config,&output));
+        bool stopped=false, seen_published=false;int64_t previous_timestamp=0;
         size_t count;
         while ((count=std::fread(replay.bytes,1,sizeof(replay.bytes),file))) {
             pico_slam_result decoded{};
             assert(count==sizeof(replay.bytes)&&pico_slam_result_decode(replay.bytes,count,&decoded));
+            assert(decoded.timestamp_ns<=INT64_MAX-2000000);
             replay.now=decoded.timestamp_ns+2000000;
-            auto rc=pico_vendor_slam_output_callback(output);
+            bool tracked=decoded.state==1&&decoded.confidence==1;
+            bool refused=stopped || decoded.state!=1 || decoded.confidence>1 ||
+                decoded.timestamp_ns<previous_timestamp ||
+                (seen_published && (!tracked || decoded.timestamp_ns==previous_timestamp));
+            auto expected=refused?PICO_SLAM_CHANNEL_REFUSED:tracked?PICO_SLAM_CHANNEL_PUBLISHED:PICO_SLAM_CHANNEL_WAITING;
+            auto rc=pico_vendor_slam_output_callback(output);assert(rc==expected);
+            stopped=refused;seen_published|=rc==PICO_SLAM_CHANNEL_PUBLISHED;previous_timestamp=decoded.timestamp_ns;
             auto pose=pico_steamvr_pose(&channel,77,1,replay.now,age,true);
-            if (decoded.state==1&&decoded.confidence==1) {
+            if (rc==PICO_SLAM_CHANNEL_PUBLISHED) {
                 assert(rc==PICO_SLAM_CHANNEL_PUBLISHED&&pose.poseIsValid);
                 for (unsigned i=0;i<3;++i) near(pose.vecPosition[i],decoded.position[i]);
                 near(pose.qRotation.w,decoded.orientation[3]);
@@ -193,10 +201,10 @@ int main(int argc, char **argv)
                 near(pose.qRotation.y,decoded.orientation[1]);
                 near(pose.qRotation.z,decoded.orientation[2]);
                 near(pose.poseTimeOffset,-.002);++published;
-            } else {assert(rc==PICO_SLAM_CHANNEL_WAITING);invalid(pose);}
+            } else {invalid(pose);}
             ++records;
         }
-        assert(!std::ferror(file));std::fclose(file);
+        assert(records && !std::ferror(file));std::fclose(file);
         pico_vendor_slam_output_stop(output);
         invalid(pico_steamvr_pose(&channel,77,1,replay.now,age,true));
         assert(!pico_vendor_slam_output_release(&output));
