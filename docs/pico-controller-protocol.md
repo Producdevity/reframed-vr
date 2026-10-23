@@ -932,6 +932,33 @@ Replaying 7,402 saved physical snapshots on both CPUs yields exactly the same
 The replay does not start sensors or establish live optical tracking. Evidence:
 `output/pico-controller-optical-20261023-v1/motion-ring-native-result.json`.
 
+### Ordered motion channel
+
+[`pico-controller-motion-channel`](../src/pico-controller-motion-channel.h) is
+a separate 32,832-byte channel for the native receiver and Bionic controller
+tracker. One producer retains 256 converted IMU events, including the raw
+microsecond timestamp, calibrated monotonic capture interval, receipt time,
+hand, sequence byte, flags and all nine stock tracker values. Capture times
+increase per hand; events in one receive snapshot may share a receipt time.
+The producer never waits for a consumer.
+
+Each reader binds the process instance and estimator generation and maintains
+its own sequence cursor. It copies the next event consistently, then samples
+the clock and enforces an explicit age bound of at most 100 ms, including
+timestamp uncertainty. A stopped stream cannot publish again. Missing unread
+history returns `EOVERFLOW`; stale data returns `ETIMEDOUT`. Neither refusal
+advances the cursor or changes its output. Restart the tracking stream explicitly
+rather than silently skipping those failures. Consumers still need per-hand gap
+checks and fresh head-history brackets before calling the vendor estimator.
+
+The channel does not infer factory calibration, connection state or an optical
+pose, and does not yet enable a live motion producer automatically. Host
+ASan/UBSan and stock-Pico ARM64 UBSan tests pass timestamp/identity boundaries,
+overrun detection, torn publication, permanent stop and 100,000 cross-process
+events with every payload field checked. The native test uses recorded/synthetic
+inputs only; it does not start sensors. Evidence:
+`output/pico-controller-motion-20261023-v1/motion-channel-native-result.json`.
+
 Duration expiry or SIGINT/SIGTERM disconnects both hands and closes RPC clients.
 `PICO_CONTROLLER_WAIT_DSP_OFFLINE` tells the session owner to stop its remaining
 head/camera clients and shut down SLPI. The worker retains DMA registrations until
