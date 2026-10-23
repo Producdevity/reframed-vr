@@ -203,7 +203,10 @@ int main(int argc, char **argv)
     if (!ssc_clock_calibrate_monotonic(&clock, 16, 100000)) return 2;
     int64_t offset = clock.host_ns - (int64_t)((__int128)clock.counter_ticks * 1000000000 / clock.counter_hz);
     int fd = open(path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
-    if (fd < 0 || ftruncate(fd, sizeof(struct pico_controller_channel)) || fchmod(fd, 0644)) return 2;
+    if (fd < 0) return 2;
+    if (ftruncate(fd, sizeof(struct pico_controller_channel)) || fchmod(fd, 0644)) {
+        close(fd); unlink(path); return 2;
+    }
     struct pico_controller_channel *channel = mmap(NULL, sizeof(*channel), PROT_READ | PROT_WRITE,
                                                    MAP_SHARED, fd, 0);
     close(fd);
@@ -360,8 +363,16 @@ int main(int argc, char **argv)
     while (!file_equals("/sys/bus/msm_subsys/devices/subsys7/state", "OFFLINE\n")) {
         const struct timespec delay = {0, 100000000}; nanosleep(&delay, NULL);
     }
-    if (accel.buffer.data) rpcmem_free(accel.buffer.data);
-    if (controller.buffer.data) rpcmem_free(controller.buffer.data);
+    int release_error = 0;
+    if (accel.buffer.data) {
+        rpcmem_free(accel.buffer.data);
+        if (rpcmem_to_fd(accel.buffer.data) >= 0) release_error = 1;
+    }
+    if (controller.buffer.data) {
+        rpcmem_free(controller.buffer.data);
+        if (rpcmem_to_fd(controller.buffer.data) >= 0) release_error = 1;
+    }
+    if (release_error) { puts("PICO_CONTROLLER_RELEASE_FAILED retained=1"); _Exit(1); }
     puts("PICO_CONTROLLER_RELEASED_DSP_OFFLINE");
     _Exit(rc || accel_rc || controller_rc || motion_error ? 1 : 0);
 }

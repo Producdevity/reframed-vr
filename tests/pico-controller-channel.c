@@ -2,21 +2,27 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 
 static struct pico_controller_channel channel;
 static int64_t clock_value;
+static _Atomic bool reading, done;
+static _Atomic unsigned concurrent_reads;
 static int64_t clock_ns(void *unused) { (void)unused; return clock_value; }
 
 static void *writer(void *unused)
 {
     (void)unused;
+    while (!atomic_load(&reading)) {}
     for (unsigned n = 1; n <= 50000; n++) {
         struct pico_controller_sample sample = {
             .hand = 1, .trigger = n & 255, .grip = n & 255,
             .stick_x = n & 255, .stick_y = n & 255};
         assert(pico_controller_channel_publish(&channel, &sample, n));
+        if(n==1) while(!atomic_load(&concurrent_reads)) {}
     }
+    atomic_store(&done,true);
     return NULL;
 }
 
@@ -56,12 +62,14 @@ int main(int argc, char **argv)
     clock_value = 50000;
     pthread_t thread;assert(!pthread_create(&thread, NULL, writer, NULL));
     unsigned accepted = 0;
-    for (unsigned n = 0; n < 50000; n++) {
+    atomic_store(&reading,true);
+    do {
         if (pico_controller_channel_read(&channel, 7, 1, clock_ns, NULL, 50000, &out)) {
             assert(out.hand == 1 && out.trigger == out.grip && out.trigger == out.stick_x && out.trigger == out.stick_y);
-            accepted++;
+            accepted++;atomic_fetch_add(&concurrent_reads,1);
         }
-    }
+    } while(!atomic_load(&done));
+    assert(accepted>0);
     assert(!pthread_join(thread, NULL));
     assert(pico_controller_channel_read(&channel, 7, 1, clock_ns, NULL, 50000, &out));
     assert(out.trigger == (50000 & 255));

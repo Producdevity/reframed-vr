@@ -29,15 +29,19 @@ def stop(*args):
 signal.signal(signal.SIGTERM,stop)
 if mode=='exit':raise SystemExit(3)
 path=Path(a.channel);instance=int(a.instance,16)
-path.write_bytes(struct.pack('<QQ',0x5256504943430001,instance)+bytes(112));path.chmod(0o644)
-def motion_channel(path,generation):
+with path.open('xb') as output:output.write(struct.pack('<QQ',0x5256504943430001,instance)+bytes(112))
+path.chmod(0o644)
+def refresh_motion(path,generation):
  now=time.monotonic_ns()-1000000
  if mode=='motion-stale':now-=200000000
  empty=mode=='motion-empty'
  header=[0x525650434d430001,instance,int(generation,16),0 if empty else 2,1,
          now if mask&1 and not empty else 0,now if mask&2 and not empty else 0,now]
  if mode=='motion-wrong-generation':header[2]+=1
- Path(path).write_bytes(struct.pack('<8Q',*header)+bytes(32768));Path(path).chmod(0o644)
+ with Path(path).open('r+b') as output:output.write(struct.pack('<8Q',*header))
+def motion_channel(path,generation):
+ with Path(path).open('xb') as output:output.write(bytes(32832))
+ Path(path).chmod(0o644);refresh_motion(path,generation)
 if a.motion_channel:
  mask=int(bool(a.left_motion_config))|int(bool(a.right_motion_config))<<1
  motion_channel(a.motion_channel,a.motion_generation)
@@ -65,6 +69,9 @@ if mode.startswith('auto-'):
   print(f'PICO_CONTROLLER_MOTION_RESUMED instance={a.instance} generation={generation_text} received_ns={now} deadline_ns={now+90000000}',flush=True)
   if mode=='auto-failed-probe':print(f'PICO_CONTROLLER_MOTION_RESUME_FAILED generation={generation} rc=-71',flush=True)
 while not stopping and not rc:
+ if a.motion_channel and mode not in ['motion-stale','motion-empty','motion-wrong-generation']:
+  with Path(current).open('rb') as source:active=struct.unpack('<8Q',source.read(64))[4]
+  if active:refresh_motion(current,generation)
  if a.motion_channel and select.select([sys.stdin],[],[],.01)[0]:
   command=sys.stdin.readline().split()
   if not command:continue
@@ -185,6 +192,34 @@ class PicoControllerSessionTests(unittest.TestCase):
         self.assertIsNone(worker.process.poll())
         worker.wait_ready(2)
         self.stop(worker)
+
+    def test_nonfinite_timeout_refuses_without_stopping_or_restarting_worker(self):
+        worker = self.make(motion=self.motion())
+        worker.start();worker.wait_motion_ready(2)
+        for timeout in (float('nan'), float('inf'), -float('inf')):
+            with self.subTest(timeout=timeout):
+                with self.assertRaises(ValueError):worker.wait_ready(timeout)
+                with self.assertRaises(ValueError):worker.recover_motion(timeout)
+                with self.assertRaises(ValueError):worker.restart_motion('1123456789abcdef', timeout)
+        self.assertIsNone(worker.motion_restart)
+        self.assertIsNone(worker.process.poll())
+        self.stop(worker)
+
+    def test_recovery_reports_unexpected_worker_exit(self):
+        worker = self.make(motion=self.motion())
+        worker.start();worker.wait_motion_ready(2)
+        worker.process.kill();worker.process.wait(timeout=2)
+        with self.assertRaisesRegex(RuntimeError, 'Worker exited'):
+            worker.recover_motion(0)
+
+    def test_restart_generation_collision_preserves_existing_mapping(self):
+        worker = self.make(motion=self.motion())
+        worker.start();worker.wait_motion_ready(2)
+        generation='1123456789abcdef'
+        collision=Path(str(worker.motion_base)+'.'+generation)
+        collision.write_bytes(b'owned by another generation')
+        with self.assertRaises(RuntimeError):worker.restart_motion(generation, 2)
+        self.assertEqual(collision.read_bytes(), b'owned by another generation')
 
     def test_partial_status_and_large_logs_do_not_block_child(self):
         for mode in ['partial', 'flood']:

@@ -61,7 +61,7 @@ static void boundaries(void)
     assert(pico_controller_motion_producer_update(&p, 99, a, b, 0) == -ESTALE);
     assert(!memcmp(&saved, &p, sizeof(p)));
     assert(!pico_controller_motion_producer_update(&p, 4, a, b, fake_now));
-    record(a, 1101001, 1); memcpy(b, a, 1000); fake_now += 100000001;
+    record(a, 1001001, 1); memcpy(b, a, 1000); fake_now += 100000001;
     assert(pico_controller_motion_producer_update(&p, 4, a, b, fake_now) == -ETIMEDOUT);
 
     struct ssc_timestamp captures[2] = {{17, 19}, {23, 29}}, untouched[2];
@@ -121,7 +121,7 @@ static void boundaries(void)
 
     assert(!pico_controller_motion_producer_init(&p, c, 7, 8, &clock, config, 1, 2, 1, 1000000000));
     record(a, 2000000, 1); memcpy(b, a, 1000);
-    assert(pico_controller_motion_producer_update(&p, 8, a, b, 1000000000) == -EPROTO);
+    assert(pico_controller_motion_producer_update(&p, 8, a, b, 1000000000) == -ETIMEDOUT);
     assert(!c->sequence && !c->active);
 
     assert(!pico_controller_motion_producer_init(&p, c, 9, 10, &clock, config, 1, 2, 1, 1000000000));
@@ -154,6 +154,16 @@ static void boundaries(void)
     assert(pico_controller_motion_producer_init(&p, c, 1, 2, &clock, config, 1, 2, 0, 1000000000) == -EINVAL);
     struct pico_controller_motion_config bad[2]; memcpy(bad, config, sizeof(bad)); bad[0].mcu_type = 2;
     assert(pico_controller_motion_producer_init(&p, c, 1, 2, &clock, bad, 1, 2, 1, 1000000000) == -EINVAL);
+    assert(!pico_controller_motion_producer_init(&p,c,21,22,&clock,config,1,2,1,1000000000));
+    memset(a,0,sizeof(a));record(a,1001000,1);memcpy(b,a,sizeof(b));
+    assert(pico_controller_motion_producer_update(&p,22,a,b,1002000000)==1);
+    record(a,1201000,1);memcpy(b,a,sizeof(b));
+    assert(pico_controller_motion_producer_update(&p,22,a,b,1202000000)==1);
+    assert(c->active && c->sequence==2);
+    assert(!pico_controller_motion_producer_init(&p,c,23,24,&clock,config,1,2,1,1000000000));
+    memset(a,0,sizeof(a));record(a,2999000,1);memcpy(b,a,sizeof(b));
+    assert(pico_controller_motion_producer_update(&p,24,a,b,3000000000)==1);
+    assert(c->active && c->sequence==1);
     free(c);
 }
 
@@ -168,7 +178,9 @@ static void replay(const char *input, const char *output)
     struct pico_controller_motion_channel *c = calloc(1, sizeof(*c)); assert(c);
     struct pico_controller_motion_producer producer = {0};
     uint64_t cursor = 0; unsigned snapshots = 0, samples = 0; uint8_t raw[2024];
-    while (fread(raw, sizeof(raw), 1, file) == 1) {
+    size_t bytes;
+    while ((bytes=fread(raw, 1, sizeof(raw), file))) {
+        assert(bytes==sizeof(raw));
         uint64_t receipt; memcpy(&receipt, raw + 8, sizeof(receipt)); fake_now = (int64_t)receipt;
         if (!snapshots) assert(!pico_controller_motion_producer_init(&producer, c, 19, 20,
             &clock, config, 1, 2, 1, fake_now));
@@ -186,7 +198,7 @@ static void replay(const char *input, const char *output)
         }
         ++snapshots;
     }
-    assert(feof(file) && !ferror(file)); assert(!fclose(file) && !fclose(out));
+    assert(snapshots && samples && feof(file) && !ferror(file)); assert(!fclose(file) && !fclose(out));
     pico_controller_motion_producer_stop(&producer); free(c);
     printf("PICO_CONTROLLER_MOTION_REPLAY_PASS snapshots=%u samples=%u\n", snapshots, samples);
 }

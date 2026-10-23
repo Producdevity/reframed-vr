@@ -1,6 +1,7 @@
 """Own one controller worker process within an already verified native sensor session."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -198,7 +199,7 @@ class ControllerSession:
                 self.released = True
 
     def _wait(self, predicate, timeout):
-        if self.process is None or timeout < 0:
+        if self.process is None or not math.isfinite(timeout) or timeout < 0:
             raise ValueError('Requires a started worker and nonnegative timeout')
         deadline = time.monotonic() + timeout
         while True:
@@ -318,7 +319,7 @@ class ControllerSession:
         """
         self._read_status()
         if (not isinstance(generation, str) or not re.fullmatch('[0-9a-f]{16}', generation) or
-                not self.motion or int(generation, 16) <= int(self.motion['generation'], 16) or timeout < 0):
+                not self.motion or int(generation, 16) <= int(self.motion['generation'], 16) or not math.isfinite(timeout) or timeout < 0):
             raise ValueError('Motion restart requires an increasing nonzero generation and timeout')
         if (self.ready != 0 or self.waiting or self.process is None or self.process.poll() is not None or
                 self.motion_ready != 0 or
@@ -349,10 +350,12 @@ class ControllerSession:
         None means no eligible data. A timeout leaves the operation pending;
         another call completes it without resending or releasing DSP ownership.
         """
-        if timeout < 0 or not self.motion:
+        if not math.isfinite(timeout) or timeout < 0 or not self.motion:
             raise ValueError('Motion recovery requires enabled motion and a nonnegative timeout')
         self._read_status()
         if not self.motion_recovery_pending:
+            if self.process is not None and self.process.poll() is not None and not self.released:
+                raise RuntimeError(f'Worker exited before motion recovery: {self.process.returncode}')
             if (self.ready != 0 or self.waiting or self.process is None or self.process.poll() is not None or
                     self.motion_stop_result is None or self.motion_stop_result['rc'] != MOTION_RECEIVE_TIMEOUT or
                     self.motion_resumed is None or self.motion_resume_error is not None or

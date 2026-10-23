@@ -24,6 +24,8 @@ int main(void)
     struct pico_controller_sample samples[2] = {{0}};
     uint8_t first[1000] = {0}, second[1000] = {0};
     assert(!pico_controller_ring_read(&ring, first, second, samples));
+    record(first, 1, 0, 16); memcpy(second, first, sizeof(first));
+    assert(!pico_controller_ring_read(&ring, first, second, samples));
     for (unsigned slot = 0; slot < 10; ++slot) record(first + 100 * slot, 1, 10 - slot, slot);
     memcpy(second, first, sizeof(first));
     assert(pico_controller_ring_read(&ring, first, second, samples) == 1);
@@ -34,6 +36,9 @@ int main(void)
     memcpy(second, first, sizeof(first));
     assert(pico_controller_ring_read(&ring, first, second, samples) == 3);
     assert(samples[0].buttons == 4 && samples[1].buttons == 8);
+    record(first + 900, 1, 11, 16); memcpy(second, first, sizeof(first));
+    assert(!pico_controller_ring_read(&ring, first, second, samples));
+    assert(samples[0].buttons == 4);
     struct pico_controller_sample saved[2]; memcpy(saved, samples, sizeof(saved));
     record(first + 900, 1, 12, 16);
     assert(!pico_controller_ring_read(&ring, first, second, samples));

@@ -63,6 +63,10 @@ static void report(GObject *client, guint id, guint64 high, guint64 low,
     gsize size;
     const void *bytes = g_bytes_get_data(payload, &size);
     if (id == SSC_MSG_RESPONSE_ENABLE_REPORT) {
+        if (!bytes || !size || size > 4096) {
+            fail(s, "invalid controller configuration response size");
+            return;
+        }
         SscConfigResponse *configuration = ssc_config_response__unpack(NULL, size, bytes);
         if (!configuration || (configuration->has_sample_rate &&
             (!isfinite(configuration->sample_rate) || configuration->sample_rate < 0))) {

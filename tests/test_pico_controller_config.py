@@ -210,7 +210,7 @@ class PicoControllerMotionConfigTests(unittest.TestCase):
 
     def test_calibration_flags_counts_generation_and_finiteness(self):
         raw = calibration_raw()
-        for offset, value in [(0, 1), (4, 0), (8, 48), (204, 0), (208, 60),
+        for offset, value in [(0, 1), (0, 256), (0, 65536), (0, 16777216), (4, 0), (8, 48), (204, 0), (208, 60),
                               (596, 0), (600, -1)]:
             changed = bytearray(raw)
             struct.pack_into('<i', changed, offset, value)

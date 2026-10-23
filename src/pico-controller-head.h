@@ -22,7 +22,7 @@ struct pico_controller_head *pico_controller_head_create(uint64_t generation,
 
 /* 1 = ready, 0 = waiting for tracked history, negative errno = refused.
  * Malformed/regressing current-generation input is terminal. Confidence loss
- * and a gap clear the history and may recover. A duplicate is -EALREADY and
+ * and a gap clear the history and may recover. A tracked duplicate is -EALREADY and
  * stale-generation calls leave the current history unchanged. */
 int pico_controller_head_push(struct pico_controller_head *history, uint64_t generation,
     const void *raw, size_t size, int64_t uncertainty_ns, int64_t now_ns);

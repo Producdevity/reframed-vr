@@ -204,6 +204,7 @@ the embedded manifests and the extracted files:
 
 The full firmware comparison is in `compare-firmware-result.log`; the active
 pin samples, raw rings and decoded diagnostic frames are in the archives.
+
 ### Controller delivery enabled by MCU pacing
 
 Starting the verified five-second camera capture during a stock-library

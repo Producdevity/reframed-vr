@@ -5,6 +5,10 @@
 #include "pico-controller-motion.h"
 #include "pico-controller-ring.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct pico_controller_motion_producer {
     struct pico_controller_motion_channel *channel;
     struct pico_controller_motion_ring ring;
@@ -58,4 +62,7 @@ int pico_controller_motion_producer_restart(struct pico_controller_motion_produc
     const uint8_t first[PICO_CONTROLLER_RING_BYTES],
     const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -85,6 +85,6 @@ int main(void)
         assert(!pico_station_response_valid(unaligned, 40));
         unaligned[bit / 8] ^= 1U << (bit % 8);
     }
-    puts("PICO_STATION_PROTOCOL_PASS golden=12 corrupted_frames=320 hardware_io=0");
+    puts("PICO_STATION_PROTOCOL_PASS golden=14 corrupted_frames=320 hardware_io=0");
     return 0;
 }

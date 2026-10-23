@@ -65,7 +65,7 @@ def calibration(text):
     if words[:4] != [0, 0, 1, 14]:
         raise ValueError('Controller calibration unavailable or unsupported')
     raw = struct.pack('<165I', *words[4:])
-    if raw[0] != 0:
+    if words[4] != 0:
         raise ValueError('Unsupported controller calibration generation')
     sections = {}
     for name, offset, count in [('imu', 4, 24), ('ir', 204, 48), ('imu_ir', 596, 7)]:

@@ -11,7 +11,7 @@ class PicoControllerMotionTests(unittest.TestCase):
             executable = Path(temp) / "pico-controller-motion"
             subprocess.run([
                 "cc", "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
-                "-fsanitize=address,undefined", "-I", str(root / "src"),
+                "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-I", str(root / "src"),
                 str(root / "tests/pico-controller-motion.c"),
                 str(root / "src/pico-controller-motion.c"), str(root / "src/ssc-clock.c"),
                 "-o", str(executable),

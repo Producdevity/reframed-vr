@@ -946,8 +946,9 @@ python3 tools/build-pico-controller-input.py \
 
 The worker requires native Linux, this unit's boot serial `c980c8d4`, an explicit
 current boot UUID, root and an already-online SLPI. The session owner must first
-verify the b1977 firmware/configuration and supply `DSP_LIBRARY_PATH` and the
-verified FastRPC `LD_LIBRARY_PATH`. The worker uses the measured MCU type 1,
+verify the b1977 firmware/configuration and supply the verified FastRPC `LD_LIBRARY_PATH`. The worker does not read
+`DSP_LIBRARY_PATH`; a separate Bionic/vendor tracking process may require its
+own DSP search-path configuration. The worker uses the measured MCU type 1,
 radio type 2, touch support, controller SUID and 1,000-byte buffer contract. It
 does not infer those settings for another unit or firmware revision.
 
@@ -1065,7 +1066,9 @@ verifies IMU delivery into Bionic; optical pose publication remains unverified. 
 `output/pico-controller-motion-20261023-v1/producer-native-result.json` and
 `worker-final-build/build.json` beside it.
 
-Duration expiry or SIGINT/SIGTERM disconnects both hands and closes RPC clients.
+Duration expiry or SIGINT/SIGTERM disconnects both hands and attempts to close both RPC clients.
+A failed RPC close can retain client state; its error is reported and DMA stays
+owned until the session owner shuts down SLPI.
 `PICO_CONTROLLER_WAIT_DSP_OFFLINE` tells the session owner to stop its remaining
 head/camera clients and shut down SLPI. The worker retains DMA registrations until
 the subsystem reports `OFFLINE`, including after RPC errors. The owner must not
@@ -1099,8 +1102,9 @@ reactivate the old mapping or advance its watermark during this inspection.
 Digital button activity alone is insufficient. A bounded notification deadline
 prevents delayed status logs from triggering a restart after the data ages out.
 
-The method returns `None` while waiting, or a new endpoint only after restart
-acknowledgment and fresh samples. The serialized session owner atomically
+The method returns `None` when no eligible resumption data exists, or a new
+endpoint after restart acknowledgment and fresh samples. An expired wait for
+acknowledgment or fresh samples raises `TimeoutError`, leaving recovery pending. The serialized session owner atomically
 publishes that endpoint to its reset/rebind-capable consumer. Polling may run in
 an owner thread, but other session calls must wait for that thread to stop.
 An acknowledgment timeout remains pending across calls, without resending.

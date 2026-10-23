@@ -62,7 +62,7 @@ def analyze(data):
         item = {'successful_reads': len(rows), 'positive_timestamps': len(stamps),
                 'distinct_positive_timestamps': len(set(stamps)),
                 'timestamp_regressions': sum(b < a for a, b in zip(stamps, stamps[1:])),
-                'public_and_internal_confidence': dict(Counter(
+                'state_confidence_diagnostic_52': dict(Counter(
                     f'{r[2][0x40]},{r[2][0x41]},{r[2][0x52]}' for r in rows))}
         for name in clocks:
             ages = [r[1][name] - r[0] for r in rows if r[0] > 0]
@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--cc', type=Path, required=True, help='NDK aarch64-linux-android29-clang')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    if not re.fullmatch('[A-Za-z0-9]+', args.serial):
+    if not args.serial or '\0' in args.serial:
         parser.error('Invalid device serial')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -125,7 +125,6 @@ def main():
     try:
         before = identity()
         report['identity'] = before
-        report['power_before'] = power_state()
         binary = output / 'stock-controller-probe'
         run([str(args.cc.resolve()), '-std=c11', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
              str(source), '-ldl', '-o', str(binary)])
@@ -141,7 +140,10 @@ def main():
         if shell('sha256sum', remote + '/probe').split()[0] != report['probe_sha256']:
             raise ValueError('Transferred probe differs')
         shell('chmod', '700', remote + '/probe')
+        report['power_before'] = power_state()
+        report['continuous_wakefulness_verified'] = False
         shell(remote + '/probe', before['boot_id'], remote + '/capture.bin')
+        report['power_after'] = power_state()
         adb('pull', remote + '/capture.bin', str(output / 'capture.bin'))
         data = (output / 'capture.bin').read_bytes()
         report['capture_sha256'] = hashlib.sha256(data).hexdigest()
@@ -150,7 +152,6 @@ def main():
         report['observation'] = analyze(data)
         if identity() != before:
             raise ValueError('Stock identity changed during observation')
-        report['power_after'] = power_state()
         report['status'] = 'captured'
     except Exception as error:
         report.update(status='failed', error=str(error))

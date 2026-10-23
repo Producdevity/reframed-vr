@@ -95,6 +95,8 @@ int main(void)
     now = base + 600 * period;
     assert(!pico_controller_head_match(h, 7, (struct ssc_timestamp){base + 590500000, 100}, now, a, b));
     assert(timestamp(a) == (uint64_t)(base + 590 * period));
+    result(raw, 590, true);
+    assert(!memcmp(a, raw, sizeof(raw)));
     unchanged(h, (struct ssc_timestamp){base + 50500000, 100}, now, -EAGAIN);
     assert(pico_controller_head_match(h, 7, (struct ssc_timestamp){base + 590500000, 100}, now, a, a) == -EINVAL);
     result(raw, 600, true);

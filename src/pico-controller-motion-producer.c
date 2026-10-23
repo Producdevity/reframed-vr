@@ -42,27 +42,28 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
     if (!first || !second) return fail(p, -EINVAL);
     if (now <= 0 || now < p->now) return fail(p, -ETIME);
     p->now = now;
-    for (unsigned hand = 0; hand < 2; ++hand) if (p->connected_mask & (1U << hand)) {
-        if ((p->received[hand] && now - p->received[hand] > PICO_CONTROLLER_MOTION_MAX_AGE_NS) ||
-            (!p->received[hand] && now - p->started >= INT64_C(2000000000)))
-            return fail(p, -ETIMEDOUT);
-    }
     struct pico_controller_motion_ring ring = p->ring;
     struct pico_controller_imu_sample samples[PICO_CONTROLLER_RING_MAX_IMU];
     int count = pico_controller_ring_read_motion(&ring, first, second,
         p->mcu_type, p->radio_type, p->connected_mask, samples);
     if (count < 0) return fail(p, count);
     struct pico_controller_motion_event pending[PICO_CONTROLLER_RING_MAX_IMU];
+    unsigned delivered = 0;
     for (int i = 0; i < count; ++i) {
         const struct pico_controller_imu_sample *s = &samples[i];
         struct pico_controller_motion_event *e = &pending[i];
         *e = (struct pico_controller_motion_event){.timestamp_us = s->timestamp_us,
             .received_ns = now, .hand = s->hand, .sequence = s->sequence, .flags = s->flags};
         if (!pico_controller_motion_time(&p->clock, s->timestamp_us, now,
-                PICO_CONTROLLER_MOTION_MAX_AGE_NS, &e->time) ||
-            !pico_controller_motion_values(s, &p->config[s->hand - 1], e->values))
-            return fail(p, -EPROTO);
+                PICO_CONTROLLER_MOTION_MAX_AGE_NS, &e->time)) return fail(p, -ETIMEDOUT);
+        if (!pico_controller_motion_values(s, &p->config[s->hand - 1], e->values)) return fail(p, -EPROTO);
+        delivered |= 1U << (s->hand - 1);
     }
+    for (unsigned hand = 0; hand < 2; ++hand)
+        if ((p->connected_mask & ~delivered) & (1U << hand))
+            if ((p->received[hand] && now - p->received[hand] > PICO_CONTROLLER_MOTION_MAX_AGE_NS) ||
+                (!p->received[hand] && now - p->started >= INT64_C(2000000000)))
+                return fail(p, -ETIMEDOUT);
     for (int i = 0; i < count; ++i) {
         if (!pico_controller_motion_channel_publish(p->channel, &pending[i])) return fail(p, -EPROTO);
         p->received[pending[i].hand - 1] = now;

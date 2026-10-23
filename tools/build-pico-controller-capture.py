@@ -14,8 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def digest(path):
+    checksum = hashlib.sha256()
     with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            checksum.update(block)
+    return checksum.hexdigest()
 
 
 def main():
@@ -76,7 +79,7 @@ def main():
              '--c_out=' + str(generated), str(source / 'data/ssc-common.proto'),
              str(source / 'data/ssc-sensor-suid.proto')], 'protoc.log')
         flags = shlex.split(subprocess.check_output(
-            ['pkg-config', '--cflags', '--libs', 'gio-2.0', 'qmi-glib', 'qrtr-glib', 'libprotobuf-c'], text=True))
+            ['pkg-config', '--cflags', '--libs', 'gio-2.0', 'qmi-glib', 'qrtr-glib', 'libprotobuf-c'], text=True, timeout=30))
         binary = args.output / 'capture-pico-controller'
         sanitizers = ['-fsanitize=' + args.sanitizer, '-fno-sanitize-recover=all'] if args.sanitizer else []
         common = ['cc', '-std=gnu11', '-O1' if args.sanitizer else '-O2', '-g',
@@ -84,7 +87,8 @@ def main():
              '-I', str(ROOT / 'src'), '-I', str(source / 'src'), '-I', str(generated)]
         shared = [*(str(ROOT / n) for n in sources if n.startswith('src/') and n.endswith('.c')),
              *(str(source / 'src' / n) for n in ['libssc-client.c', 'libssc-common.c', 'libssc-sensor.c']),
-             *(str(p) for p in sorted(generated.glob('*.c'))), *flags, '-lm']
+             *(str(p) for p in sorted(generated.glob('*.c'))), *flags, '-lm',
+             '-Wl,-rpath,' + str(prefix / 'lib64')]
         run([*common, str(ROOT / 'tools/capture-pico-controller.c'), *shared, '-o', str(binary)], 'compile.log')
         tests = args.output / 'controller-report-tests'
         run([*common, str(ROOT / 'tests/pico-controller-capture.c'), *shared, '-o', str(tests)], 'test-compile.log')
