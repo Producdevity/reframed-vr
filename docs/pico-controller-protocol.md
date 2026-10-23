@@ -921,7 +921,10 @@ slots per snapshot rather than collapsing them into the newest digital report.
 It sorts by wire timestamp, deduplicates per hand and refuses conflicting
 measurements at the same hand/timestamp without advancing either hand. It also
 filters the explicitly connected hands. Initialize a fresh motion reader after
-connection, resume or DSP restart. Torn/CRC-invalid slots are skipped; missing
+a new connection or DSP restart. A motion-only restart inside the same live
+connection must instead preserve and reseed its wire watermark as described
+below, so the current DMA backlog cannot enter a reset estimator.
+Torn/CRC-invalid slots are skipped; missing
 samples and stale data still require downstream clock, age and gap checks.
 The default digital worker retains its newest-only behavior. Its optional motion
 mode below publishes this ordered history separately.
@@ -977,10 +980,11 @@ or later silence over 100 ms permanently stops motion. A selected hand that
 never supplies input within two seconds also stops it. Late data cannot revive
 that stream. Digital input may continue; normal shutdown still closes RPC
 clients and retains DMA buffers until the shared SLPI is offline. A motion
-failure is logged separately and makes the worker's eventual exit unsuccessful.
+failure is logged separately. An unrecovered motion failure makes the worker's
+eventual exit unsuccessful.
 
 The parent `ControllerSession` accepts an optional `motion` dictionary with the
-estimator's hexadecimal `generation` and each selected hand's complete connected
+motion stream's hexadecimal `generation` and each selected hand's complete connected
 stock byte settings. It records them and supplies the worker's arguments.
 `motion_endpoint()` declares the future path and binding before startup; it is
 not readiness. Prepare the Bionic consumer before starting the receiver so
@@ -1012,6 +1016,23 @@ kill the worker while SLPI can still access its buffers. Only
 deliberately shares the head session's DSP lifetime rather than independently
 restarting the controller worker during head tracking.
 
+`restart_motion(generation, timeout)` explicitly starts another motion generation
+inside the same receiver process. The worker stops the old mapping permanently,
+seeds its wire watermark from the current synchronized snapshots without
+publishing that backlog, and creates `motion.channel.<generation>` with exclusive
+creation. It preserves the connection, verified byte settings and calibrated
+clock. Generations must increase; malformed input and clock/protocol failures
+cannot recover this way. At most 64 successful restarts are accepted per worker.
+The old digital channel and shared RPC/DMA ownership remain intact.
+
+The owner must retire the stopped consumer and reset/recalibrate the controller
+estimator before attaching a new consumer. It must publish the new endpoint
+atomically and retain the existing head/world generation. A restart acknowledgment
+only confirms channel initialization: `wait_motion_ready` still requires fresh
+samples from every selected hand. A request timeout leaves the request pending;
+use `wait_motion_restart`, rather than resending it or killing the DSP owner.
+Status logs preserve each generation's stop result and sample count.
+
 The [shared-sensor hardware test](pico-steamvr.md#maintained-receiver-and-shared-sensors)
 verifies this worker with native SteamVR, head IMU and four-camera capture,
 including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate
@@ -1021,7 +1042,8 @@ from physical failure recovery.
 
 [`pico-controller-motion-consumer`](../src/pico-controller-motion-consumer.h)
 drains the ordered motion channel into a caller-supplied estimator callback.
-It borrows the generation's raw head history; the caller serializes history
+It borrows `head_generation`'s raw head history independently of its motion
+`generation`; the caller serializes history
 updates and polling on the tracking thread. Prepare the estimator before the
 receiver starts, then create the consumer after the channel is initialized.
 
@@ -1053,6 +1075,11 @@ recovery path must reset/rebind estimator state and publish a new motion
 generation before accepting fresh samples; it must preserve the shared SLPI
 DMA lifetime. No optical controller pose or SteamVR pointer is established by
 these input-delivery measurements.
+
+The subsequent [explicit restart test](pico-steamvr-verification.md#controller-motion-restart-with-shared-head-tracking-2026-10-23-utc)
+verifies that reset/rebind path with a new mapping and motion generation while
+the head/world generation stays unchanged. Automatic recovery when radio
+reports resume is still a session-owner integration task.
 
 ### Bionic boundary and performance
 

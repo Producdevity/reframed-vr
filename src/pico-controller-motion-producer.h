@@ -35,4 +35,17 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
     const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);
 void pico_controller_motion_producer_stop(struct pico_controller_motion_producer *producer);
 
+/* Explicit owner-controlled restart within the same live DSP connection. The
+ * new mapping must be distinct, uninitialized and have no readers yet. The
+ * old mapping stays stopped forever. Seed the wire watermark from the current
+ * synchronized snapshots without replaying them; only later samples publish.
+ * The owner resets the estimator before attaching a new consumer, using its
+ * unchanged head/world generation. No RPC, DMA or head state is restarted.
+ * Only ordinary stop or receive timeout can recover; malformed input cannot.
+ * Refusal leaves the producer and both mappings unchanged. */
+int pico_controller_motion_producer_restart(struct pico_controller_motion_producer *producer,
+    struct pico_controller_motion_channel *channel, uint64_t generation,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);
+
 #endif

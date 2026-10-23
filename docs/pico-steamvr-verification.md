@@ -1530,3 +1530,82 @@ Stock return is subsequently verified as boot UUID
 The bootloader remains unlocked, Wi-Fi reads zero, the updater package remains
 disabled, no network route is reported, and the verified audio helper reads back
 zero effective music and system volumes. The Quest is untouched.
+
+## Controller motion restart with shared head tracking (2026-10-23 UTC)
+
+The motion producer can now explicitly restart after a receive timeout or an
+ordinary owner-requested stop, without restarting RPC, SLPI or head tracking.
+It leaves the old channel permanently stopped, seeds its wire watermark from
+the current synchronized DMA snapshots without publishing that backlog, and
+initializes a distinct mapping with an increasing motion generation. Protocol
+and clock errors remain terminal. The Bionic consumer separately binds the
+head/world generation, so resetting a controller need not reset the head frame.
+The owner retires the old consumer and resets/recalibrates the estimator before
+attaching the new consumer. Restart acknowledgment alone is not sample readiness.
+
+Forty-eight host controller tests pass, including sanitizer coverage of fresh
+mapping recovery, rejection of old generations/backlog/conflicts, continued head
+history, and parent request/acknowledgment/timeout handling. The native ARM64
+worker builds and runs its UBSan unit checks. A separate Bionic UBSan consumer
+harness passes on the Pico CPU; its SHA-256 is
+`032bce21b1a1c2a19dfc06300deb8a18bd075f18cc5337aafd8e9a732cd7988c`.
+The clean run's worker manifest matches the maintained source hashes, with
+binary SHA-256
+`f341cd106ee447a390ffcc4f0685b8f4c1a160ac3cc5d47aee9abddfe6647800`.
+
+Three bounded native trials distinguish channel initialization from live
+recovery. In the first, the owner requests a new generation after controller
+reports have already stopped. Reset/rebind succeeds, but the new channel gets
+zero samples and times out; this is not successful motion recovery. The second
+requests the restart while reports are arriving: generation 104 delivers 1,524
+samples, then generation 105 delivers 12,264 through the same Bionic estimator
+process and raw head history. Its camera producer outlives the consumer's
+diagnostic deadline and exits unsuccessfully with an undrained eight-set ring.
+The source rejects a full ring; shortening acquisition fixes the subsequent
+capture. That capture-tail error is preserved rather than counted as a passing run.
+
+The clean rerun ends camera acquisition before the consumer's ceiling, allowing
+the pending sets to drain. It records:
+
+- 2,499 head-camera sets and 102,661 head callbacks, with 100,303 poses published
+  and no output-adapter failure;
+- 1,524 controller IMU samples delivered before the explicit stop and all 12,268
+  samples delivered after reset/rebind to motion generation 105;
+- unchanged head/world generation 104, a successful 1.292 ms estimator reset,
+  23.112 ms maximum post-reset input age, 7.741 ms maximum head-bracket wait and
+  1.835 ms maximum elapsed estimator-call time;
+- 64 four-camera controller sets submitted, with optical pose publication still
+  disabled;
+- an active Steam VR overlay and 2,500 valid head samples from the readiness and
+  late probes. Those probes still report two overdue vsync-age samples.
+
+The controller motion stream later times out again; digital reports subsequently
+resume and reach 32,768 while motion stays stopped. The new explicit recovery
+path is verified, but automatic owner-driven recovery on renewed reports is not
+implemented by this diagnostic owner. The worker's final exit remains
+unsuccessful because that last timeout is unrecovered. This does not establish
+optical controller tracking, a SteamVR pointer, calibrated movement scale,
+upright lens output or correct physical head-motion direction.
+
+The diagnostic head and controller result files now stop recording at 32,768
+and 8,192 records respectively, below 20 MiB combined. Head publication continues
+after that recording budget is exhausted. Per-mount free-space checks run before
+sensor power; receipt writes in cleanup are best effort. CPU/DRM traces stream
+into bounded files on `/tmp`. Both trace streams finish without reported
+overruns or dropped events, and the console stays within its lease.
+
+Evidence is under `output/pico-motion-recovery-20261023-v1/`. Every exported file
+is checked against its size and SHA-256 manifest:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-recovery.tar.gz` | 219 | `e2c69caf9229921d189f19f1c3dab00a37f0c09f0067b6d1b6b6819b240bb29d` |
+| `export-early.tar.gz` | 257 | `caa66a1ea95b0851e02d3d07feffa6857ccdf4f7d3f1de2165cf95e06cf551c2` |
+| `export-clean.tar.gz` | 245 | `3cbc79c746f51c00470aa83298a46d30354b371c9272c0994b42c8f993a18f64` |
+
+Cleanup verifies RPC stop, SLPI/CDSP offline, DMA release, MCU references zero,
+the original GPU floor and closed PCM streams. Full boot/DTBO readbacks still
+match the recovery inputs. Stock return is verified as boot UUID
+`7806d93a-5079-437e-85d1-6f0f8f6b2062`, b1977, unlocked, Wi-Fi off and updater
+disabled. Effective music/system volume is restored to zero. No firmware
+partition is written and the Quest is untouched.

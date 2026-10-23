@@ -22,7 +22,8 @@ int pico_controller_motion_consumer_create(const struct pico_controller_motion_c
                                           struct pico_controller_motion_consumer **consumer)
 {
     if (!cfg || !consumer || *consumer || !cfg->channel || !cfg->heads ||
-        !cfg->instance || !cfg->generation || !cfg->connected_mask || cfg->connected_mask > 3 ||
+        !cfg->instance || !cfg->generation || !cfg->head_generation ||
+        !cfg->connected_mask || cfg->connected_mask > 3 ||
         !cfg->monotonic_ns || !cfg->update || cfg->max_age_ns <= 0 ||
         cfg->max_age_ns > PICO_CONTROLLER_MOTION_MAX_AGE_NS ||
         cfg->max_gap_ns <= 0 || cfg->max_gap_ns > cfg->max_age_ns) return -EINVAL;
@@ -66,7 +67,7 @@ int pico_controller_motion_consumer_poll(struct pico_controller_motion_consumer 
         if (now < e->time.timestamp_ns || now - e->time.timestamp_ns >
             c->config.max_age_ns - e->time.uncertainty_ns) return fail(c, -ETIMEDOUT);
         uint8_t before[PICO_SLAM_RESULT_SIZE], after[PICO_SLAM_RESULT_SIZE];
-        rc = pico_controller_head_match(c->config.heads, c->config.generation, e->time, now, before, after);
+        rc = pico_controller_head_match(c->config.heads, c->config.head_generation, e->time, now, before, after);
         if (rc == -EAGAIN) { ++c->status.head_waits; return 0; }
         if (rc) return fail(c, rc);
         int64_t begin = c->config.monotonic_ns(c->config.data);

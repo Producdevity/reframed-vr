@@ -41,7 +41,7 @@ static struct pico_controller_motion_consumer_config setup(struct fixture *f)
     assert(pico_controller_motion_channel_init(&f->channel, 5, 7));
     for (int i=1; i<=20; ++i) head(f, 1000000000+i*1000000, true);
     return (struct pico_controller_motion_consumer_config){
-        .channel=&f->channel, .heads=f->heads, .instance=5, .generation=7,
+        .channel=&f->channel, .heads=f->heads, .instance=5, .generation=7, .head_generation=7,
         .connected_mask=1, .max_age_ns=100000000, .max_gap_ns=10000000,
         .data=f, .monotonic_ns=clock_ns, .update=update};
 }
@@ -85,6 +85,30 @@ int main(void)
     pico_controller_motion_consumer_stop(f->consumer);
     assert(pico_controller_motion_consumer_poll(f->consumer) == -ESHUTDOWN);
     assert(f->calls == 3); cleanup(f);
+
+    cfg = setup(f);
+    cfg.head_generation = 0;
+    assert(pico_controller_motion_consumer_create(&cfg, &f->consumer) == -EINVAL);
+    cfg.head_generation = 7;
+    assert(!pico_controller_motion_consumer_create(&cfg, &f->consumer));
+    publish(f, 0, 1020500000, 1);
+    assert(!pico_controller_motion_consumer_poll(f->consumer) && !f->calls);
+    pico_controller_motion_channel_stop(&f->channel);
+    assert(pico_controller_motion_consumer_poll(f->consumer) == -ESHUTDOWN);
+    struct pico_controller_motion_channel *fresh = calloc(1, sizeof(*fresh)); assert(fresh);
+    assert(pico_controller_motion_channel_init(fresh, 5, 8));
+    struct pico_controller_motion_consumer *old = f->consumer;
+    f->consumer = NULL;
+    cfg.channel = fresh; cfg.generation = 8;
+    assert(!pico_controller_motion_consumer_create(&cfg, &f->consumer));
+    struct pico_controller_motion_event resumed = {.timestamp_us=1020800,
+        .time={1020800000,10}, .received_ns=1020900000, .hand=1};
+    assert(pico_controller_motion_channel_publish(fresh, &resumed));
+    f->now = 1021200000; head(f, 1021000000, true);
+    assert(!pico_controller_motion_consumer_poll(f->consumer) && f->calls == 1);
+    assert(f->before == 1020000000 && f->after == 1021000000);
+    assert(pico_controller_motion_consumer_poll(old) == -ESHUTDOWN && f->calls == 1);
+    pico_controller_motion_consumer_destroy(old); free(fresh); cleanup(f);
 
     for (unsigned fault=0; fault<9; ++fault) {
         cfg = setup(f); assert(!pico_controller_motion_consumer_create(&cfg, &f->consumer));

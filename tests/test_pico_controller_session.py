@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import struct
 import sys
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ session_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(session_module)
 
 WORKER = r'''
-import argparse,os,signal,struct,time
+import argparse,os,select,signal,struct,sys,time
 from pathlib import Path
 p=argparse.ArgumentParser()
 for name in ['boot-id','channel','instance','seconds']:p.add_argument('--'+name,required=True)
@@ -29,15 +30,17 @@ signal.signal(signal.SIGTERM,stop)
 if mode=='exit':raise SystemExit(3)
 path=Path(a.channel);instance=int(a.instance,16)
 path.write_bytes(struct.pack('<QQ',0x5256504943430001,instance)+bytes(112));path.chmod(0o644)
-if a.motion_channel:
- mask=int(bool(a.left_motion_config))|int(bool(a.right_motion_config))<<1
+def motion_channel(path,generation):
  now=time.monotonic_ns()-1000000
  if mode=='motion-stale':now-=200000000
  empty=mode=='motion-empty'
- header=[0x525650434d430001,instance,int(a.motion_generation,16),0 if empty else 2,1,
+ header=[0x525650434d430001,instance,int(generation,16),0 if empty else 2,1,
          now if mask&1 and not empty else 0,now if mask&2 and not empty else 0,now]
  if mode=='motion-wrong-generation':header[2]+=1
- Path(a.motion_channel).write_bytes(struct.pack('<8Q',*header)+bytes(32768));Path(a.motion_channel).chmod(0o644)
+ Path(path).write_bytes(struct.pack('<8Q',*header)+bytes(32768));Path(path).chmod(0o644)
+if a.motion_channel:
+ mask=int(bool(a.left_motion_config))|int(bool(a.right_motion_config))<<1
+ motion_channel(a.motion_channel,a.motion_generation)
  print(f'PICO_CONTROLLER_MOTION_READY instance={a.instance} generation={a.motion_generation} mask={mask} rc=0',flush=True)
 if mode=='delay':time.sleep(.3)
 if mode=='flood':
@@ -49,7 +52,24 @@ if mode=='partial':
 elif mode=='premature-release':
  os.write(1,(ready+'PICO_CONTROLLER_RELEASED_DSP_OFFLINE\n').encode())
 else:print(ready,end='',flush=True)
-while not stopping and not rc:time.sleep(.01)
+generation=a.motion_generation;current=a.motion_channel
+while not stopping and not rc:
+ if a.motion_channel and select.select([sys.stdin],[],[],.01)[0]:
+  command=sys.stdin.readline().split()
+  if not command:continue
+  _,previous,next_generation=command
+  if mode=='restart-delay':time.sleep(.2)
+  if mode=='restart-failure':
+   print(f'PICO_CONTROLLER_MOTION_RESTART previous={previous} generation={next_generation} rc=-1',flush=True)
+   continue
+  with open(current,'r+b') as file:file.seek(32);file.write(bytes(8))
+  if mode!='restart-no-stop':print('PICO_CONTROLLER_MOTION_STOP rc=-108 samples=2',flush=True)
+  current=a.motion_channel+'.'+next_generation;generation=next_generation
+  motion_channel(current,generation)
+  ack='0000000000000000' if mode=='restart-wrong-ack' else previous
+  print(f'PICO_CONTROLLER_MOTION_RESTART previous={ack} generation={generation} rc=0',flush=True)
+  print(f'PICO_CONTROLLER_MOTION_READY instance={a.instance} generation={generation} mask={mask} rc=0',flush=True)
+ else:time.sleep(.01)
 if a.motion_channel:print('PICO_CONTROLLER_MOTION_STOP rc=0 samples=2',flush=True)
 print(f'PICO_CONTROLLER_STOP rc={rc} controller_rc=0 accel_rc=0 left=123 right=0',flush=True)
 print('PICO_CONTROLLER_WAIT_DSP_OFFLINE',flush=True)
@@ -82,6 +102,8 @@ class PicoControllerSessionTests(unittest.TestCase):
                 worker.process.wait(timeout=3)
             if worker.reader is not None:
                 worker.reader.close()
+            if worker.process is not None and worker.process.stdin is not None:
+                worker.process.stdin.close()
         self.temp.cleanup()
 
     def make(self, mode='normal', companion=False, motion=None):
@@ -251,6 +273,42 @@ class PicoControllerSessionTests(unittest.TestCase):
             file.seek(32);file.write((0).to_bytes(8, 'little'))
         with self.assertRaises(RuntimeError):worker.motion_binding()
         self.assertIsNone(worker.process.poll())
+
+    def test_explicit_restart_uses_new_file_and_preserves_process_and_digital_channel(self):
+        worker = self.make(motion=self.motion());worker.start();worker.wait_motion_ready(2)
+        old = worker.motion_binding();pid = worker.process.pid
+        digital = worker.steamvr_environment()
+        worker.restart_motion('0123456789abcdf0', 2)
+        worker.wait_motion_ready(2)
+        new = worker.motion_binding()
+        self.assertEqual(new['generation'], '0123456789abcdf0')
+        self.assertNotEqual(new['path'], old['path'])
+        self.assertEqual(new['instance'], old['instance'])
+        self.assertEqual(worker.process.pid, pid)
+        self.assertIsNone(worker.process.poll())
+        self.assertEqual(worker.steamvr_environment(), digital)
+        self.assertEqual(struct.unpack('<Q', Path(old['path']).read_bytes()[32:40]), (0,))
+        self.assertEqual(worker.motion_history, [{'generation': old['generation'], 'rc': -108, 'samples': 2}])
+        with self.assertRaises(ValueError):worker.restart_motion(old['generation'], 2)
+        self.stop(worker)
+        self.assertEqual(worker.motion_history[-1]['generation'], new['generation'])
+
+    def test_restart_timeout_does_not_kill_or_roll_back_request(self):
+        worker = self.make('restart-delay', motion=self.motion());worker.start();worker.wait_motion_ready(2)
+        with self.assertRaises(TimeoutError):worker.restart_motion('0123456789abcdf0', .01)
+        self.assertIsNone(worker.process.poll())
+        with self.assertRaises(RuntimeError):worker.motion_endpoint()
+        with self.assertRaises(RuntimeError):worker.restart_motion('0123456789abcdf1', 2)
+        worker.wait_motion_restart(2)
+        worker.wait_motion_ready(2)
+        self.assertEqual(worker.motion_binding()['generation'], '0123456789abcdf0')
+        self.stop(worker)
+
+    def test_failed_or_mismatched_restart_is_not_readiness(self):
+        for mode in ['restart-failure', 'restart-wrong-ack', 'restart-no-stop']:
+            worker = self.make(mode, motion=self.motion());worker.start();worker.wait_motion_ready(2)
+            with self.assertRaises(RuntimeError):worker.restart_motion('0123456789abcdf0', 2)
+            self.assertIsNone(worker.process.poll())
 
 
 if __name__ == '__main__':

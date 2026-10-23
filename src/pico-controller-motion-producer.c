@@ -75,3 +75,27 @@ void pico_controller_motion_producer_stop(struct pico_controller_motion_producer
 {
     if (p && p->channel) fail(p, -ESHUTDOWN);
 }
+
+int pico_controller_motion_producer_restart(struct pico_controller_motion_producer *p,
+    struct pico_controller_motion_channel *channel, uint64_t generation,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now)
+{
+    if (!p || !p->channel || !channel || channel == p->channel ||
+        !first || !second || now <= 0 || now < p->now ||
+        __atomic_load_n(&channel->magic, __ATOMIC_ACQUIRE)) return -EINVAL;
+    if (!p->error || (p->error != -ETIMEDOUT && p->error != -ESHUTDOWN)) return -EPERM;
+    if (generation <= p->generation) return -ESTALE;
+    struct pico_controller_motion_ring ring = p->ring;
+    struct pico_controller_imu_sample discarded[PICO_CONTROLLER_RING_MAX_IMU];
+    int rc = pico_controller_ring_read_motion(&ring, first, second,
+        p->mcu_type, p->radio_type, p->connected_mask, discarded);
+    if (rc < 0) return rc;
+    struct pico_controller_motion_producer next;
+    rc = pico_controller_motion_producer_init(&next, channel, p->channel->instance,
+        generation, &p->clock, p->config, p->mcu_type, p->radio_type, p->connected_mask, now);
+    if (rc) return rc;
+    next.ring = ring;
+    *p = next;
+    return 0;
+}

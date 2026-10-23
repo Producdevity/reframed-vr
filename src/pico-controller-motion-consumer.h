@@ -11,7 +11,7 @@ extern "C" {
 struct pico_controller_motion_consumer_config {
     const struct pico_controller_motion_channel *channel;
     struct pico_controller_head *heads;
-    uint64_t instance, generation;
+    uint64_t instance, generation, head_generation;
     unsigned connected_mask;
     int64_t max_age_ns, max_gap_ns;
     void *data;
@@ -32,6 +32,8 @@ struct pico_controller_motion_consumer;
 
 /* Serialized consumer, including access to the borrowed head history. Prepare
  * the estimator first; create only after the producer initializes its mapping.
+ * Head/world generation is independent of the motion generation. Recovery
+ * requires a reset estimator and a new consumer/mapping; never revive this one.
  * A missing future head bracket retains one event without extrapolation. No
  * allocations or wakeup syscalls occur in poll. Stop/error is permanent and
  * affects neither the producer nor head tracking. No pose is published here. */

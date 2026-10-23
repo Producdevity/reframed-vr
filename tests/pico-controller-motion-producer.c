@@ -67,6 +67,35 @@ static void boundaries(void)
                                               &(struct pico_controller_motion_event){0}) == -ESHUTDOWN);
     assert(pico_controller_motion_producer_update(&p, 4, a, b, fake_now) == -ETIMEDOUT);
 
+    struct pico_controller_motion_channel *fresh = calloc(1, sizeof(*fresh)); assert(fresh);
+    memcpy(&saved, &p, sizeof(saved));
+    assert(pico_controller_motion_producer_restart(&p, c, 5, a, b, fake_now) == -EINVAL);
+    assert(pico_controller_motion_producer_restart(&p, fresh, 4, a, b, fake_now) == -ESTALE);
+    assert(pico_controller_motion_producer_restart(&p, fresh, 5, a, b, fake_now-1) == -EINVAL);
+    assert(!memcmp(&saved, &p, sizeof(saved)) && !fresh->magic);
+    assert(!pico_controller_motion_producer_restart(&p, fresh, 5, a, b, fake_now));
+    assert(!fresh->sequence && fresh->active && !c->active);
+    assert(pico_controller_motion_channel_read(c, 3, 4, &cursor, clock_ns, NULL, 100000000,
+                                              &(struct pico_controller_motion_event){0}) == -ESHUTDOWN);
+    assert(pico_controller_motion_producer_update(&p, 4, a, b, fake_now) == -ESTALE);
+    assert(!pico_controller_motion_producer_update(&p, 5, a, b, fake_now));
+    record(a + 100, 1102001, 1); memcpy(b, a, 1000); fake_now = 1103002000;
+    assert(pico_controller_motion_producer_update(&p, 5, a, b, fake_now) == 1);
+    cursor = 0; struct pico_controller_motion_event event;
+    assert(pico_controller_motion_channel_read(fresh, 3, 5, &cursor, clock_ns, NULL,
+                                              100000000, &event) == 1);
+    assert(event.timestamp_us == 1102001 && cursor == 1);
+    struct pico_controller_motion_channel *again = calloc(1, sizeof(*again)); assert(again);
+    assert(pico_controller_motion_producer_restart(&p, again, 6, a, b, fake_now) == -EPERM);
+    pico_controller_motion_producer_stop(&p);
+    a[133] ^= 1; checksum(a + 100); memcpy(b, a, 1000);
+    memcpy(&saved, &p, sizeof(saved));
+    assert(pico_controller_motion_producer_restart(&p, again, 6, a, b, fake_now) == -EPROTO);
+    assert(!memcmp(&saved, &p, sizeof(saved)) && !again->magic);
+    a[133] ^= 1; checksum(a + 100); memcpy(b, a, 1000);
+    assert(!pico_controller_motion_producer_restart(&p, again, 6, a, b, fake_now));
+    assert(!again->sequence && !fresh->active);
+    pico_controller_motion_producer_stop(&p); free(fresh); free(again);
     assert(!pico_controller_motion_producer_init(&p, c, 5, 6, &clock, config, 1, 2, 1, 1000000000));
     memset(a, 0, 1000); memset(b, 0, 1000);
     assert(!pico_controller_motion_producer_update(&p, 6, a, b, 2999999999));
@@ -83,6 +112,9 @@ static void boundaries(void)
     a[33] ^= 1; checksum(a); memcpy(b, a, 1000);
     assert(pico_controller_motion_producer_update(&p, 10, a, b, 1002000001) == -EPROTO);
     assert(c->sequence == 1 && !c->active);
+    fresh = calloc(1, sizeof(*fresh)); assert(fresh);
+    assert(pico_controller_motion_producer_restart(&p, fresh, 11, a, b, 1002000002) == -EPERM);
+    assert(!fresh->magic); free(fresh);
 
     assert(!pico_controller_motion_producer_init(&p, c, 11, 12, &clock, config, 1, 2, 3, 1000000000));
     record(a, 1001000, 1); memcpy(b, a, 1000);

@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -95,6 +96,31 @@ static int snapshot(const struct ion_buffer *buffer, uint8_t first[1000], uint8_
     atomic_thread_fence(memory_order_seq_cst);
     for (unsigned i = 0; i < PICO_CONTROLLER_RING_BYTES; ++i) second[i] = data[i];
     return ion_buffer_sync(buffer, ION_BUFFER_READ, true);
+}
+
+static struct pico_controller_motion_channel *new_motion_channel(const char *path)
+{
+    int fd = open(path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
+    if (fd < 0) return MAP_FAILED;
+    void *map = MAP_FAILED;
+    if (!ftruncate(fd, sizeof(struct pico_controller_motion_channel)) && !fchmod(fd, 0644))
+        map = mmap(NULL, sizeof(struct pico_controller_motion_channel),
+                   PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    return map;
+}
+
+static bool restart_request(const char request[42], uint64_t *previous, uint64_t *next)
+{
+    if (memcmp(request, "restart ", 8) || request[24] != ' ' || request[41] != '\n') return false;
+    char value[17] = {0};
+    memcpy(value, request + 8, 16);
+    if (strspn(value, "0123456789abcdef") != 16) return false;
+    *previous = strtoull(value, NULL, 16);
+    memcpy(value, request + 25, 16);
+    if (strspn(value, "0123456789abcdef") != 16) return false;
+    *next = strtoull(value, NULL, 16);
+    return *previous && *next;
 }
 
 int main(int argc, char **argv)
@@ -184,12 +210,16 @@ int main(int argc, char **argv)
     if (channel == MAP_FAILED || !pico_controller_channel_init(channel, instance)) return 2;
     struct pico_controller_motion_channel *motion_channel = NULL;
     if (motion_path) {
-        fd = open(motion_path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
-        if (fd < 0 || ftruncate(fd, sizeof(*motion_channel)) || fchmod(fd, 0644)) return 2;
-        motion_channel = mmap(NULL, sizeof(*motion_channel), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        close(fd);
+        motion_channel = new_motion_channel(motion_path);
         if (motion_channel == MAP_FAILED) return 2;
     }
+    int control_fd = motion_path ? STDIN_FILENO : -1;
+    if (control_fd >= 0) {
+        int flags = fcntl(control_fd, F_GETFL);
+        if (flags < 0 || fcntl(control_fd, F_SETFL, flags | O_NONBLOCK)) return 2;
+    }
+    char request[42]; size_t request_size = 0;
+    unsigned restarts = 0;
     setvbuf(stdout, NULL, _IONBF, 0);
     signal(SIGINT, interrupt); signal(SIGTERM, interrupt); signal(SIGPIPE, SIG_IGN);
     if (setenv("PICO_ION_HEAP_ID", "25", 1)) return 2;
@@ -201,7 +231,7 @@ int main(int argc, char **argv)
     int motion_error = 0;
     uint64_t published[2] = {0};
     int rc = start(&controller, offset, false);
-    int64_t begin = now_ns(), last_report = begin;
+    int64_t begin = now_ns(), last_report = begin, last_control = begin;
     if (begin <= 0) rc = -EIO;
     if (!rc && motion_channel) {
         rc = pico_controller_motion_producer_init(&motion, motion_channel, instance, motion_generation,
@@ -224,6 +254,50 @@ int main(int argc, char **argv)
         struct pico_controller_sample samples[2];
         unsigned changed = pico_controller_ring_read(&ring, first, second, samples);
         int64_t received = now_ns();
+        if (control_fd >= 0 && received - last_control >= 20000000) {
+            last_control = received;
+            ssize_t size = read(control_fd, request + request_size, sizeof(request) - request_size);
+            if (size == 0 || (size < 0 && errno != EAGAIN && errno != EINTR)) control_fd = -1;
+            if (size > 0) request_size += (size_t)size;
+            if (request_size == sizeof(request)) {
+                uint64_t previous = 0, next = 0;
+                int restart_rc = -EINVAL;
+                if (!restart_request(request, &previous, &next)) control_fd = -1;
+                else if (previous != motion_generation || next <= previous) restart_rc = -ESTALE;
+                else if (restarts >= 64) restart_rc = -EOVERFLOW;
+                else if (motion_error && motion_error != -ETIMEDOUT && motion_error != -ESHUTDOWN)
+                    restart_rc = -EPERM;
+                else {
+                    char next_path[PATH_MAX];
+                    int length = snprintf(next_path, sizeof(next_path), "%s.%016" PRIx64, motion_path, next);
+                    struct pico_controller_motion_channel *fresh = MAP_FAILED;
+                    if (length > 0 && (size_t)length < sizeof(next_path)) fresh = new_motion_channel(next_path);
+                    if (fresh == MAP_FAILED) restart_rc = -EIO;
+                    else {
+                        if (!motion_error) {
+                            pico_controller_motion_producer_stop(&motion);
+                            motion_error = -ESHUTDOWN;
+                            printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n",
+                                   motion_error, motion_samples);
+                        }
+                        struct pico_controller_motion_channel *old = motion.channel;
+                        restart_rc = pico_controller_motion_producer_restart(&motion, fresh, next,
+                                                                              first, second, received);
+                        if (!restart_rc) {
+                            munmap(old, sizeof(*old));
+                            motion_generation = next; motion_samples = 0; motion_error = 0;
+                            ++restarts;
+                        } else munmap(fresh, sizeof(*fresh));
+                    }
+                }
+                printf("PICO_CONTROLLER_MOTION_RESTART previous=%016" PRIx64 " generation=%016" PRIx64
+                       " rc=%d\n", previous, next, restart_rc);
+                if (!restart_rc)
+                    printf("PICO_CONTROLLER_MOTION_READY instance=%016" PRIx64 " generation=%016" PRIx64
+                           " mask=%u rc=0\n", instance, motion_generation, motion_mask);
+                request_size = 0;
+            }
+        }
         if (motion.channel && !motion_error) {
             int count = pico_controller_motion_producer_update(&motion, motion_generation,
                                                                first, second, received);

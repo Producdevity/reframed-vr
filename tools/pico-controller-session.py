@@ -47,8 +47,11 @@ class ControllerSession:
                     raise ValueError('Each motion hand requires verified connected stock byte settings')
                 self.motion[hand] = dict(settings)
         self.motion_channel = self.directory / 'motion.channel'
+        self.motion_base = self.motion_channel
         self.motion_ready = self.motion_stop_result = None
         self.motion_channel_identity = None
+        self.motion_restart = None
+        self.motion_history = []
         self.process = None
         self.reader = None
         self.pending = b''
@@ -85,7 +88,7 @@ class ControllerSession:
             for name in ('stdout.log', 'stderr.log'):
                 fd = os.open(self.directory / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 outputs.append(os.fdopen(fd, 'wb'))
-            self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+            self.process = subprocess.Popen(command, stdin=subprocess.PIPE if self.motion else subprocess.DEVNULL,
                                             stdout=outputs[0], stderr=outputs[1],
                                             env=self.environment, close_fds=True)
         finally:
@@ -142,6 +145,22 @@ class ControllerSession:
                 if not match or not self.motion or self.motion_stop_result is not None:
                     raise RuntimeError('Invalid motion stop result')
                 self.motion_stop_result = {'rc': int(match[1]), 'samples': int(match[2])}
+                self.motion_history.append({'generation': self.motion['generation'],
+                                            **self.motion_stop_result})
+            elif line.startswith('PICO_CONTROLLER_MOTION_RESTART '):
+                match = re.fullmatch(r'PICO_CONTROLLER_MOTION_RESTART previous=([0-9a-f]{16}) '
+                                     r'generation=([0-9a-f]{16}) rc=(-?\d+)', line)
+                restart = self.motion_restart
+                if (not match or restart is None or restart['rc'] is not None or
+                        (match[1], match[2]) != (restart['previous'], restart['generation'])):
+                    raise RuntimeError('Unexpected motion restart acknowledgment')
+                restart['rc'] = int(match[3])
+                if not restart['rc']:
+                    if self.motion_stop_result is None:
+                        raise RuntimeError('Motion restarted without stopping the old generation')
+                    self.motion['generation'] = restart['generation']
+                    self.motion_channel = Path(restart['path'])
+                    self.motion_ready = self.motion_stop_result = self.motion_channel_identity = None
             elif line == 'PICO_CONTROLLER_WAIT_DSP_OFFLINE':
                 if self.stop_result is None or self.waiting:
                     raise RuntimeError('Worker shutdown order differs')
@@ -204,6 +223,8 @@ class ControllerSession:
     def _motion_available(self):
         if not self.motion:
             raise RuntimeError('Motion was not enabled for this worker')
+        if self.motion_restart is not None and self.motion_restart['rc'] is None:
+            return False
         if (self.ready not in (None, 0) or self.motion_ready not in (None, 0) or
                 self.motion_stop_result is not None or self.waiting):
             raise RuntimeError('Motion worker is stopped or failed')
@@ -243,6 +264,8 @@ class ControllerSession:
     def motion_endpoint(self):
         if not self.motion:
             raise RuntimeError('Motion was not enabled for this worker')
+        if self.motion_restart is not None and self.motion_restart['rc'] is None:
+            raise RuntimeError('Motion restart is awaiting acknowledgment')
         return {'path': str(self.motion_channel), 'instance': self.instance,
                 'generation': self.motion['generation']}
 
@@ -251,6 +274,39 @@ class ControllerSession:
         if not self._motion_available():
             raise RuntimeError('Motion has no samples yet')
         return self.motion_endpoint()
+
+    def restart_motion(self, generation, timeout):
+        """Start a new motion epoch; the consumer must reset its estimator before attaching.
+
+        This does not restart RPC or release shared DSP buffers. Retire the old
+        consumer on its stopped channel, then reset before attaching anew.
+        A timeout leaves the request pending; finish it with
+        wait_motion_restart rather than issuing another request or killing RPC.
+        """
+        self._read_status()
+        if (not isinstance(generation, str) or not re.fullmatch('[0-9a-f]{16}', generation) or
+                not self.motion or int(generation, 16) <= int(self.motion['generation'], 16) or timeout < 0):
+            raise ValueError('Motion restart requires an increasing nonzero generation and timeout')
+        if (self.ready != 0 or self.waiting or self.process is None or self.process.poll() is not None or
+                self.motion_ready != 0 or
+                (self.motion_restart is not None and self.motion_restart['rc'] is None)):
+            raise RuntimeError('Worker cannot accept a motion restart')
+        self.motion_restart = {'previous': self.motion['generation'], 'generation': generation,
+                               'path': str(self.motion_base) + '.' + generation, 'rc': None}
+        command = f'restart {self.motion["generation"]} {generation}\n'.encode('ascii')
+        self.process.stdin.write(command)
+        self.process.stdin.flush()
+        self.wait_motion_restart(timeout)
+
+    def wait_motion_restart(self, timeout):
+        if self.motion_restart is None:
+            raise RuntimeError('No motion restart was requested')
+        self._wait(lambda: self.motion_restart['rc'] is not None, timeout)
+        if self.motion_restart['rc']:
+            raise RuntimeError(f'Motion restart failed: rc={self.motion_restart["rc"]}')
+        self._wait(lambda: self.motion_ready is not None, timeout)
+        if self.motion_ready:
+            raise RuntimeError('Restarted motion generation did not initialize')
 
     def request_stop(self):
         if self.process is None:
@@ -267,6 +323,8 @@ class ControllerSession:
             raise RuntimeError('Wait for RPC shutdown before stopping the shared DSP and finishing')
         self._wait(lambda: self.released, timeout)
         result = self.process.wait(timeout=timeout)
+        if self.process.stdin is not None:
+            self.process.stdin.close()
         self.reader.close()
         self.reader = None
         return result
