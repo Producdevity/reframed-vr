@@ -98,6 +98,10 @@ bool pico_steamvr_display_load(const char *path, pico_steamvr_display_config &co
     char extra;
     bool exact=read(fd,&extra,1)==0; close(fd);
     if (!exact || std::memchr(data.data(),0,used)) return false;
+    for (size_t i=0;i<used;++i) if (data[i]=='\\') {
+        if (i+5<used && !std::memcmp(data.data()+i+1,"u0000",5)) return false;
+        ++i;
+    }
     cJSON *json=cJSON_ParseWithLengthOpts(data.data(),data.size(),nullptr,true);
     pico_steamvr_display_config candidate{};
     bool ok=json && parse(json,candidate);

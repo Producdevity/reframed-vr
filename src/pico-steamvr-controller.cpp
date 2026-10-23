@@ -89,7 +89,7 @@ void PicoSteamvrController::Update()
                                                250000000, &sample);
     publish(sample, active);
     updates++;
-    auto pose = read_pose();
+    auto pose = read_pose(connected);
     vr::VRServerDriverHost()->TrackedDevicePoseUpdated(index, pose, sizeof(pose));
 }
 
@@ -111,6 +111,11 @@ vr::DriverPose_t PicoSteamvrController::read_pose()
     pico_controller_sample sample{};
     bool active = connected && index != vr::k_unTrackedDeviceIndexInvalid &&
         pico_controller_channel_read(channel, instance, hand, monotonic_ns, nullptr, 250000000, &sample);
+    return read_pose(active);
+}
+
+vr::DriverPose_t PicoSteamvrController::read_pose(bool active)
+{
     if (tracking.channel)
         return pico_steamvr_pose_now(tracking.channel, tracking.instance, tracking.generation,
             tracking.max_age_ns, active, monotonic_ns, nullptr, nullptr);

@@ -24,6 +24,7 @@ class PicoSteamvrController final : public vr::ITrackedDeviceServerDriver {
     uint64_t updates = 0, changes = 0, failures = 0;
     void publish(const pico_controller_sample &sample, bool active);
     vr::DriverPose_t read_pose();
+    vr::DriverPose_t read_pose(bool active);
 public:
     PicoSteamvrController(const pico_controller_channel *channel, uint64_t instance, unsigned hand,
                           pico_steamvr_controller_tracking tracking = {});

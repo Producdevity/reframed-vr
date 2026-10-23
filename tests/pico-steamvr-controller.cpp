@@ -40,6 +40,7 @@ struct MockIVRDriverInput final : IVRDriverInput {
     std::map<uint64_t, std::string> names;
     std::map<std::string, bool> values;
     bool fail_create = false, fail_update = false;
+    pico_controller_channel *invalidate = nullptr;
     EVRInputError CreateBooleanComponent(PropertyContainerHandle_t ulContainer, const char *pchName,
                                          VRInputComponentHandle_t *pHandle) override
     {
@@ -54,6 +55,7 @@ struct MockIVRDriverInput final : IVRDriverInput {
                                          double fTimeOffset) override
     {
         assert(fTimeOffset == 0 && names.count(ulComponent));
+        if (invalidate) {assert(pico_controller_channel_disconnect(invalidate,1));invalidate=nullptr;}
         if (fail_update) {
             fail_update = false;
             return VRInputError_InvalidParam;
@@ -130,9 +132,19 @@ struct MockIVRDriverLog final : IVRDriverLog {
 struct MockIVRServerDriverHost final : IVRServerDriverHost {
     DriverPose_t pose{};
     unsigned calls = 0;
+    bool reject_controller = false;
+    ITrackedDeviceServerDriver *registered_hmd = nullptr;
     bool TrackedDeviceAdded(const char *pchDeviceSerialNumber, ETrackedDeviceClass eDeviceClass,
                             ITrackedDeviceServerDriver *pDriver) override
     {
+        if (reject_controller) {
+            if (eDeviceClass == TrackedDeviceClass_HMD) {
+                registered_hmd = pDriver;
+                return true;
+            }
+            assert(eDeviceClass == TrackedDeviceClass_Controller);
+            return false;
+        }
         assert(false);
         return {};
     }
@@ -156,6 +168,7 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
     }
     bool PollNextEvent(VREvent_t *pEvent, uint32_t uncbVREvent) override
     {
+        if (reject_controller) return false;
         assert(false);
         return {};
     }
@@ -253,6 +266,11 @@ int main()
         assert(!context.input.values.at("/input/y/click"));
         assert(!context.host.pose.poseIsValid &&
                context.host.pose.result == TrackingResult_Uninitialized);
+        context.input.invalidate=&channel;
+        driver.Update();
+        assert(context.host.pose.deviceIsConnected && context.input.values.at("/input/x/click"));
+        assert(!driver.GetPose().deviceIsConnected);
+        assert(pico_controller_channel_publish(&channel,&sample,now_ns()));
         context.input.fail_update = true;
         driver.Update();
         assert(!driver.GetPose().deviceIsConnected);
@@ -349,4 +367,5 @@ int main()
     }
     CleanupDriverContext();
     std::puts("PICO_STEAMVR_CONTROLLER_PASS callbacks=mock hardware_access=0");
+    return 0;
 }

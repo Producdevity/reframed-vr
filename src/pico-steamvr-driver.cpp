@@ -161,11 +161,13 @@ public:
         char line[16384]={0};bool read=std::fgets(line,sizeof(line),cmdline)!=nullptr;
         bool complete=std::feof(cmdline)||std::strchr(line,'\n'); std::fclose(cmdline);
         char expected[100];std::snprintf(expected,sizeof(expected),"androidboot.serialno=%s",serial);
-        bool board=false;
+        bool board=false;unsigned serial_tokens=0;
         char *save=nullptr;
-        for (char *token=strtok_r(line," \r\n",&save);token;token=strtok_r(nullptr," \r\n",&save))
+        for (char *token=strtok_r(line," \r\n",&save);token;token=strtok_r(nullptr," \r\n",&save)) {
+            if (!std::strncmp(token,"androidboot.serialno=",21)) ++serial_tokens;
             if (!std::strcmp(token,expected)) board=true;
-        if (!read || !complete || !board) return vr::VRInitError_Driver_Failed;
+        }
+        if (!read || !complete || !board || serial_tokens!=1) return vr::VRInitError_Driver_Failed;
         int fd=open(file,O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK);
         if (fd<0) return vr::VRInitError_Driver_Failed;
         struct stat st;
@@ -227,7 +229,8 @@ public:
             if (length<0 || static_cast<size_t>(length)>=sizeof(controller_serial) ||
                 !vr::VRServerDriverHost()->TrackedDeviceAdded(controller_serial,vr::TrackedDeviceClass_Controller,
                                                              left_controller.get())) {
-                Cleanup();return vr::VRInitError_Driver_Failed;
+                vr::VRDriverLog()->Log("Reframed Neo3 controller registration failed; retaining registered HMD");
+                left_controller.reset();
             }
         }
         return vr::VRInitError_None;

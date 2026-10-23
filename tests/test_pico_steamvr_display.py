@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 
@@ -11,7 +12,8 @@ SDK = ROOT / 'output/openvr-sdk'
 CJSON = ROOT / 'output/pico-steamvr-deps/cjson'
 
 
-@unittest.skipUnless((SDK / 'openvr_driver.h').is_file() and (CJSON / 'cJSON.c').is_file(),
+@unittest.skipUnless((SDK / 'openvr_driver.h').is_file() and (CJSON / 'cJSON.c').is_file() and
+                     (CJSON / 'cJSON.h').is_file() and shutil.which('cc') and shutil.which('c++'),
                      'requires cached pinned OpenVR and cJSON dependencies')
 class PicoSteamvrDisplayTests(unittest.TestCase):
     def test_optics_and_profile_refusals(self):
@@ -52,6 +54,11 @@ class PicoSteamvrDisplayTests(unittest.TestCase):
                                capture_output=True, text=True, timeout=10)
 
             check(profile, True)
+            for name in ('device','serial'):
+                nul=copy.deepcopy(profile);nul[name]+='\0suffix'
+                check(nul,False)
+            escaped=copy.deepcopy(profile);escaped['unrecognized']=r'\u0000'
+            check(escaped,True)
             for mutate in [lambda p: p.update(schema_version=1), lambda p: p.update(device='PICO4'),
                            lambda p: p['views'][1]['viewport'].__setitem__(1, 0),
                            lambda p: p['views'][0]['eye_pose'].__setitem__(3, 2),

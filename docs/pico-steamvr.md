@@ -54,7 +54,7 @@ and records source and artifact hashes. OpenVR and cJSON license notices accompa
 the bundle. No unit-specific coefficients enter the build or repository.
 
 For a running, explicitly selected native Pico session, the read-only probe
-mode `pico-steamvr-live LIBOPENVR BOOT_SERIAL SECONDS --view-frames` logs raw and
+mode `pico-steamvr-live LIBOPENVR BOOT_SERIAL SECONDS --view-frames` (1–30 seconds) logs raw and
 standing HMD matrices and their origin transform once per second. It does not
 change the tracking origin or show a dashboard. Matrix agreement can isolate a
 software conversion error; it does not validate physical view orientation.
@@ -128,7 +128,7 @@ pico-steamvr-live PATH_TO_LIBOPENVR_API BOOT_SERIAL 30 --left-controller
 Run it with the existing session's OpenVR environment. It identifies the physical
 left controller by serial, samples its legacy input and driver diagnostics once
 per 100 head-pose queries, and timestamps those observations with host monotonic
-time. Success requires more than 100 valid head-pose queries and at least one
+time. Success requires at least 100 valid head-pose queries and at least one
 connected, readable controller state; exit code 10 indicates a missing controller
 interface or no such state. It reports controller pose validity without inventing a pose.
 It does not open the dashboard or start sensors. Correlate its timestamps with
@@ -580,8 +580,8 @@ zero overdue ages in its late 2,000-query window, but six in its two earlier
 timing fix. The template retains 120 Hz pending physical 90 Hz acceptance.
 Sustained 120 Hz presentation remains unresolved.
 
-For this 90 Hz candidate, run `pico-display-handoff` before starting the VR
-server/compositor, or require the packaged `reframed-pico-display-handoff.service`
+For this 90 Hz candidate, run `pico-display-handoff --boot-serial-file
+/etc/reframed-vr/pico-boot-serial` as root before starting the VR server/compositor, or require the packaged `reframed-pico-display-handoff.service`
 from the session owner. The helper adopts the advertised 120 Hz mode, verifies
 five hardware vblank events, then disables the CRTC and releases its resources.
 Set the private optical profile's `screen.frame_interval_ns` to `11111111` and

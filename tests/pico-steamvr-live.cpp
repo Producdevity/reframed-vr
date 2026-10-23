@@ -40,12 +40,15 @@ static bool board(const char *serial)
         std::strspn(serial,"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-")!=std::strlen(serial)) return false;
     FILE *file=std::fopen("/proc/cmdline","r");if(!file)return false;
     char text[16384]={0};bool read=std::fgets(text,sizeof(text),file)!=nullptr;
-    std::fclose(file);if(!read)return false;
+    bool complete=std::feof(file)||std::strchr(text,'\n');
+    std::fclose(file);if(!read||!complete)return false;
     char expected[100];std::snprintf(expected,sizeof(expected),"androidboot.serialno=%s",serial);
-    char *save=nullptr;
-    for (char *p=strtok_r(text," \r\n",&save);p;p=strtok_r(nullptr," \r\n",&save))
-        if (!std::strcmp(p,expected)) return true;
-    return false;
+    unsigned serial_tokens=0;bool matches=false;char *save=nullptr;
+    for (char *p=strtok_r(text," \r\n",&save);p;p=strtok_r(nullptr," \r\n",&save)) {
+        if (!std::strncmp(p,"androidboot.serialno=",21)) ++serial_tokens;
+        if (!std::strcmp(p,expected)) matches=true;
+    }
+    return matches&&serial_tokens==1;
 }
 
 static bool check_models(vr::IVRRenderModels *models)
@@ -231,7 +234,7 @@ int main(int argc,char **argv)
         float since_vsync=0;uint64_t vsync_counter=0;bool vsync_available=false;
         uint64_t kernel_before=0,kernel_after=0;int64_t query_before=0,query_after=0;
         if (compositor) {
-            if (i%100==0) kernel_before=kernel_vsync(vsync_fd);
+            kernel_before=kernel_vsync(vsync_fd);
             query_before=monotonic_ns();
             vsync_available=system->GetTimeSinceLastVsync(&since_vsync,&vsync_counter);
             query_after=monotonic_ns();
@@ -320,5 +323,5 @@ int main(int argc,char **argv)
     std::printf("PICO_STEAMVR_LIVE_RESULT valid=%u invalid=%u max_position_delta_m=%.6f physical_motion_acceptance=0\n",valid,invalid,max_distance);
     if (controllers) std::printf("PICO_STEAMVR_CONTROLLER_RESULT samples=%u connected=%u states=%u valid_poses=%u physical_input_acceptance=0\n",
         controller_samples,controller_connected,controller_states,controller_poses);
-    return valid<=100?8:controllers&&!controller_states?10:dashboard_visible?0:9;
+    return controllers&&!controller_states?10:valid<100?8:dashboard_visible?0:9;
 }
