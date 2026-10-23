@@ -1000,7 +1000,7 @@ uncertainty. It tests recorded delivery, not a new live DMA session or an optica
 controller pose. The optional worker mode still needs an awake-controller live
 test and Bionic estimator integration. Evidence:
 `output/pico-controller-motion-20261023-v1/producer-native-result.json` and
-`worker-build/build.json` beside it.
+`worker-final-build/build.json` beside it.
 
 Duration expiry or SIGINT/SIGTERM disconnects both hands and closes RPC clients.
 `PICO_CONTROLLER_WAIT_DSP_OFFLINE` tells the session owner to stop its remaining
@@ -1015,6 +1015,53 @@ The [shared-sensor hardware test](pico-steamvr.md#maintained-receiver-and-shared
 verifies this worker with native SteamVR, head IMU and four-camera capture,
 including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate
 from physical failure recovery.
+
+### Bionic boundary and performance
+
+The controller estimator requires the stock Bionic ABI and executes native
+ARM64 code. That choice does not establish its performance against another
+estimator. The motion channel above carries small IMU records; camera transport,
+head-history waiting, estimator execution and pose delivery need separate
+measurements. Keep estimator work outside the compositor thread and avoid
+additional copies of camera frames where the vendor ownership contract permits.
+
+A CPU-only test on this stock b1977 Pico passes synthetic events from a static
+glibc producer to a Bionic consumer through the unchanged motion channel. It
+compares 0.5 ms consumer polling with a nonblocking `eventfd` notification for
+every event. Three three-second trials per configuration deliver all 54,000
+events without an overrun or read refusal. Rates are total synthetic events per
+second, not measurements of a connected controller. The table reports the range
+of each trial's 99th percentile, its worst observed delivery interval, and combined
+producer/consumer thread CPU time as a percentage of one core.
+
+| Wakeup | Events/s | Delivery p99 | Worst delivery | CPU, one core |
+|---|---:|---:|---:|---:|
+| 0.5 ms polling | 1,000 | 0.430–0.562 ms | 1.66 ms | 6.5–6.9% |
+| 0.5 ms polling | 2,000 | 0.492–0.607 ms | 8.25 ms | 9.1–9.2% |
+| Per-event notification | 1,000 | 0.257–0.438 ms | 5.31 ms | 14.2–15.0% |
+| Per-event notification | 2,000 | 0.173–0.335 ms | 9.75 ms | 28.2–29.0% |
+
+Polling-mode publication and successful reads have median elapsed operation
+times of approximately 2 and 3 microseconds respectively. Those operations
+exclude waiting for the next polling deadline. Per-event notification lowers
+typical delivery latency but raises measured CPU use and does not eliminate
+outliers; it is not adopted by the maintained receiver. Evaluate batching or
+draining from the existing tracking loop before adding a per-sample wakeup.
+The channel's 100 ms age ceiling rejects stale input; it is not a buffering delay
+or an acceptable target for normal tracking latency.
+
+This test uses ordinary stock Android scheduling, without affinity or frequency
+overrides. It does not run cameras, the vendor estimator or SteamVR and does not
+isolate the cause of the scheduling outliers. It is neither a Bionic-versus-glibc
+comparison nor proof of native Linux performance. Before accepting the live
+integration, measure capture-to-consume age, head-bracket waiting, estimator
+call/callback time and pose age together with compositor CPU/GPU timing and
+missed vblanks under the same workload. Include sustained CPU/power behavior
+and worst-case latency; small ring-operation times alone are insufficient.
+Evidence: `output/pico-bionic-performance-20261023-v1/ab-summary.json`, with
+source/binary hashes, per-trial logs and the bounded device runner beside it.
+The Pico stays in the same offline stock boot with music/system volume zero;
+all uploaded benchmark files are removed. No sensor or firmware state changes.
 
 ### Parent session lifecycle
 
