@@ -282,7 +282,25 @@ remaining 2 to 2. The fixture unloads and the guest powers off without kernel
 warnings. The shared build cache is mounted read-only, and its Image,
 configuration and symbol-table hashes match before and after the run. Positive
 and negative evidence is retained under
-`output/pico-controller-image-lifetime-20261023-v1/`. The rebuilt physical
-kernel has not yet been packaged into a matching root or booted on the Pico;
-GPU completion, compositor timing and live controller tracking remain hardware
-acceptance gates for this revision.
+`output/pico-controller-image-lifetime-20261023-v1/`.
+
+The corrected physical kernel subsequently boots on the Pico with its matching
+initramfs, all rebuilt modules and a fresh 6 GiB diagnostic root. The root also
+contains newly rebuilt Turnip, SSC, metadata collector and FastRPC bundles;
+their previous builds failed current-source provenance checks. The runtime
+kernel's notes match the rebuilt ELF. Unprivileged Turnip/Adreno 650 processes
+report timeline OPAQUE_FD support and pass all four 4 MiB cross-exec GPU buffer
+round trips. Complete boot and DTBO hashes match the retained backups both
+before and after the GPU tests. The captured boot/kernel log contains no WARN,
+BUG, Oops or panic markers. It retains the older baseline's unsupported
+`GPUMEM_BIND_RANGES` feature-probe diagnostic; Mesa returns unsupported and
+releases its probe allocations on that path.
+
+Stock return is verified in a new b1977 boot, with the unlocked state preserved,
+Wi-Fi off, updater disabled and music/system volume zero. The RAM-boot sequence
+includes the recorded vendor command authorization described in
+`pico-first-boot.md`; no flash or erase commands were issued. Physical receipts
+are under `native/` in the same evidence directory; root/container inputs are
+under `output/pico-native-review-20261024-v1/`. This closes the rebuilt kernel's
+boot and GPU synchronization gates. Valve compositor timing, optical sharpness
+and valid tracked controller pointing remain separate acceptance gates.

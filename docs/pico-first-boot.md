@@ -528,6 +528,19 @@ relevant limitation, not proof of identical Pro Eye behavior.
 
 ## Confirmed unlock effects
 
+The 2026-10-24 engineering-ABL session demonstrates the distinction between
+command authorization and persistent unlock. `getvar unlocked` returned `yes`,
+but `fastboot boot` rejected the transferred image with `unknown command`.
+Repeating the previously recorded
+`fastboot -s c980c8d4 oem picoDJXF96T unlock` authorization, then sending the
+same image, produced a successful RAM boot. This matches the handler-registration
+behavior below; persistent unlock alone did not establish command availability
+in that session. Both attempts and the authorization result are retained in
+`output/pico-controller-image-lifetime-20261023-v1/native/`. Full boot/DTBO
+readbacks remained unchanged, and the unit returned to stock b1977 with
+`flash.locked=0` and orange verified-boot state. Other persistent-state stores
+were not read back by this test.
+
 Static analysis of the authenticated 4.6.3 ABL and this unit's saved XBL narrows
 the transition requirements:
 
