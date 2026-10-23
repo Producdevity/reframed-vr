@@ -5,6 +5,7 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <initializer_list>
 #include <time.h>
 #include <unistd.h>
 
@@ -47,17 +48,71 @@ static bool board(const char *serial)
     return false;
 }
 
+static bool check_models(vr::IVRRenderModels *models)
+{
+    if (!models) return false;
+    for (const char *hand : {"left", "right"}) {
+        char name[96], body[256] = {};
+        std::snprintf(name, sizeof(name), "{reframed_pico}neo3_%s", hand);
+        uint32_t components = models->GetComponentCount(name);
+        unsigned required = 0;
+        for (uint32_t i=0;i<components&&i<32;++i) {
+            char component[128]={};
+            models->GetComponentName(name,i,component,sizeof(component));
+            if (!std::strcmp(component,"body")) required |= 1;
+            if (!std::strcmp(component,"tip")) required |= 2;
+            if (!std::strcmp(component,"grip")) required |= 4;
+            if (!std::strcmp(component,"handgrip")) required |= 8;
+        }
+        uint32_t body_length=models->GetComponentRenderModelName(name, "body", body, sizeof(body));
+        std::printf("PICO_STEAMVR_MODEL_COMPONENTS hand=%s count=%u required=%u body=%s\n", hand, components, required, body);
+        if (required != 15 || !body_length || body_length>sizeof(body)) return false;
+        vr::RenderModel_t *model = nullptr;
+        vr::EVRRenderModelError result;
+        int64_t end = monotonic_ns() + 5000000000LL;
+        do {
+            result = models->LoadRenderModel_Async(body, &model);
+            if (result == vr::VRRenderModelError_Loading) usleep(10000);
+        } while (result == vr::VRRenderModelError_Loading && monotonic_ns() < end);
+        if (result != vr::VRRenderModelError_None || !model) {
+            std::printf("PICO_STEAMVR_MODEL_ERROR name=%s body=%s error=%d\n", name, body, result);
+            return false;
+        }
+        bool valid = model->unVertexCount > 0 && model->unVertexCount < 65000 && model->unTriangleCount == 3488;
+        for (uint32_t i = 0; i < model->unVertexCount; ++i)
+            for (float coordinate : model->rVertexData[i].vPosition.v)
+                valid = valid && std::isfinite(coordinate) && std::fabs(coordinate) < .35;
+        vr::RenderModel_TextureMap_t *texture = nullptr;
+        end = monotonic_ns() + 5000000000LL;
+        do {
+            result = models->LoadTexture_Async(model->diffuseTextureId, &texture);
+            if (result == vr::VRRenderModelError_Loading) usleep(10000);
+        } while (result == vr::VRRenderModelError_Loading && monotonic_ns() < end);
+        valid = valid && result == vr::VRRenderModelError_None && texture && texture->unWidth && texture->unHeight;
+        std::printf("PICO_STEAMVR_MODEL hand=%s components=%u vertices=%u triangles=%u texture=%ux%u valid=%d\n",
+            hand, components, model->unVertexCount, model->unTriangleCount,
+            texture ? texture->unWidth : 0, texture ? texture->unHeight : 0, valid);
+        if (texture) models->FreeTexture(texture);
+        models->FreeRenderModel(model);
+        if (!valid) return false;
+    }
+    return true;
+}
+
 int main(int argc,char **argv)
 {
     setvbuf(stdout,nullptr,_IOLBF,0);
-    if ((argc!=4&&argc!=5&&argc!=6) || !board(argv[2])) return 22;
+    if ((argc!=4&&argc!=5&&argc!=6&&argc!=7) || !board(argv[2])) return 22;
     bool controllers=argc==5&&!std::strcmp(argv[4],"--left-controller");
     bool view_frames=argc==5&&!std::strcmp(argv[4],"--view-frames");
-    bool dashboard=argc>=5&&!controllers&&!view_frames;
+    bool models=argc==5&&!std::strcmp(argv[4],"--controller-models");
+    bool frame_history=argc==7&&!std::strcmp(argv[6],"--frame-history");
+    bool dashboard=argc>=5&&!controllers&&!view_frames&&!models;
     char *end=nullptr;long seconds=std::strtol(argv[3],&end,10);
     if (!*argv[3] || *end || seconds<1 || seconds>30 ||
         (dashboard&&std::strcmp(argv[4],"--dashboard")) ||
-        (argc==6&&(!*argv[5] || std::strlen(argv[5])>128 ||
+        (argc==7&&!frame_history) ||
+        (argc>=6&&(!*argv[5] || std::strlen(argv[5])>128 ||
                    std::strspn(argv[5],"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-")!=std::strlen(argv[5])))) return 22;
     alarm(static_cast<unsigned>(seconds+40));
     void *library=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
@@ -75,6 +130,11 @@ int main(int argc,char **argv)
     char tracking[128]={0};vr::ETrackedPropertyError property=vr::TrackedProp_Success;
     system->GetStringTrackedDeviceProperty(0,vr::Prop_TrackingSystemName_String,tracking,sizeof(tracking),&property);
     if (property!=vr::TrackedProp_Success||std::strcmp(tracking,"reframed_pico")) {shutdown();return 5;}
+    if (models) {
+        auto *render_models=static_cast<vr::IVRRenderModels *>(get(vr::IVRRenderModels_Version,&error));
+        bool passed=error==vr::VRInitError_None&&check_models(render_models);
+        shutdown();return passed?0:11;
+    }
     auto *settings=static_cast<vr::IVRSettings *>(get(vr::IVRSettings_Version,&error));
     if (settings&&error==vr::VRInitError_None) {
         vr::EVRSettingsError setting_error=vr::VRSettingsError_None;
@@ -92,7 +152,7 @@ int main(int argc,char **argv)
                     static_cast<int>(system->GetTrackedDeviceActivityLevel(0)));
         overlay=static_cast<vr::IVROverlay *>(get(vr::IVROverlay_Version,&error));
         if (!overlay||error!=vr::VRInitError_None) {shutdown();return 6;}
-        const char *key=argc==6?argv[5]:"";
+        const char *key=argc>=6?argv[5]:"";
         std::printf("PICO_STEAMVR_DASHBOARD_REQUEST key=%s\n",key);
         overlay->ShowDashboard(key);
     }
@@ -192,6 +252,19 @@ int main(int argc,char **argv)
             }
         }
         if (compositor&&i%100==0) {
+            if (frame_history) {
+                vr::Compositor_FrameTiming history[128]{};
+                for (auto &frame : history) frame.m_nSize=sizeof(frame);
+                uint32_t count=compositor->GetFrameTimings(history,128);
+                if (count>128) {shutdown();return 12;}
+                for (uint32_t j=0;j<count;++j) {
+                    const auto &frame=history[j];
+                    std::printf("PICO_STEAMVR_FRAME_HISTORY index=%u system_s=%.9f presents=%u mispresented=%u dropped=%u gpu_ms=%.6f cpu_ms=%.6f\n",
+                        frame.m_nFrameIndex,frame.m_flSystemTimeInSeconds,frame.m_nNumFramePresents,
+                        frame.m_nNumMisPresented,frame.m_nNumDroppedFrames,
+                        frame.m_flCompositorRenderGpuMs,frame.m_flCompositorRenderCpuMs);
+                }
+            }
             vr::Compositor_FrameTiming timing{};timing.m_nSize=sizeof(timing);
             bool available=compositor->GetFrameTiming(&timing,1);
             std::printf("PICO_STEAMVR_FRAME_TIMING available=%d index=%u system_s=%.9f presents=%u mispresented=%u dropped=%u compositor_gpu_ms=%.6f compositor_cpu_ms=%.6f wait_present_cpu_ms=%.6f compositor_idle_cpu_ms=%.6f render_start_ms=%.6f update_start_ms=%.6f update_end_ms=%.6f vsync_ready=%u vsync_first_view=%u vsync_available=%d since_vsync_s=%.9f vsync_counter=%llu\n",

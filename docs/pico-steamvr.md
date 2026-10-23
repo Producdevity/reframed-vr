@@ -106,9 +106,8 @@ update also attempts to release every component and marks it disconnected;
 the debug response counts rejected calls. The timeout uses host receipt time,
 not an established controller capture-clock mapping.
 
-The controller reports `poseIsValid=false` throughout. No controller position,
-orientation, haptics, analog calibration or render model
-are supplied by this step. Raw analog endpoints were captured but axis sign,
+The controller reports `poseIsValid=false` throughout. This input-only path supplies no controller position, orientation, haptics or
+analog calibration. The bundled static render models are described below. Raw analog endpoints were captured but axis sign,
 center and dead zone still need physical calibration. Enabling this adapter
 does not yet provide a tracked dashboard pointer.
 
@@ -681,3 +680,40 @@ The models have identity `tip`, `grip` and `handgrip` components. These are
 explicit placeholders for pose-offset calibration, not calibrated pointing
 directions. Registering or loading a render model does not validate a controller
 pose, enable pose publication or establish visible tracked pointing.
+
+## UI resolution and frame-history diagnostics
+
+The build also bundles `steamvr-ui-90hz.vrsettings`, from
+`profiles/pico-steamvr-ui-90hz.json`. This opt-in profile requests a native-size
+1832×1920 internal system layer per eye and manual application scale 1.0. The
+normal template remains unchanged. Select the 90 Hz hardware mode and a private
+optical profile with `screen.frame_interval_ns=11111111` before using it; the
+settings file alone does not change the panel mode or the driver's timing.
+
+Application supersampling and the internal system-layer size are separate in
+this retained Valve runtime. On the Pico, manual supersampling changed the
+application recommendation to 1832×1920 while the system layer remained
+1544×1616. Explicit `systemLayerWidth` and `systemLayerHeight` settings changed
+the allocated textures to 1832×1920. These are runtime-specific controls, checked
+against its allocation log, rather than assumptions about other SteamVR builds.
+
+The current gamescope build has a 1920×1080×4-byte upload buffer. A software
+Steam surface at 1920×1200 exceeds it and aborts gamescope. Do not use that size
+with the pinned build. A surviving compositor, a cached visible overlay or a
+zero diagnostic-runner exit code does not establish that Steam is still live.
+The session must also retain an active gamescope process and fresh UI content.
+
+The physical probe can record overlapping 128-frame compositor histories once
+per second while observing an already running dashboard:
+
+```sh
+pico-steamvr-live LIBOPENVR BOOT_SERIAL 30 --dashboard OVERLAY_KEY --frame-history
+python3 tools/analyze-pico-frame-pacing.py CAPTURE.log --refresh 90
+```
+
+The analyzer deduplicates by frame index, retains the latest presentation counts
+and reports missing indices. Do not combine different compositor sessions in
+one log. GPU time, presentation intervals and reported drops are software
+observations; none measures photon latency or proves legible text through the
+lenses. Resolution, pacing and controller-camera acceptance are recorded
+separately in the [hardware verification log](pico-steamvr-verification.md).

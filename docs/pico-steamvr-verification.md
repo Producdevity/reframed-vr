@@ -2076,3 +2076,88 @@ flags. This is not a positive stock optical reference for the placed controller.
 The hash manifest and README identify the authoritative receipts; copied older
 templates and receipts are not results from this boot. No firmware partition
 was written and the Quest was untouched.
+
+## UI resolution, render models and camera startup (2026-10-23)
+
+Evidence: `output/pico-ui-quality-20261023-v1/`, with separately verified export
+archives and member manifests. All comparisons used one native RAM boot, the
+same driver/optics, 90 Hz, Facet, the retained paired-counter Vulkan path,
+587 MHz GPU minimum and prioritized KGSL event workqueue. GPU minimum and
+workqueue priority were restored after each run. Audio stayed closed. The
+headset was stationary; no new lens, motion-scale or controller-pointing
+acceptance was requested from the absent owner.
+
+The driver and probe rebuilt on native ARM64 Linux. Both attributed WebXR Neo3
+render models loaded through SteamVR's render-model and texture APIs: 3488
+triangles per hand and 512×512 textures. SteamVR adds two automatic components
+to the four supplied components, so the probe checks required names rather than
+requiring exactly four. Model loading does not establish tracked controller
+visibility or calibrated aim/grip transforms.
+
+### Resolution and measured pacing
+
+These are overlapping compositor histories from three late 30-second windows
+per successful run, deduplicated by frame index; each spans about 94 seconds
+with no missing indices. GPU times are compositor render times. Reported drops
+and frame intervals are software observations, not measured panel cadence or
+photon latency. These single runs do not establish a statistically repeatable
+performance difference.
+
+| Configuration | Steam source | Internal layer per eye | GPU p99, ms | Reported drops | Interval p99, ms |
+| --- | --- | --- | ---: | ---: | ---: |
+| Automatic scale | 1280×800 | 1544×1616 | 6.61 | 21 | 12.47 |
+| Manual application scale | 1280×800 | 1544×1616 | 6.62 | 15 | 12.42 |
+| Native internal layer | 1280×800 | 1832×1920 | 7.68 | 39 | 12.63 |
+| Larger Steam surface | 1600×1000 | 1832×1920 | 7.94 | 111 | 20.31 |
+
+Application supersampling alone did not change the internal system layer. The
+runtime's explicit `systemLayerWidth`/`systemLayerHeight` controls changed its
+allocation to 1832×1920. Both native-layer runs stayed below the 11.11 ms GPU
+frame budget in these late windows, but missed-frame intervals remained. The
+larger source showed worse pacing, and one of its 9000 late vsync-age queries
+was overdue. Do not call this timing fault resolved or claim sharper lens
+output from the software capture. The optional `steamvr-ui-90hz.vrsettings`
+profile packages the tested layer dimensions; neither the default profile nor
+the Steam source size is changed automatically.
+
+A separate 1920×1200-source attempt aborted gamescope: its pinned upload buffer
+is `1920 * 1080 * 4` bytes (`rendervulkan.hpp:849,872`), smaller than that source.
+The compositor and cached overlay survived, and the original diagnostic runner
+still exited zero. That run is rejected as live-Steam acceptance. A subsequent
+short run was also rejected: its assertion read the previous run's appended
+gamescope log. After rotating that log and requiring the overlay service to
+remain active after readiness and every late window, the final 1600×1000 run
+completed with a live visible overlay. All failed attempts are retained.
+
+### Controller and lifecycle boundaries
+
+The manual-application-scale comparison delivered zero controller image sets.
+Its raw camera trace starts with IDs 0 and 3 from frame 1228, then ID 1 from
+1230: enabling the consumer partway through a set triggered the old collector's
+strict incomplete-set failure. The maintained frame-sequence helper now permits
+partial sets only before initial synchronization. Native unit tests cover all
+24 arrival orders and four entry positions. The rebuilt capture completed its
+final full run with 64 retained controller image sets, controller-image error
+zero, 4499 head-camera sets consumed and 182213 head poses published without a
+rejected head result. This remains a bounded retained-pixel diagnostic.
+
+The controller IMU stream later timed out (`-110`); controller pose publication
+remained disabled. The final observer decoded 13787 controller results, only
+one with public confidence 1. This does not provide a usable tracked pointer.
+Continuous vendor image ownership/completion, origin conversion, prediction
+timestamps and tracker-loss handling remain open. The stock conversion's third
+pose argument was verified to come from `getPoseOffset`, rather than a live
+head pose; see the controller protocol record.
+
+The camera's terminal `result=-11` with `failed=0`, accepted stops and process
+exit zero is its nonfatal queue-empty diagnostic at the capture deadline. The
+controller worker's exit 1 includes the separately recorded IMU timeout even
+when all three RPC-stop results are zero; it must not be described as a failed
+DSP release solely from that exit code. Before stock return, both DSP owners
+were stopped, MCU references were zero, audio PCMs were closed, and full boot
+and DTBO readbacks matched the retained stock hashes.
+
+Stock return was verified in a new b1977 boot, with Wi-Fi off, the updater
+disabled, no external-interface routes, and music/system volume zero. Receipts
+are `native/stock-return-final.json` and `native/stock-network-final.json` in the
+evidence directory. No firmware partition was written and the Quest was untouched.
