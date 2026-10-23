@@ -293,6 +293,19 @@ The disassembly, input hashes and reproduced field counts are retained in
 `output/pico-controller-optical-20261023-v1/`; the original controls are in
 `output/pico-controller-integration-20261023-v1/export-controls/`.
 
+[`pico-controller-result.c`](../src/pico-controller-result.c) decodes the same
+368-byte wire record without assigning tracking validity. It converts the
+getter's millimetres to metres, retains its raw tracker-frame quaternion and
+exposes state, public confidence, error and diagnostic bytes `0x52`/`0x54`.
+Malformed input leaves the caller's output unchanged. It does not apply a
+head/world transform or grip/aim offset. A nonzero `0x52` is also insufficient:
+951 records in the existing negative control contain initialization value 3.
+
+The decoder's sanitizer fixtures and all 6,235 retained negative-control
+records pass on the host and Pico CPU. A native observer also uses it on live
+callbacks. The synchronized image/result capture and its limits are described
+in [the SteamVR verification log](pico-steamvr-verification.md#synchronized-controller-image-observation).
+
 ### Read-only stock pose reference
 
 [`capture-pico-stock-controller.py`](../tools/capture-pico-stock-controller.py)

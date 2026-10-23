@@ -1941,3 +1941,39 @@ music/system volumes zero. Native audio was not opened during the tests; no
 firmware partition was written and the Quest was untouched. Receipts are
 `final-readback-result.log`, `quiesce-result.log`, `stock-return-final.json`,
 `stock-network-final.json` and `stock-quiet-final.log` in the evidence directory.
+
+### Synchronized controller image observation
+
+Evidence: `output/pico-controller-pointing-20261023-v1/`, native boot
+`49f00487-798c-409c-a479-8781deb2cb02`. Earlier raw result capture filled its
+8,192-record budget before the controller image feed began at 25 seconds. The
+new diagnostic samples every eighth result and captures camera pixels only
+after the controller image ring is ready, covering the actual image calls.
+This changes observation coverage, not the tracker or its pose acceptance.
+
+The first combined run consumes all 4,499 head camera sets and publishes
+182,214 head poses with zero rejected results or feed failures. Of 10,000
+vsync-age checks, seven are overdue in the first readiness window; the second
+readiness window and all three later windows pass. Thus the earlier passing
+warm captures do not establish fault-free cold startup.
+
+The observer decodes 13,750 controller callbacks. Its retained 1,718 raw pairs
+span 27.124 seconds and include 299 observations after the first of 64
+four-camera image submissions. All those later left results have state,
+public confidence and diagnostic bytes `0x52`/`0x54` equal to zero. Image calls
+return zero, but there is still no demonstrated optical correction or tracked
+SteamVR pointer. Later radio silence does not establish that the controller
+was asleep. The 256 synchronized camera images are almost black: mean scene
+intensity is approximately 3.8/255 and none contains a pixel above 200. This
+does not distinguish controller visibility, LED operation or exposure timing.
+
+The native decoder fixtures and replay of all 6,235 earlier negative-control
+records pass with UBSan traps enabled; host ASan/UBSan checks pass as well.
+`observed-consumer-build.json` records the exact current observer build;
+older build receipts included in the export describe the preceding carrier.
+All controller RPC stops succeed, SLPI is offline before DMA release, MCU
+references return to zero, and GPU minimum/queue nice return to 305 MHz/0.
+Audio is not opened.
+
+`export-pointing.tar.gz` contains 267 manifest-verified files, SHA-256
+`82f9cdac535371230dbe59a65fb702cb00de72ce526cbdd0f1d48c2d880fe469`.
