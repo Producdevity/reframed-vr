@@ -77,7 +77,7 @@ Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.
  			dma_fence_put(fence);
 --- /dev/null
 +++ b/drivers/dma-buf/dma-fence-unwrap.c
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,173 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * dma-fence-util: misc functions for dma_fence objects
@@ -97,9 +97,17 @@ Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.
 +static struct dma_fence *
 +__dma_fence_unwrap_array(struct dma_fence_unwrap *cursor)
 +{
-+	cursor->array = dma_fence_chain_contained(cursor->chain);
-+	cursor->index = 0;
-+	return dma_fence_array_first(cursor->array);
++	while (cursor->chain) {
++		struct dma_fence *fence;
++
++		cursor->array = dma_fence_chain_contained(cursor->chain);
++		cursor->index = 0;
++		fence = dma_fence_array_first(cursor->array);
++		if (fence)
++			return fence;
++		cursor->chain = dma_fence_chain_walk(cursor->chain);
++	}
++	return NULL;
 +}
 +
 +/**

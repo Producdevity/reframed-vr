@@ -200,8 +200,10 @@ tracking gates do not remove the need to validate those paths together.
 
 `patches/kernel/pico-neo3-linux/0011` through `0014` contain the fence
 prerequisites, stable core, transfer unwrapping and query-reference correction.
-The core keeps the vendor `drmP.h`/slab declarations and expresses the newer
-lockdep diagnostic through the existing `lockdep_depth()` API. Unsupported
+The complete series keeps the vendor `drmP.h`/slab declarations and expresses
+the newer lockdep diagnostic through the existing `lockdep_depth()` API.
+The kernel profile applies the ordered series before building; individual
+patch fragments are not standalone build targets. Unsupported
 lookup flags are rejected before acquiring the syncobj reference.
 
 The canonical physical configuration builds successfully with all 38 matching
@@ -241,3 +243,19 @@ The corrected canonical QEMU kernel under
 fixture unload/power-off passes, without kernel warnings. Full GPU interprocess
 synchronization, Valve compositor presentation and physical lens acceptance
 remain separate hardware gates.
+
+The 2026-10-23 PR review additionally corrected traversal past empty fence
+containers: iteration now releases their retained chain references and reaches
+later dependencies. The out-of-order userspace timeline diagnostic uses the
+DRM debug level to avoid an unprivileged kernel-log flood. The corrected series
+applies without fuzz, and both changed objects compile against the pinned
+4.19 configuration. An ASan/UBSan host test extracts the changed iterator from
+the patch and checks consecutive empty containers and reference release.
+
+The existing QEMU kernel also passes the ioctl suite with the shared build
+cache mounted read-only. The test init now installs a SIGALRM handler; a
+separate forced-timeout run verifies its failure marker and power-off as PID 1.
+These runs validate the test fixture on the existing kernel, not a boot of the
+newly corrected series. The corrected kernel still needs a complete rebuild
+and its own VM and physical acceptance. Review evidence is retained in
+`output/pr-2-review-20261023-v1/`.

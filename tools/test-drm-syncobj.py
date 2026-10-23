@@ -67,7 +67,7 @@ def run(args):
 
     container = [args.engine, 'run', '--rm', '--network', 'none', '--cpus', '1',
                  '--memory', '1g', '--memory-swap', '1g', '--pids-limit', '64',
-                 '--mount', f'type=volume,src={args.volume},dst=/work',
+                 '--mount', f'type=volume,src={args.volume},dst=/work,readonly',
                  '--mount', f'type=bind,src={ROOT / "tests"},dst=/tests,readonly',
                  '--mount', f'type=bind,src={output},dst=/output']
     cached_build = source.removesuffix('/source') + '/build'

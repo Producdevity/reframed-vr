@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <linux/sync_file.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,15 @@ struct sw_fence { uint32_t value; char name[32]; int32_t fence; };
 #define SW_INCREMENT _IOW('W', 1, uint32_t)
 struct fence_refs { int32_t fd; uint32_t handle; uint32_t refs; };
 #define TEST_REFS _IOWR('T', 0, struct fence_refs)
+
+static void timed_out(int signal_number)
+{
+    (void)signal_number;
+    static const char message[] = "DRM_SYNCOBJ_FAIL watchdog timeout\n";
+    (void)write(STDERR_FILENO, message, sizeof(message)-1);
+    (void)reboot(RB_POWER_OFF);
+    _exit(1);
+}
 
 static uint64_t pointer(const void *p) { return (uintptr_t)p; }
 
@@ -296,6 +306,7 @@ int main(void)
     int expect_leak = strstr(command, "reframed.query_leak=expected") != NULL;
     CHECK(mount("devtmpfs", "/dev", "devtmpfs", 0, NULL) == 0);
     CHECK(mount("debugfs", "/sys/kernel/debug", "debugfs", 0, NULL) == 0);
+    CHECK(signal(SIGALRM, timed_out) != SIG_ERR);
     alarm(30);
     int module = open("/drm_syncobj_test.ko", O_RDONLY | O_CLOEXEC);
     CHECK(module >= 0 && syscall(SYS_finit_module, module, "", 0) == 0);
