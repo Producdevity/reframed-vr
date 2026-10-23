@@ -1908,3 +1908,36 @@ exception/termination restoration. Its five host fixtures cover failed
 workloads, overlapping owners, previous nondefault priority, rejected device
 identity and a symlink lock. Native sysfs tests additionally verify restoration
 after both the CLI timeout and SIGTERM; see `install-policy-result.log`.
+
+
+The final three-minute repeat uses the committed helper's context around the
+entire workload and shutdown, with Vulkan API/WSI tracing and all kernel trace
+events disabled. Both retained kernel streams are zero bytes, there are no
+WSI trace records and no Vulkan API trace file is produced. It accepts all
+9,500 head and vsync-age queries with zero overdue ages, consumes all 4,499
+camera sets and publishes 182,215 head poses without rejected output or feed
+failure. All 13,719 controller motion samples are delivered before later
+radio silence; no resumption cue occurs. RPC stops succeed and SLPI goes
+offline before controller DMA release. The helper restores nice 0 and the
+unchanged CPU mask, concurrency and NUMA values after cleanup. These two
+passing captures total 19,000 age checks; sustained timing and physical VR
+acceptance still require longer and visually observed sessions.
+
+The untraced archive `export-wq-untraced2.tar.gz` contains 273 verified files,
+SHA-256 `8b4ed251c01a8023bd6bf7ede19ab2f2096cce355dc2d56520e0884b1fc6368e`.
+A preceding no-tracing harness attempt writes a disabled trace marker and
+returns `EBADF` before capture/VR startup; its cleanup indexes an empty stream
+list. The maintained outer policy context restores nice 0 despite this error,
+verified before the corrected repeat. This failed attempt is not counted in
+the passing captures. Host script/result receipts remain in the evidence.
+
+
+Final full BOOT/DTBO readbacks match the retained stock hashes. Before reboot,
+CDSP/SLPI are offline, MCU references are zero, the GPU floor is 305 MHz and
+kgsl-events nice is 0. Explicit stock return verifies boot UUID
+`0f633602-4f67-45e8-b0c7-dc565059928a`, b1977, unlocked, updater disabled, Wi-Fi off and
+empty IPv4/IPv6 routing tables. The pinned quiet helper reads back effective
+music/system volumes zero. Native audio was not opened during the tests; no
+firmware partition was written and the Quest was untouched. Receipts are
+`final-readback-result.log`, `quiesce-result.log`, `stock-return-final.json`,
+`stock-network-final.json` and `stock-quiet-final.log` in the evidence directory.
