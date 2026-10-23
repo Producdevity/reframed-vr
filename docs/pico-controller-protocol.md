@@ -1016,6 +1016,31 @@ verifies this worker with native SteamVR, head IMU and four-camera capture,
 including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate
 from physical failure recovery.
 
+### Bionic motion consumer
+
+[`pico-controller-motion-consumer`](../src/pico-controller-motion-consumer.h)
+drains the ordered motion channel into a caller-supplied estimator callback.
+It borrows the generation's raw head history; the caller serializes history
+updates and polling on the tracking thread. Prepare the estimator before the
+receiver starts, then create the consumer after the channel is initialized.
+
+A missing future head bracket retains one pending event and preserves delivery
+order. It does not extrapolate a head pose or discard an old event to catch up.
+Channel identity, overruns, observed stops, per-hand capture gaps, input age,
+clock regression and estimator errors terminate this consumer permanently.
+Head tracking and the receiver remain owned by their existing lifecycle. A
+head-tracking loss cannot produce an identity fallback. Polling performs no
+allocation or wakeup syscall and drains a bounded batch. Status records input
+age, time waiting for a head bracket and elapsed estimator-call time. A call
+that returns after the age limit also stops the consumer.
+
+Host ASan/UBSan tests and a Pico Bionic UBSan CPU harness pass delayed-bracket
+delivery, ordered batches, loss, channel stop, overrun, wrong hand, capture gap,
+clock regression, stale input and estimator failure/overrun cases. This verifies
+the adapter contract, not a live controller estimator or optical pose.
+Evidence: `output/pico-live-controller-timing-20261023-v1/controller-tests.log`
+and `motion-consumer-native-result.json` beside it.
+
 ### Bionic boundary and performance
 
 The controller estimator requires the stock Bionic ABI and executes native
