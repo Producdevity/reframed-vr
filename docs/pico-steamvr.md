@@ -53,6 +53,12 @@ and an opt-in `steamvr.vrsettings` session template,
 and records source and artifact hashes. OpenVR and cJSON license notices accompany
 the bundle. No unit-specific coefficients enter the build or repository.
 
+For a running, explicitly selected native Pico session, the read-only probe
+mode `pico-steamvr-live LIBOPENVR BOOT_SERIAL SECONDS --view-frames` logs raw and
+standing HMD matrices and their origin transform once per second. It does not
+change the tracking origin or show a dashboard. Matrix agreement can isolate a
+software conversion error; it does not validate physical view orientation.
+
 The cJSON source is the existing vendored dependency in the pinned Monado source
 tree; this does not link Monado into the driver. PicoFrame's PICO 4 driver was a
 reference for separate Bionic tracking and Vulkan direct-display integration.

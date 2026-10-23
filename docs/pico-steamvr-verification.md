@@ -1977,3 +1977,46 @@ Audio is not opened.
 
 `export-pointing.tar.gz` contains 267 manifest-verified files, SHA-256
 `82f9cdac535371230dbe59a65fb702cb00de72ce526cbdd0f1d48c2d880fe469`.
+
+### Deployed view-coordinate check
+
+In the same RAM boot, the new read-only `pico-steamvr-live --view-frames`
+mode samples raw/standing HMD matrices and the raw-to-standing transform without
+changing the dashboard or tracking origin. With Steam's 1280×800 overlay active,
+all 1,000 head queries are valid. All ten origin matrices are identity. Comparing
+20 raw/standing matrices with the nearest timestamped calibrated-channel
+observations gives a maximum element difference of `4.39e-6` and translation
+difference of `1.79e-6` metres. The observations are at most 2.57 ms apart and
+the headset is stationary; this checks the deployed conversion, not measured
+movement or physical calibration. No extra standing-origin reversal is present
+in this session.
+
+The head-pose regression now covers both yaw/pitch directions and lateral
+translation through the existing stock-SDK basis conversion. A world-fixed
+point moves opposite head yaw/pitch in view space. Host ASan/UBSan and the
+Pico's Bionic CPU harness with UBSan traps pass. The existing inverse panel-map
+correction remains deployed; these checks do not establish upright lens output,
+correct physical motion direction or a usable controller pointer.
+
+This combined run consumes all 4,499 head camera sets, publishes 182,215 head
+poses with no bad results/feed failure, and passes 2,000 dashboard vsync-age
+queries. The controller's 64 image calls return zero, but all 304 retained
+post-image result observations still have four zero state/confidence/diagnostic
+bytes. No controller pose is published. All RPC stops succeed and cleanup
+restores SLPI/MCU ownership and GPU policy. The archive `export-view.tar.gz`
+contains 274 manifest-verified files, SHA-256
+`40b92aeb852fb2ae95ec6efdded3d4c7e997c9c32c42ddea8708ff098b887366`.
+Exact probe source/binary hashes are retained in `install-view-result.log` and
+the archive. `view-frame-comparison.json` records the timestamp-only matching
+rule and numerical comparison.
+
+Full BOOT/DTBO readbacks still match the stock backups. After stopping CDSP and
+SLPI, verifying MCU references zero, closed audio devices and restored GPU
+minimum/nice, explicit reboot returns to b1977 stock boot
+`fa4a5887-1d19-4c88-baf3-7da96f25a39f`. Stock completes startup with music/system
+volume zero, Wi-Fi off, empty IPv4/IPv6 main routing tables, updater disabled
+and bootloader unlocked. Other routing tables contain only loopback/dummy
+interface routes. Receipts are `final-readback-result.log`, `quiesce-result.log`,
+`stock-return-final.json`, `stock-network-final.json` and `stock-quiet-final.log`
+in the same evidence directory. No firmware partition was written; the Quest
+was untouched.

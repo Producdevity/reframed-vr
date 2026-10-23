@@ -86,9 +86,46 @@ static void publication_clock_race()
     assert(status==PICO_SLAM_READ_REFUSED && clock.calls==calls);
 }
 
+static void head_motion_convention()
+{
+    const double basis=std::sqrt(.5), angle=.3;
+    pico_slam_pose_config config{};
+    config.world_from_slam.orientation[2]=config.world_from_slam.orientation[3]=basis;
+    config.body_from_head.orientation[2]=-basis;config.body_from_head.orientation[3]=basis;
+    config.direction=PICO_SLAM_WORLD_FROM_BODY;config.metres_per_unit=1;config.max_age_ns=100000000;
+    for (int direction : {-1,1}) {
+        pico_slam_channel channel{};assert(pico_slam_channel_init(&channel,91));
+        assert(pico_slam_channel_begin(&channel,1));
+        pico_slam_result raw{};raw.timestamp_ns=1000000000;raw.state=raw.confidence=1;
+        raw.orientation[0]=std::sin(direction*angle/2);raw.orientation[3]=std::cos(angle/2);
+        assert(pico_slam_channel_publish_result(&channel,1,&config,&raw,100,1001000000)==PICO_SLAM_CHANNEL_PUBLISHED);
+        auto pose=pico_steamvr_pose(&channel,91,1,1001000000,100000000,true);
+        assert(pose.poseIsValid);
+        near(pose.qRotation.x,0);near(pose.qRotation.y,std::sin(direction*angle/2));
+        near(pose.qRotation.z,0);near(pose.qRotation.w,std::cos(angle/2));
+        // A world-fixed point in front moves right in head space during a left yaw.
+        const double view_x=4*pose.qRotation.w*pose.qRotation.y;
+        near(view_x,2*std::sin(direction*angle));assert(direction*view_x>0);
+        assert(pico_slam_channel_begin(&channel,2));
+        raw.orientation[0]=0;raw.orientation[1]=-std::sin(direction*angle/2);
+        assert(pico_slam_channel_publish_result(&channel,2,&config,&raw,100,1001000000)==PICO_SLAM_CHANNEL_PUBLISHED);
+        pose=pico_steamvr_pose(&channel,91,2,1001000000,100000000,true);
+        near(pose.qRotation.x,std::sin(direction*angle/2));near(pose.qRotation.y,0);
+        const double view_y=-4*pose.qRotation.w*pose.qRotation.x;
+        near(view_y,-2*std::sin(direction*angle));assert(direction*view_y<0);
+        assert(pico_slam_channel_begin(&channel,3));
+        raw.orientation[1]=0;raw.orientation[3]=1;raw.position[1]=-.2*direction;
+        assert(pico_slam_channel_publish_result(&channel,3,&config,&raw,100,1001000000)==PICO_SLAM_CHANNEL_PUBLISHED);
+        pose=pico_steamvr_pose(&channel,91,3,1001000000,100000000,true);
+        near(pose.vecPosition[0],.2*direction);near(pose.vecPosition[1],0);
+        near(pose.qRotation.w,1);
+    }
+}
+
 int main(int argc, char **argv)
 {
     publication_clock_race();
+    head_motion_convention();
     pico_slam_channel channel{};
     assert(pico_slam_channel_init(&channel,42)&&pico_slam_channel_begin(&channel,1));
     const int64_t now=1002000000,age=100000000;

@@ -24,6 +24,15 @@ static uint64_t kernel_vsync(int fd)
     return end==text+size-1 && *end=='\n'?value:0;
 }
 
+static void view_matrix(const char *space,const vr::HmdMatrix34_t &matrix,bool valid)
+{
+    std::printf("PICO_STEAMVR_VIEW_FRAME monotonic_ns=%lld space=%s valid=%d matrix=",
+                static_cast<long long>(monotonic_ns()),space,valid);
+    for (unsigned row=0;row<3;++row) for (unsigned col=0;col<4;++col)
+        std::printf("%s%.9g",row||col?",":"",matrix.m[row][col]);
+    std::putchar('\n');
+}
+
 static bool board(const char *serial)
 {
     if (!serial || !*serial || std::strlen(serial)>64 ||
@@ -43,7 +52,8 @@ int main(int argc,char **argv)
     setvbuf(stdout,nullptr,_IOLBF,0);
     if ((argc!=4&&argc!=5&&argc!=6) || !board(argv[2])) return 22;
     bool controllers=argc==5&&!std::strcmp(argv[4],"--left-controller");
-    bool dashboard=argc>=5&&!controllers;
+    bool view_frames=argc==5&&!std::strcmp(argv[4],"--view-frames");
+    bool dashboard=argc>=5&&!controllers&&!view_frames;
     char *end=nullptr;long seconds=std::strtol(argv[3],&end,10);
     if (!*argv[3] || *end || seconds<1 || seconds>30 ||
         (dashboard&&std::strcmp(argv[4],"--dashboard")) ||
@@ -124,6 +134,13 @@ int main(int argc,char **argv)
             }
             max_distance=std::fmax(max_distance,std::sqrt(distance));++valid;
         } else ++invalid;
+        if (view_frames&&i%100==0) {
+            vr::TrackedDevicePose_t standing{};
+            system->GetDeviceToAbsoluteTrackingPose(vr::TrackingUniverseStanding,0,&standing,1);
+            view_matrix("raw",head.mDeviceToAbsoluteTracking,head.bPoseIsValid);
+            view_matrix("standing",standing.mDeviceToAbsoluteTracking,standing.bPoseIsValid);
+            view_matrix("raw_to_standing",system->GetRawZeroPoseToStandingAbsoluteTrackingPose(),true);
+        }
         if (controllers&&i%100==0) {
             ++controller_samples;
             auto id=vr::k_unTrackedDeviceIndexInvalid;
