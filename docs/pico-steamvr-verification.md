@@ -2020,3 +2020,59 @@ interface routes. Receipts are `final-readback-result.log`, `quiesce-result.log`
 `stock-return-final.json`, `stock-network-final.json` and `stock-quiet-final.log`
 in the same evidence directory. No firmware partition was written; the Quest
 was untouched.
+
+### Physical Steam UI and head-tracking check
+
+Evidence: `output/pico-controller-input-contract-20261023-v1/`, native RAM boot
+`376f77a7-8b27-470e-819c-ae2967c53d44`. The owner reports visible Steam sign-in UI
+and working 6DoF through the lenses. Home on the left controller hides/shows the
+window, but no controller model or pointer is visible, other buttons do not
+produce visible actions, and sign-in text is barely readable. This establishes
+visible rendering and a qualitative head-motion check; measured position scale,
+controller pointing and acceptable sharpness remain open.
+
+The viewing run passes its 500-query readiness window and all 15,000 late
+vsync-age queries, with no invalid head query in those windows. Earlier captures
+in the same boot still have startup-age failures, so this does not establish a
+general timing fix. The Steam overlay is 1280×800. The compositor log reports
+1832×1920 recommended per eye, automatic target 1552×1628 and system-layer
+textures 1544×1616. Those are concrete resolution limits to compare in the next
+sharpness test, not proof of the complete optical cause. The deployed driver
+uses fixed per-eye poses and lens calibration; it does not consume eye tracking.
+
+Unlike preceding captures, the retained controller results include 273 samples
+with `(state, public confidence, diagnostic 0x52) == (1, 1, 1)` between 26.061
+and 32.907 seconds after consumer startup. Their positions vary and quaternion
+norms are finite and approximately one. Some result timestamps are up to
+43.325 ms ahead of their observation time. These are promising acquisition
+samples, not a verified optical-validity rule or a controller calibration. The
+diagnostic explicitly keeps `optical_pose_publication=0`, including for these
+samples, so no controller pose reaches SteamVR. Publication still needs the
+coordinate/prediction-time contract, image-content and tracking-loss controls,
+and a safe continuous-image ownership contract. A preceding 512-set image trial
+without these samples rules out the earlier 64-set limit as the sole cause.
+
+The viewing harness returns zero, but its separate controller worker exits 1
+after reporting successful RPC stops; the camera log also records terminal
+result `-11` despite process status zero. This is not a fully clean lifecycle
+pass. SLPI is nevertheless verified offline before worker DMA release, MCU
+references return to zero, PCM devices remain closed and GPU minimum/nice are
+restored. The later explicit quiesce verifies both SLPI and CDSP offline.
+
+The archives and all member manifests were verified after transfer:
+
+| Archive in `native/` | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-pointing.tar.gz` | 267 | `27cb5e21aa179935867b31388712ffdda5a2cfcc164b85f06c8e7335d34b6315` |
+| `export-extended.tar.gz` | 243 | `234f87755e1122e14c27c44f7666438fbcc5753fbf00f5b9e266303bce34edc7` |
+| `export-live-preview.tar.gz` | 291 | `8b87553b78b8c0de32d58fef96cb610f45dd614ae03aa4a9b87bbfd2b0725338` |
+
+BOOT/DTBO readbacks still match the preserved stock backups. The explicit
+return reaches b1977 stock boot `eb86aae5-d9d1-4ecf-918f-91c350fd63b8`, with
+music/system volume zero, Wi-Fi off, updater disabled and no routable network
+interface. The version-2 stock observer then verifies the QTimer timestamp
+domain while the headset is awake; its fresh results have zero left tracking
+flags. This is not a positive stock optical reference for the placed controller.
+The hash manifest and README identify the authoritative receipts; copied older
+templates and receipts are not results from this boot. No firmware partition
+was written and the Quest was untouched.
