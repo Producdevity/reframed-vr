@@ -882,6 +882,22 @@ Duplicate, torn, CRC-invalid, zero-time or regressing records cannot refresh
 channel activity. A restarted DSP needs a fresh reader, mapping and instance;
 the timestamp at byte 56 is used only for ordering, not host-clock conversion.
 
+The separate `pico_controller_ring_read_motion` API retains up to 20 new IMU
+slots per snapshot rather than collapsing them into the newest digital report.
+It sorts by wire timestamp, deduplicates per hand and refuses conflicting
+measurements at the same hand/timestamp without advancing either hand. It also
+filters the explicitly connected hands. Initialize a fresh motion reader after
+connection, resume or DSP restart. Torn/CRC-invalid slots are skipped; missing
+samples and stale data still require downstream clock, age and gap checks.
+The existing digital worker is unchanged and does not yet publish this history.
+
+Host ASan/UBSan tests and an Android ARM64 UBSan CPU test pass ordering, full-ring
+wrap, duplicate/conflicting samples, sequence-byte wrap and torn/corrupt records.
+Replaying 7,402 saved physical snapshots on both CPUs yields exactly the same
+7,446 samples as the independently decoded recording, including all IMU fields.
+The replay does not start sensors or establish live optical tracking. Evidence:
+`output/pico-controller-optical-20261023-v1/motion-ring-native-result.json`.
+
 Duration expiry or SIGINT/SIGTERM disconnects both hands and closes RPC clients.
 `PICO_CONTROLLER_WAIT_DSP_OFFLINE` tells the session owner to stop its remaining
 head/camera clients and shut down SLPI. The worker retains DMA registrations until

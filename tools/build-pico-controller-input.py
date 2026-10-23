@@ -56,7 +56,8 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     sources = ['tools/pico-controller-input.c', 'tools/build-pico-controller-input.py',
                'tools/pico-controller-session.py',
-               'profiles/pico-fastrpc.json', 'tests/pico-controller-ring.c', 'tests/pico-sensor-rpc.c']
+               'profiles/pico-fastrpc.json', 'tests/pico-controller-ring.c',
+               'tests/pico-controller-motion-ring.c', 'tests/pico-sensor-rpc.c']
     sources += ['src/' + unit + suffix for unit in UNITS for suffix in ('.c', '.h')]
     report = {'status': 'started', 'device_actions': [],
               'source_sha256': {name: digest(ROOT / name) for name in sources}, 'commands': []}
@@ -94,8 +95,9 @@ def main():
              *(str(ROOT / 'src' / (unit + '.c')) for unit in UNITS),
              '-L', str(prefix / 'lib64'), '-lsdsprpc', '-o', str(binary)], 'compile.log')
         for name, units in [('ring', ['pico-controller', 'pico-controller-ring']),
+                            ('motion-ring', ['pico-controller', 'pico-controller-ring']),
                             ('rpc', ['pico-sensor-rpc', 'sns-low-latency'])]:
-            source = 'pico-controller-ring' if name == 'ring' else 'pico-sensor-rpc'
+            source = 'pico-sensor-rpc' if name == 'rpc' else 'pico-controller-' + name
             test = output / (name + '-test')
             run([*common, '-fsanitize=undefined', '-fno-sanitize-recover=all',
                  str(ROOT / 'tests' / (source + '.c')),
