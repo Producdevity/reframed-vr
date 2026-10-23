@@ -651,3 +651,33 @@ are still acceptance gates. Nothing installs or enables the driver automatically
 
 The [verification record](pico-steamvr-verification.md) contains the tests,
 negative controls, measured limits and hash-verified evidence archives.
+
+## Neo3 controller render models
+
+The driver registers separate left/right Neo3 models from
+[WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles/tree/f4992299601614adbfefd398dc8e281556bb7444/packages/assets/profiles/pico-neo3).
+The asset package's MIT license is retained in
+`system/steamvr-pico/resources/rendermodels/LICENSE`. The pinned revision and GLB
+hashes are in `profiles/pico-controller-models.json`; converted-file hashes and
+modifications are recorded beside the models in `provenance.json`.
+
+To reproduce the static models from those two pinned GLBs, run:
+
+```sh
+python3 tools/convert-pico-controller-models.py --source /path/to/pico-neo3 \
+  --output /path/to/new/rendermodels
+```
+
+The converter preserves the original right-handed, metre-scale grip origin,
+flattens the default component transforms, flips texture V for OBJ and decodes
+the embedded JPEG into PNG. Each model has 3,488 triangles and about 2,550
+vertices. Geometry, normal/index validity, mirrored bounds and provenance hashes
+pass host checks. SteamVR's native render-model API loads both meshes and their
+512×512 textures on the Pico. The loader adds two components to the four supplied
+components, so clients must enumerate names rather than require a count of four.
+Evidence: `output/pico-ui-quality-20261023-v1/native/test-models-only-result.log`.
+
+The models have identity `tip`, `grip` and `handgrip` components. These are
+explicit placeholders for pose-offset calibration, not calibrated pointing
+directions. Registering or loading a render model does not validate a controller
+pose, enable pose publication or establish visible tracked pointing.

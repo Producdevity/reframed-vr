@@ -41,6 +41,7 @@ def main():
                'src/pico-slam-channel.c', 'src/pico-slam-channel.h', 'src/pico-slam-pose.c',
                'src/pico-slam-pose.h', 'src/pico-slam-result.h', 'profiles/openvr.json',
                'profiles/pico-steamvr-cjson.json', 'profiles/pico-steamvr.json',
+               'profiles/pico-controller-models.json', 'tools/convert-pico-controller-models.py',
                'system/steamvr-pico/driver.vrdrivermanifest',
                'system/steamvr-pico/resources/input/neo3_profile.json',
                'system/steamvr-pico/resources/input/neo3_legacy_bindings.json',

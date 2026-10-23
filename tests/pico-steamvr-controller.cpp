@@ -10,6 +10,7 @@
 using namespace vr;
 struct MockIVRProperties final : IVRProperties {
     int32_t role = 0;
+    std::string model;
     ETrackedPropertyError ReadPropertyBatch(PropertyContainerHandle_t ulContainerHandle,
                                             PropertyRead_t *pBatch, uint32_t unBatchEntryCount) override
     {
@@ -24,6 +25,8 @@ struct MockIVRProperties final : IVRProperties {
             pBatch[i].eError = TrackedProp_Success;
             if (pBatch[i].prop == Prop_ControllerRoleHint_Int32)
                 std::memcpy(&role, pBatch[i].pvBuffer, sizeof(role));
+            if (pBatch[i].prop == Prop_RenderModelName_String)
+                model = static_cast<const char *>(pBatch[i].pvBuffer);
         }
         return TrackedProp_Success;
     }
@@ -229,6 +232,7 @@ int main()
         assert(driver.Activate(3) == VRInitError_None);
         assert(driver.Activate(3) == VRInitError_Driver_Failed);
         assert(context.properties.role == TrackedControllerRole_LeftHand);
+        assert(context.properties.model == "{reframed_pico}neo3_left");
         assert(context.input.names.size() == 12);
         driver.Update();
         assert(!driver.GetPose().deviceIsConnected);
@@ -278,6 +282,7 @@ int main()
         PicoSteamvrController wrong(&channel, 456, 2);
         assert(wrong.Activate(3) == VRInitError_None);
         assert(context.properties.role == TrackedControllerRole_RightHand);
+        assert(context.properties.model == "{reframed_pico}neo3_right");
         assert(context.input.values.count("/input/a/click"));
         wrong.Update();
         assert(!wrong.GetPose().deviceIsConnected);

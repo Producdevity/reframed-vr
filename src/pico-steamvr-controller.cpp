@@ -35,6 +35,7 @@ vr::EVRInitError PicoSteamvrController::Activate(uint32_t id)
     string(vr::Prop_ModelNumber_String, "Pico Neo3 controller");
     string(vr::Prop_ManufacturerName_String, "PICO");
     string(vr::Prop_ControllerType_String, "reframed_pico_neo3");
+    string(vr::Prop_RenderModelName_String, hand == 1 ? "{reframed_pico}neo3_left" : "{reframed_pico}neo3_right");
     string(vr::Prop_InputProfilePath_String, "{reframed_pico}/input/neo3_profile.json");
     ok = (properties->SetInt32Property(container, vr::Prop_ControllerRoleHint_Int32,
         hand == 1 ? vr::TrackedControllerRole_LeftHand : vr::TrackedControllerRole_RightHand)
