@@ -1711,9 +1711,9 @@ each archive and every member against the exported size/SHA-256 manifest:
 | `export-controlled.tar.gz` | 269 | `b480fa8b39dbdf8195b4119cde8e58194f356f52a9354f95ce10eb2685c08bd1` |
 
 The controlled receive pause verifies automatic owner/reset/rebind integration
-on hardware. Natural radio sleep/wake, optical controller poses and pointing,
-physical head-motion scale, upright lens output and movement direction remain
-separate acceptance gates. Audio is not opened during these runs. No firmware
+on hardware. The final baseline below additionally verifies unforced report
+resumption. Optical controller poses and pointing, physical head-motion scale,
+upright lens output and movement direction remain separate acceptance gates. Audio is not opened during these runs. No firmware
 partition is written.
 
 
@@ -1747,3 +1747,69 @@ Raw evidence is in `export-controlled/`; the correlated event window is in
 `output/pico-auto-recovery-20261023-v1/`. Clock notifications and reducing the
 rendering workload require independent controls; repairing a reported age
 would not by itself repair a missed scanout boundary.
+
+
+### Timing controls and unforced controller resumption
+
+The independent clock-notification candidate is not adopted. Its corrected
+read-only sysfs variant completes a three-minute combined capture, but still
+has 12 overdue ages in 3,000 late queries versus one in the traced baseline.
+Median runtime-reported compositor GPU time is 6.138 versus 6.149 ms; traced
+successful present submission rates are 87.59 versus 89.31 per second. These
+are diagnostic workload measurements, not physical display FPS. Earlier
+primary-node variants fail startup: opening that node can acquire DRM master,
+and this kernel restricts dropping master to root. Their sources/binaries stay
+private. No clock experiment is included in the maintained driver.
+
+Enabling `renderSystemLayerInDistortPass` on Facet starts the compositor, but
+camera acquisition stops during dashboard startup. At monotonic 3,098.668 s,
+the kernel reports request-manager workqueue congestion and rejects request
+1,703 because both ISPs are still in `APPLIED`. Capture ends with `failed=1`;
+head output records no rejected result. The probe consequently receives 471
+invalid head samples. This control is rejected; it does not establish that
+the layer option itself caused the congestion, and the option remains off.
+
+The final baseline restores the original driver and layer setting, disables
+the Vulkan API trace layer, WSI presentation tracing and CPU/DRM trace events,
+and verifies zero-byte CPU/DRM streams. It completes all 4,499 camera sets and
+184,601 head callbacks, publishes 182,214 poses without output failure, and
+accepts all 4,000 readiness/late head-pose samples. Its late 3,000-query window
+still contains one overdue age; readiness contains three out of 1,000. Heavy
+tracing is therefore not required to reproduce the fault. The two-period bound
+is unchanged. The remaining KMS rendering/fence deadline needs further work;
+no complete timing fix is claimed by these controls.
+
+This final baseline also verifies the requested automatic recovery during
+unforced report resumption. After the initial controlled pause, generation 105
+delivers all 13,580 samples before timing out. The receiver then observes an
+89.203-second gap between its last received IMU sample and the new resumption
+cue. No further host pause or manual restart is issued. Fresh data triggers
+generation 106: the endpoint is published 38.698 ms after the receiver's fresh
+snapshot, the Bionic estimator resets successfully in 1.214 ms, and all 17,460
+new samples are delivered. Maximum input age is 31.035 ms; maximum elapsed
+estimator call is 12.304 ms. Head/world generation remains 104 and its stream
+continues throughout. This verifies recovery from renewed reports, without
+establishing why radio traffic stopped or what caused it to resume. Final
+silence stops motion again; the receiver exits 1 for that unrecovered timeout,
+with all three RPC stop results zero and DSP/DMA ownership released in order.
+
+The following additional manifest-verified archives are under
+`output/pico-auto-recovery-20261023-v1/`:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-clock.tar.gz` | 208 | `64d8d95e57ed8e84d5d8e321d5738440f0c98dbd4a312f7ab789ea84d603be5e` |
+| `export-clock2.tar.gz` | 199 | `51b5bfa1322309ba59bbfddc5b5332c79d559f30b7ebbf2a9bd95364721fcb95` |
+| `export-clock3.tar.gz` | 275 | `2d78b00cb4ad4f5fe7177fb218eaccbd0b532e7a7005df0a37ef0a10328b9fa0` |
+| `export-fused.tar.gz` | 229 | `bd494d842904378a9df9dd23f88a48fa62aef32341d3feb7b597d140c4f7b3b7` |
+| `export-untraced.tar.gz` | 282 | `4b8c0a66480a588e7f83afe0bc3d36f6ce22089426ec110894ff49db3e838d7d` |
+
+Full BOOT/DTBO readbacks match the pre-test stock hashes. Both sensor owners
+are stopped, SLPI/CDSP are offline, MCU references are zero and the original
+GPU floor is restored before return. The v5 console lease ends after this
+quiescence; the already-armed bounded return timer boots stock normally.
+ADB verifies boot UUID `e0dd8ec2-e096-4ef7-92e1-153d60829055`, b1977, unlocked,
+Wi-Fi off, no network route and updater disabled. The hash-verified quiet
+helper confirms effective music/system volumes zero. No firmware partition
+is written and the Quest is untouched. Receipts are `final-readback-result.log`,
+`quiesce-result.log`, `stock-return-final.json` and `stock-quiet-final.log`.

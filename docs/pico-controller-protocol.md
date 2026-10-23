@@ -1097,8 +1097,10 @@ verifies that reset/rebind path with a new mapping and motion generation while
 the head/world generation stays unchanged. The subsequent
 [automatic recovery test](pico-steamvr-verification.md#automatic-controller-motion-recovery-2026-10-23-utc)
 verifies `recover_motion` and Bionic reset/rebind after a controlled receiver
-pause with real radio samples. Natural controller sleep/wake recovery still
-needs a physical test; digital activity alone does not trigger recovery.
+pause with real radio samples. A final baseline also verifies recovery after
+an unforced IMU-report gap while head tracking, cameras and SteamVR remain
+running. The physical reason for that gap is unclassified; digital activity
+alone does not trigger recovery.
 
 ### Bionic boundary and performance
 
