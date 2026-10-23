@@ -293,6 +293,40 @@ The disassembly, input hashes and reproduced field counts are retained in
 `output/pico-controller-optical-20261023-v1/`; the original controls are in
 `output/pico-controller-integration-20261023-v1/export-controls/`.
 
+### Read-only stock pose reference
+
+[`capture-pico-stock-controller.py`](../tools/capture-pico-stock-controller.py)
+builds a small NDK ARM64 observer and captures 300 reads from the existing stock
+controller shared buffer. It requires an already-offline b1977 headset with its
+updater disabled, verifies the stock client hash and boot UUID, refuses the
+client's fake-pose mode, verifies the transferred capture hash and removes its
+own temporary device files. Its ordinary `CreateClient`/`GetControllerData`/
+`GetControllerTrackingRawData` calls attach and read; it never calls an algorithm
+start/stop, camera-control or controller setter.
+
+```sh
+python3 tools/capture-pico-stock-controller.py --serial DEVICE_SERIAL \
+  --cc /path/to/NDK/bin/aarch64-linux-android29-clang \
+  --output output/NEW_STOCK_CONTROLLER_REFERENCE
+```
+
+The data getter is necessary once to perform b1977's lazy buffer mapping. The
+raw getter alone returned `-3` on all 300 initial calls; after that mapping,
+300/300 raw reads succeed. Those successful reads are not tracking acceptance.
+In the 2026-10-23 check, the left timestamp is unchanged and over five hours old
+under both observation clocks. The right timestamp is `-1` despite public
+confidence 1. The controller is not supplying a fresh positive reference in this
+state. Two separate stock connection-status reads confirm both controllers are
+disconnected. No command is sent to wake, pair or reset them.
+
+The report retains public/internal confidence counts, timestamp changes and
+ages against both `CLOCK_MONOTONIC` and `CLOCK_BOOTTIME`; it does not assume those
+clocks are interchangeable after suspend. Getter copies also do not guarantee a
+coherent snapshot. Fresh timestamps alone would still require image-content
+controls and physical motion validation before establishing optical tracking.
+Four host contract tests and the complete maintained observer pass on stock
+Pico Android. Evidence: `output/pico-controller-optical-20261023-v1/stock-capture/`.
+
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter
 returns 1; an empty property must not be interpreted as disabled. The MCU type
