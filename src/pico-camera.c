@@ -71,6 +71,27 @@ bool pico_camera_center(int64_t qtimer_ns, uint32_t exposure_lines,
     return true;
 }
 
+int pico_camera_frame_sequence_push(struct pico_camera_frame_sequence *sequence,
+                                     unsigned camera, uint64_t frame_number)
+{
+    if (!sequence || camera >= 4) return -1;
+    struct pico_camera_frame_sequence value = *sequence;
+    if (value.mask || value.synchronized) {
+        if (frame_number < value.frame_number ||
+            (frame_number == value.frame_number && (!value.mask || (value.mask & (1u << camera))))) return -1;
+        if (frame_number != value.frame_number) {
+            if (value.mask && value.synchronized) return -1;
+            value.mask = 0;
+        }
+    }
+    value.frame_number = frame_number;
+    value.mask |= 1u << camera;
+    int complete = value.mask == 15;
+    if (complete) { value.mask = 0; value.synchronized = true; }
+    *sequence = value;
+    return complete;
+}
+
 bool pico_camera_head_set(const struct pico_camera_frame *frames, size_t count,
                            const uint8_t *camera_ids, int64_t max_skew_ns,
                            struct pico_camera_frame_set *set)

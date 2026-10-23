@@ -1267,3 +1267,35 @@ pose converter. The recording contains consecutive tracked head results with
 value `0x200`; treating every nonzero value as a fatal error incorrectly empties
 the history. A replay reproduced that refusal, and the regression test retains
 the exact status bytes through matching. This field is not a readiness gate.
+
+### Joining the controller camera stream
+
+The controller diagnostic enables its four-camera feed after head tracking has
+started. In the 2026-10-23 capture, that gate opened after two cameras had already
+delivered frame 1228. The first retained records were camera IDs 0 and 3 from
+1228, followed by camera 1 from 1230. The old collector treated this partial
+startup set as a permanent camera failure; its tracker received zero image sets
+while head tracking and controller IMU callbacks continued. This is distinct
+from a disconnected controller or a stopped camera pipeline.
+
+`pico_camera_frame_sequence_push()` now supplies the collection policy. A fresh
+owner discards incomplete startup sets until it has collected all four camera
+IDs for one frame number. Once synchronized, incomplete, duplicate and
+regressing sets remain errors. The callback must copy all four current images
+and separately check their timestamps before publication. The helper owns no
+pixels and does not resolve the vendor tracker's borrowed-image lifetime.
+
+Sanitizer tests cover all 24 camera orders and all four entry positions, plus
+missing, duplicate and regressing frames after synchronization. The native
+capture adapter and the continued head/controller/SteamVR comparison are retained
+in `output/pico-ui-quality-20261023-v1/`. Controller pose publication remains a
+separate acceptance gate.
+
+Stock publication also establishes the meaning of the client conversion's
+third `six_dof` input: `AlgorithmManager::logDebugControllerPose` calls
+`PVR::newTracker::getPoseOffset` at `0xaa0c8` and passes that result to
+`ControllerSlam::convertSlamResult`. It is an origin/reset offset, not the live
+head pose. Applying the current head transform there would be incorrect.
+The exact disassembly is retained as `controller-stock-publication.asm` in the
+same evidence directory. Coordinate, prediction-time and pixel-ownership
+contracts still need validation before these raw results can drive a pointer.
