@@ -1432,8 +1432,11 @@ that stop. This establishes an upstream receive interruption, not its cause or
 that the controller was asleep. Optical controller poses remain unpublished.
 
 A second, 241.08-second run consumes 5,999 head-camera sets and publishes 243,651
-confident head poses. All 9,806 received controller IMU samples reach Bionic, then
-native reports again cease. The owner confirms Steam's sign-in UI through the
+confident head poses. All 9,806 controller IMU samples published before the
+receive interruption reach Bionic. Native input reports later resume, rising
+from 9,703 to 40,891, but the stopped motion channel does not rearm. This separates
+radio reception from estimator-feed recovery; buttons can work while motion
+delivery stays stopped. The owner confirms Steam's sign-in UI through the
 lenses and that the left Home button hides it. The owner also reports the image
 upside down and apparent reversed head movement: this is physical display
 presence, **not calibrated or usable VR acceptance**. The controller model and

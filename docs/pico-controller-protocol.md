@@ -997,8 +997,9 @@ saved snapshots pass through the complete producer/channel/reader path, yielding
 the same 7,446 samples and bit-identical nine-value conversions. The replay uses
 the recording's measured offset and a declared conservative 51,002 ns capture
 uncertainty. It tests recorded delivery, not a new live DMA session or an optical
-controller pose. The optional worker mode still needs an awake-controller live
-test and Bionic estimator integration. Evidence:
+controller pose. A subsequent
+[combined live test](pico-steamvr-verification.md#live-bionic-controller-inputs-and-pre-exec-capture-2026-10-23-utc)
+verifies IMU delivery into Bionic; optical pose publication remains unverified. Evidence:
 `output/pico-controller-motion-20261023-v1/producer-native-result.json` and
 `worker-final-build/build.json` beside it.
 
@@ -1040,6 +1041,18 @@ clock regression, stale input and estimator failure/overrun cases. This verifies
 the adapter contract, not a live controller estimator or optical pose.
 Evidence: `output/pico-live-controller-timing-20261023-v1/controller-tests.log`
 and `motion-consumer-native-result.json` beside it.
+
+The subsequent native SteamVR/head-camera test delivers all 23,352 received
+left IMU samples into the stock Bionic controller estimator with matching raw
+head brackets. A longer run delivers all 9,806 samples published before a
+receive interruption. In that longer run, native input-report counts later
+resume and rise from 9,703 to 40,891, while the motion channel remains stopped.
+This is the current fail-closed contract, not automatic controller recovery:
+button reception can resume without reviving motion delivery. A production
+recovery path must reset/rebind estimator state and publish a new motion
+generation before accepting fresh samples; it must preserve the shared SLPI
+DMA lifetime. No optical controller pose or SteamVR pointer is established by
+these input-delivery measurements.
 
 ### Bionic boundary and performance
 
