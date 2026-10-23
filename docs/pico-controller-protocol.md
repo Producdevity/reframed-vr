@@ -333,12 +333,57 @@ state. Two separate stock connection-status reads confirm both controllers are
 disconnected. No command is sent to wake, pair or reset them.
 
 The report retains public/internal confidence counts, timestamp changes and
-ages against both `CLOCK_MONOTONIC` and `CLOCK_BOOTTIME`; it does not assume those
-clocks are interchangeable after suspend. Getter copies also do not guarantee a
+ages against `CLOCK_MONOTONIC`, `CLOCK_BOOTTIME`, `CLOCK_MONOTONIC_RAW` and the
+unshifted 19.2 MHz architectural counter (QTimer). Version 2 records all four
+observation clocks without changing the vendor timestamps; version 1 captures
+remain readable. The observer also records whether the headset is awake and
+interactive before and after capture. It does not assume the clocks are
+interchangeable after suspend. Getter copies also do not guarantee a
 coherent snapshot. Fresh timestamps alone would still require image-content
 controls and physical motion validation before establishing optical tracking.
-Four host contract tests and the complete maintained observer pass on stock
-Pico Android. Evidence: `output/pico-controller-optical-20261023-v1/stock-capture/`.
+Five host contract tests and the version-2 observer pass on stock Pico Android.
+The earlier version-1 evidence remains in
+`output/pico-controller-optical-20261023-v1/stock-capture/`.
+
+A subsequent reference separates headset sleep from controller sleep. While
+the stock headset is asleep, a reportedly awake controller still yields cached
+results. After an ordinary headset wake event, all 300 timestamps advance and
+the three flags `(0x40, 0x41, 0x52)` are `(1, 1, 1)`. Those timestamps appear
+about 3.447 seconds ahead of monotonic/boottime; that alone is not a stale-pose
+diagnosis. In the version-2 capture after the next stock reboot, all 300 left
+timestamps advance and are 1.317–4.776 ms old against unshifted QTimer, while
+appearing about 3.394–3.398 seconds ahead of all three OS clocks. This establishes
+the observation clock for that capture. All three left flags are now zero,
+so this later capture is a fresh negative reference, not tracking acceptance.
+The headset remains awake/interactive throughout, and the observer removes its
+temporary device files. Evidence:
+`output/pico-controller-input-contract-20261023-v1/stock-woken/` and
+`stock-clock-v2/`.
+
+### Controller image ownership and stock conversion
+
+The hash-pinned b1977 tracker's image worker at `0x1606d8` wraps the supplied
+pixel pointer in an externally backed `cv::Mat`; its constructor at `0x6342c`
+stores that pointer without allocating an owner or copying the pixels. Returning
+zero from `alg_controller_update_all_image_with_head` therefore does not permit
+reusing or freeing the input pixels. The diagnostic retains every submitted
+set until process exit. A production stream still needs a verified ownership
+or completion contract; increasing the retained-set budget is not that contract.
+
+CPU-only stock initialization observes camera IDs `[0, 1, 2, 3]`, matching the
+native feed. The missing-right-calibration warning does not gate the left
+tracker: both warning branches continue at `0xd8ae4`. Neither finding justifies
+changing the camera order or copying left calibration into the right slot.
+
+The stock service loads `alg_get_controller_data` from its client conversion
+helper, SHA-256
+`77b2ceac44de824de9b044a18f552a6c6e2b82d64c230f9079d0d798bc6163f1`.
+A native CPU oracle using that exact helper maps the first two outputs from
+millimetres `(100, 200, 300)` to `(-200, 100, 300)` with identity orientation,
+and preserves the supplied flags across all eight type/confidence cases.
+Conversion is necessary for coordinates but does not turn the native negative
+results into tracked poses. Disassembly, input hashes and oracle output are
+retained in `output/pico-controller-input-contract-20261023-v1/`.
 
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter

@@ -26,6 +26,20 @@ static int64_t now(clockid_t clock)
     return (int64_t)time.tv_sec * 1000000000 + time.tv_nsec;
 }
 
+static int64_t qtimer_now(void)
+{
+#if defined(__aarch64__)
+    uint64_t frequency, ticks;
+    __asm__ volatile("mrs %0, cntfrq_el0\n\tisb\n\tmrs %1, cntvct_el0\n\tisb"
+                     : "=r"(frequency), "=r"(ticks) : : "memory");
+    if (frequency != 19200000) return -1;
+    __uint128_t ns = (__uint128_t)ticks * 1000000000 / frequency;
+    return ns > INT64_MAX ? -1 : (int64_t)ns;
+#else
+    return -1;
+#endif
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3 || strlen(argv[1]) != 36 || !boot_matches(argv[1])) return 2;
@@ -51,20 +65,25 @@ int main(int argc, char **argv)
     if (primed) return 7;
     FILE *file = fopen(argv[2], "wxe");
     if (!file) return 8;
-    const uint64_t header[8] = {UINT64_C(0x5256504353500001), 1, 368, 776, 300, 0, 0, 0};
+    const uint64_t header[8] = {UINT64_C(0x5256504353500001), 2, 368, 808, 300, 19200000, 0, 0};
     if (fwrite(header, sizeof(header), 1, file) != 1) return 9;
     unsigned success = 0;
     for (unsigned i = 0; i < 300; ++i) {
         _Alignas(8) uint8_t left[368] = {0}, right[368] = {0};
-        int64_t timing[5];
+        int64_t timing[9];
         timing[0] = now(CLOCK_BOOTTIME);
         timing[1] = now(CLOCK_MONOTONIC);
+        timing[2] = now(CLOCK_MONOTONIC_RAW);
+        timing[3] = qtimer_now();
         int rc = get(client, left, right);
-        timing[2] = now(CLOCK_MONOTONIC);
-        timing[3] = now(CLOCK_BOOTTIME);
-        timing[4] = rc;
-        if (timing[0] < 0 || timing[1] < 0 || timing[2] < timing[1] ||
-            timing[3] < timing[0] ||
+        timing[4] = qtimer_now();
+        timing[5] = now(CLOCK_MONOTONIC_RAW);
+        timing[6] = now(CLOCK_MONOTONIC);
+        timing[7] = now(CLOCK_BOOTTIME);
+        timing[8] = rc;
+        if (timing[0] < 0 || timing[1] < 0 || timing[2] < 0 || timing[3] < 0 ||
+            timing[4] < timing[3] || timing[5] < timing[2] ||
+            timing[6] < timing[1] || timing[7] < timing[0] ||
             fwrite(timing, sizeof(timing), 1, file) != 1 ||
             fwrite(left, sizeof(left), 1, file) != 1 ||
             fwrite(right, sizeof(right), 1, file) != 1) return 9;

@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FINGERPRINT = 'Pico/A7H10/PICOA7H10:10/5.8.4.0/smartcm.1696861506:user/test-keys'
 LIBRARY = '/system/lib64/libtrackingclient.pxr.so'
 LIBRARY_SHA256 = '54829201c43cfd5ea8e121e59dbf80ad8e0e30b0ff848eaaced20d29f9bb2579'
-HEADER = (0x5256504353500001, 1, 368, 776, 300, 0, 0, 0)
+HEADER_V1 = (0x5256504353500001, 1, 368, 776, 300, 0, 0, 0)
+HEADER = (0x5256504353500001, 2, 368, 808, 300, 19200000, 0, 0)
 
 
 def digest(path):
@@ -24,21 +25,36 @@ def digest(path):
 
 
 def analyze(data):
-    if len(data) != 64 + 300 * 776 or struct.unpack_from('<8Q', data) != HEADER:
+    if len(data) < 64:
+        raise ValueError('Incomplete or unsupported stock capture')
+    header = struct.unpack_from('<8Q', data)
+    if header not in (HEADER_V1, HEADER) or len(data) != 64 + 300 * header[3]:
         raise ValueError('Incomplete or unsupported stock capture')
     calls, hands = Counter(), {'left': [], 'right': []}
-    for offset in range(64, len(data), 776):
-        boot_before, mono_before, mono_after, boot_after, rc = struct.unpack_from('<5q', data, offset)
+    clocks = ['monotonic', 'boottime'] + (['monotonic_raw', 'qtimer'] if header == HEADER else [])
+    for offset in range(64, len(data), header[3]):
+        raw_after = None
+        counter_after = None
+        if header == HEADER_V1:
+            boot_before, mono_before, mono_after, boot_after, rc = struct.unpack_from('<5q', data, offset)
+            payload = offset + 40
+        else:
+            boot_before, mono_before, raw_before, counter_before, counter_after, raw_after, mono_after, boot_after, rc = struct.unpack_from('<9q', data, offset)
+            if raw_before < 0 or raw_after < raw_before or counter_before < 0 or counter_after < counter_before:
+                raise ValueError('Regressing raw/counter observation clock')
+            payload = offset + 72
         if min(boot_before, mono_before) < 0 or boot_after < boot_before or mono_after < mono_before:
             raise ValueError('Regressing observation clock')
         calls[rc] += 1
         if rc:
             continue
-        for hand, position in [('left', offset + 40), ('right', offset + 408)]:
+        for hand, position in [('left', payload), ('right', payload + 368)]:
             raw = data[position:position + 368]
             timestamp, = struct.unpack_from('<q', raw)
-            hands[hand].append((timestamp, mono_after, boot_after, raw))
-    report = {'calls': dict(calls), 'hands': {}, 'optical_tracking_verified': False,
+            hands[hand].append((timestamp, {'monotonic': mono_after, 'boottime': boot_after,
+                                          'monotonic_raw': raw_after, 'qtimer': counter_after}, raw))
+    report = {'format_version': header[1], 'observation_clocks': clocks,
+              'calls': dict(calls), 'hands': {}, 'optical_tracking_verified': False,
               'coherent_snapshot_verified': False,
               'scope': 'Stock shared-buffer observations; getter success/confidence do not prove freshness or optical tracking'}
     for hand, rows in hands.items():
@@ -47,9 +63,9 @@ def analyze(data):
                 'distinct_positive_timestamps': len(set(stamps)),
                 'timestamp_regressions': sum(b < a for a, b in zip(stamps, stamps[1:])),
                 'public_and_internal_confidence': dict(Counter(
-                    f'{r[3][0x40]},{r[3][0x41]},{r[3][0x52]}' for r in rows))}
-        for name, index in [('monotonic', 1), ('boottime', 2)]:
-            ages = [r[index] - r[0] for r in rows if r[0] > 0]
+                    f'{r[2][0x40]},{r[2][0x41]},{r[2][0x52]}' for r in rows))}
+        for name in clocks:
+            ages = [r[1][name] - r[0] for r in rows if r[0] > 0]
             item[name + '_age_ns'] = {'min': min(ages), 'max': max(ages)} if ages else None
             item[name + '_within_100ms'] = sum(0 <= age <= 100000000 for age in ages)
         report['hands'][hand] = item
@@ -99,9 +115,17 @@ def main():
             raise ValueError('Stock client ABI differs')
         return {'boot_id': boot_id, 'fingerprint': fingerprint, 'library_sha256': LIBRARY_SHA256}
 
+    def power_state():
+        text = shell('dumpsys', 'power')
+        state = re.search(r'^\s*mWakefulness=(\w+)\s*$', text, re.M)
+        interactive = re.search(r'^\s*mHalInteractiveModeEnabled=(true|false)\s*$', text, re.M)
+        return {'wakefulness': state[1] if state else None,
+                'interactive': interactive[1] == 'true' if interactive else None}
+
     try:
         before = identity()
         report['identity'] = before
+        report['power_before'] = power_state()
         binary = output / 'stock-controller-probe'
         run([str(args.cc.resolve()), '-std=c11', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
              str(source), '-ldl', '-o', str(binary)])
@@ -126,6 +150,7 @@ def main():
         report['observation'] = analyze(data)
         if identity() != before:
             raise ValueError('Stock identity changed during observation')
+        report['power_after'] = power_state()
         report['status'] = 'captured'
     except Exception as error:
         report.update(status='failed', error=str(error))
