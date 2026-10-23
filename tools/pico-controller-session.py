@@ -11,6 +11,9 @@ import subprocess
 import time
 import uuid
 
+# Worker status carries Linux errno values, including when inspected on macOS.
+MOTION_RECEIVE_TIMEOUT = -110
+
 
 class ControllerSession:
     def __init__(self, build, directory, boot_id, *, seconds, environment,
@@ -52,6 +55,8 @@ class ControllerSession:
         self.motion_channel_identity = None
         self.motion_restart = None
         self.motion_history = []
+        self.motion_resumed = self.motion_resume_error = None
+        self.motion_recovery_pending = False
         self.process = None
         self.reader = None
         self.pending = b''
@@ -147,6 +152,27 @@ class ControllerSession:
                 self.motion_stop_result = {'rc': int(match[1]), 'samples': int(match[2])}
                 self.motion_history.append({'generation': self.motion['generation'],
                                             **self.motion_stop_result})
+                self.motion_resumed = None
+            elif line.startswith('PICO_CONTROLLER_MOTION_RESUMED '):
+                match = re.fullmatch(r'PICO_CONTROLLER_MOTION_RESUMED instance=([0-9a-f]{16}) '
+                                     r'generation=([0-9a-f]{16}) received_ns=(\d+) deadline_ns=(\d+)', line)
+                if (not match or not self.motion or match[1] != self.instance or
+                        match[2] != self.motion['generation'] or self.waiting or
+                        self.motion_stop_result is None or
+                        self.motion_stop_result['rc'] != MOTION_RECEIVE_TIMEOUT):
+                    raise RuntimeError('Unexpected motion resumption identity or state')
+                received, deadline = int(match[3]), int(match[4])
+                if (received <= 0 or not received <= deadline <= received + 100000000 or
+                        (self.motion_resumed is not None and received <= self.motion_resumed['received_ns'])):
+                    raise RuntimeError('Invalid motion resumption time')
+                self.motion_resumed = {'received_ns': received, 'deadline_ns': deadline}
+            elif line.startswith('PICO_CONTROLLER_MOTION_RESUME_FAILED '):
+                match = re.fullmatch(r'PICO_CONTROLLER_MOTION_RESUME_FAILED generation=([0-9a-f]{16}) '
+                                     r'rc=(-\d+)', line)
+                if (not match or not self.motion or match[1] != self.motion['generation'] or
+                        self.motion_resume_error is not None or self.motion_stop_result is None):
+                    raise RuntimeError('Unexpected motion resumption failure')
+                self.motion_resume_error = int(match[2])
             elif line.startswith('PICO_CONTROLLER_MOTION_RESTART '):
                 match = re.fullmatch(r'PICO_CONTROLLER_MOTION_RESTART previous=([0-9a-f]{16}) '
                                      r'generation=([0-9a-f]{16}) rc=(-?\d+)', line)
@@ -161,6 +187,7 @@ class ControllerSession:
                     self.motion['generation'] = restart['generation']
                     self.motion_channel = Path(restart['path'])
                     self.motion_ready = self.motion_stop_result = self.motion_channel_identity = None
+                    self.motion_resumed = self.motion_resume_error = None
             elif line == 'PICO_CONTROLLER_WAIT_DSP_OFFLINE':
                 if self.stop_result is None or self.waiting:
                     raise RuntimeError('Worker shutdown order differs')
@@ -220,18 +247,7 @@ class ControllerSession:
         return {'PICO_STEAMVR_CONTROLLER_CHANNEL': str(self.channel),
                 'PICO_STEAMVR_CONTROLLER_INSTANCE': self.instance}
 
-    def _motion_available(self):
-        if not self.motion:
-            raise RuntimeError('Motion was not enabled for this worker')
-        if self.motion_restart is not None and self.motion_restart['rc'] is None:
-            return False
-        if (self.ready not in (None, 0) or self.motion_ready not in (None, 0) or
-                self.motion_stop_result is not None or self.waiting):
-            raise RuntimeError('Motion worker is stopped or failed')
-        if self.ready is None or self.motion_ready is None:
-            return False
-        if self.process is None or self.process.poll() is not None:
-            raise RuntimeError('Motion worker is stopped or failed')
+    def _motion_header(self):
         fd = os.open(self.motion_channel, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
             info = os.fstat(fd)
@@ -244,19 +260,36 @@ class ControllerSession:
             magic, instance, generation, sequence, active, left, right, received = struct.unpack('<8Q', data)
             if ((magic, instance, generation) !=
                     (0x525650434d430001, int(self.instance, 16), int(self.motion['generation'], 16)) or
-                    active != 1 or sequence == (1 << 64) - 1):
+                    active not in (0, 1) or sequence == (1 << 64) - 1):
                 raise RuntimeError('Motion channel binding or active state differs')
             self.motion_channel_identity = identity
-            if not sequence or any(not stamp for hand, stamp in [('left', left), ('right', right)]
-                                   if hand in self.motion):
-                return False
-            now = time.monotonic_ns()
-            if not received or received > now or any(not 0 <= now - stamp <= 100000000
-                    for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
-                raise RuntimeError('Motion channel has no fresh capture times')
-            return True
+            return sequence, active, left, right, received
         finally:
             os.close(fd)
+
+    def _motion_available(self):
+        if not self.motion:
+            raise RuntimeError('Motion was not enabled for this worker')
+        if self.motion_restart is not None and self.motion_restart['rc'] is None:
+            return False
+        if (self.ready not in (None, 0) or self.motion_ready not in (None, 0) or
+                self.motion_stop_result is not None or self.waiting):
+            raise RuntimeError('Motion worker is stopped or failed')
+        if self.ready is None or self.motion_ready is None:
+            return False
+        if self.process is None or self.process.poll() is not None:
+            raise RuntimeError('Motion worker is stopped or failed')
+        sequence, active, left, right, received = self._motion_header()
+        if active != 1:
+            raise RuntimeError('Motion channel is stopped')
+        if not sequence or any(not stamp for hand, stamp in [('left', left), ('right', right)]
+                                   if hand in self.motion):
+            return False
+        now = time.monotonic_ns()
+        if not received or received > now or any(not 0 <= now - stamp <= 100000000
+                for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
+            raise RuntimeError('Motion channel has no fresh capture times')
+        return True
 
     def wait_motion_ready(self, timeout):
         self._wait(self._motion_available, timeout)
@@ -307,6 +340,56 @@ class ControllerSession:
         self._wait(lambda: self.motion_ready is not None, timeout)
         if self.motion_ready:
             raise RuntimeError('Restarted motion generation did not initialize')
+
+    def recover_motion(self, timeout):
+        """Poll for fresh post-timeout IMU data and return a new, ready endpoint.
+
+        The caller atomically publishes it to a consumer that resets its
+        estimator before rebinding, retaining the head/world generation.
+        None means no eligible data. A timeout leaves the operation pending;
+        another call completes it without resending or releasing DSP ownership.
+        """
+        if timeout < 0 or not self.motion:
+            raise ValueError('Motion recovery requires enabled motion and a nonnegative timeout')
+        self._read_status()
+        if not self.motion_recovery_pending:
+            if (self.ready != 0 or self.waiting or self.process is None or self.process.poll() is not None or
+                    self.motion_stop_result is None or self.motion_stop_result['rc'] != MOTION_RECEIVE_TIMEOUT or
+                    self.motion_resumed is None or self.motion_resume_error is not None or
+                    (self.motion_restart is not None and self.motion_restart['rc'] not in (None, 0))):
+                return None
+            now = time.monotonic_ns()
+            if now < self.motion_resumed['received_ns']:
+                raise RuntimeError('Motion resumption clock is in the future')
+            if now > self.motion_resumed['deadline_ns']:
+                return None
+            if self._motion_header()[1] != 0:
+                raise RuntimeError('Timed-out motion channel is not stopped')
+            if self.motion_restart is not None and self.motion_restart['rc'] is None:
+                raise RuntimeError('Another motion restart is pending')
+            generation = max(int(self.motion['generation'], 16),
+                             int(self.motion_restart['generation'], 16) if self.motion_restart else 0) + 1
+            if generation >= 1 << 64:
+                raise RuntimeError('Motion generation exhausted')
+            self.motion_recovery_pending = True
+            try:
+                self.restart_motion(f'{generation:016x}', timeout)
+            except TimeoutError:
+                raise
+            except Exception:
+                self.motion_recovery_pending = False
+                raise
+        try:
+            self.wait_motion_restart(timeout)
+            self.wait_motion_ready(timeout)
+            endpoint = self.motion_binding()
+        except TimeoutError:
+            raise
+        except Exception:
+            self.motion_recovery_pending = False
+            raise
+        self.motion_recovery_pending = False
+        return endpoint
 
     def request_stop(self):
         if self.process is None:

@@ -1033,6 +1033,23 @@ samples from every selected hand. A request timeout leaves the request pending;
 use `wait_motion_restart`, rather than resending it or killing the DSP owner.
 Status logs preserve each generation's stop result and sample count.
 
+`recover_motion(timeout)` polls for genuine post-timeout IMU resumption and
+automatically requests the next generation. The receiver inspects stable,
+CRC-valid samples using the verified conversion and calibrated clock; every
+selected hand must have a fresh capture strictly after the stop. It does not
+reactivate the old mapping or advance its watermark during this inspection.
+Digital button activity alone is insufficient. A bounded notification deadline
+prevents delayed status logs from triggering a restart after the data ages out.
+
+The method returns `None` while waiting, or a new endpoint only after restart
+acknowledgment and fresh samples. The serialized session owner atomically
+publishes that endpoint to its reset/rebind-capable consumer. Polling may run in
+an owner thread, but other session calls must wait for that thread to stop.
+An acknowledgment timeout remains pending across calls, without resending.
+Other error classes, an invalid/replaced channel, or a rejected restart cannot
+silently trigger a retry loop. RPC and shared DSP buffers retain their normal
+two-phase shutdown ownership throughout.
+
 The [shared-sensor hardware test](pico-steamvr.md#maintained-receiver-and-shared-sensors)
 verifies this worker with native SteamVR, head IMU and four-camera capture,
 including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate
@@ -1069,17 +1086,19 @@ left IMU samples into the stock Bionic controller estimator with matching raw
 head brackets. A longer run delivers all 9,806 samples published before a
 receive interruption. In that longer run, native input-report counts later
 resume and rise from 9,703 to 40,891, while the motion channel remains stopped.
-This is the current fail-closed contract, not automatic controller recovery:
-button reception can resume without reviving motion delivery. A production
-recovery path must reset/rebind estimator state and publish a new motion
-generation before accepting fresh samples; it must preserve the shared SLPI
-DMA lifetime. No optical controller pose or SteamVR pointer is established by
+That diagnostic owner implements the fail-closed contract only: button
+reception can resume without reviving motion delivery. Recovery must reset/rebind
+estimator state and publish a new motion generation before accepting fresh
+samples, while preserving the shared SLPI DMA lifetime. No optical controller pose or SteamVR pointer is established by
 these input-delivery measurements.
 
 The subsequent [explicit restart test](pico-steamvr-verification.md#controller-motion-restart-with-shared-head-tracking-2026-10-23-utc)
 verifies that reset/rebind path with a new mapping and motion generation while
-the head/world generation stays unchanged. Automatic recovery when radio
-reports resume is still a session-owner integration task.
+the head/world generation stays unchanged. The subsequent
+[automatic recovery test](pico-steamvr-verification.md#automatic-controller-motion-recovery-2026-10-23-utc)
+verifies `recover_motion` and Bionic reset/rebind after a controlled receiver
+pause with real radio samples. Natural controller sleep/wake recovery still
+needs a physical test; digital activity alone does not trigger recovery.
 
 ### Bionic boundary and performance
 

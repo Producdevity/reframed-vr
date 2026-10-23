@@ -229,6 +229,8 @@ int main(int argc, char **argv)
     struct pico_controller_motion_producer motion = {0};
     uint64_t motion_samples = 0;
     int motion_error = 0;
+    bool resume_failed = false;
+    int64_t last_resume_probe = 0, last_resume_report = 0;
     uint64_t published[2] = {0};
     int rc = start(&controller, offset, false);
     int64_t begin = now_ns(), last_report = begin, last_control = begin;
@@ -265,6 +267,7 @@ int main(int argc, char **argv)
                 if (!restart_request(request, &previous, &next)) control_fd = -1;
                 else if (previous != motion_generation || next <= previous) restart_rc = -ESTALE;
                 else if (restarts >= 64) restart_rc = -EOVERFLOW;
+                else if (resume_failed) restart_rc = -EPERM;
                 else if (motion_error && motion_error != -ETIMEDOUT && motion_error != -ESHUTDOWN)
                     restart_rc = -EPERM;
                 else {
@@ -286,6 +289,7 @@ int main(int argc, char **argv)
                         if (!restart_rc) {
                             munmap(old, sizeof(*old));
                             motion_generation = next; motion_samples = 0; motion_error = 0;
+                            resume_failed = false; last_resume_report = 0;
                             ++restarts;
                         } else munmap(fresh, sizeof(*fresh));
                     }
@@ -305,6 +309,29 @@ int main(int argc, char **argv)
                 motion_error = count;
                 printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n", count, motion_samples);
             } else motion_samples += (unsigned)count;
+        }
+        if (motion_error == -ETIMEDOUT && !resume_failed &&
+            received - last_resume_probe >= 20000000) {
+            last_resume_probe = received;
+            struct ssc_timestamp captures[2];
+            int resumed = pico_controller_motion_producer_resumed(&motion, first, second, received, captures);
+            if (resumed < 0) {
+                resume_failed = true;
+                printf("PICO_CONTROLLER_MOTION_RESUME_FAILED generation=%016" PRIx64 " rc=%d\n",
+                       motion_generation, resumed);
+            } else if (resumed && received - last_resume_report >= 100000000) {
+                int64_t deadline = INT64_MAX;
+                for (unsigned hand = 0; hand < 2; ++hand) if (motion_mask & (1U << hand)) {
+                    int64_t remaining = PICO_CONTROLLER_MOTION_MAX_AGE_NS - captures[hand].uncertainty_ns;
+                    int64_t limit = captures[hand].timestamp_ns > INT64_MAX - remaining ?
+                                    INT64_MAX : captures[hand].timestamp_ns + remaining;
+                    if (limit < deadline) deadline = limit;
+                }
+                printf("PICO_CONTROLLER_MOTION_RESUMED instance=%016" PRIx64 " generation=%016" PRIx64
+                       " received_ns=%" PRId64 " deadline_ns=%" PRId64 "\n",
+                       instance, motion_generation, received, deadline);
+                last_resume_report = received;
+            }
         }
         for (unsigned hand = 0; hand < 2; ++hand) if (changed & (1U << hand)) {
             if (!pico_controller_channel_publish(channel, &samples[hand], received)) { rc = -EPROTO; break; }

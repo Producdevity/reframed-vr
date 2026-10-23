@@ -53,17 +53,28 @@ elif mode=='premature-release':
  os.write(1,(ready+'PICO_CONTROLLER_RELEASED_DSP_OFFLINE\n').encode())
 else:print(ready,end='',flush=True)
 generation=a.motion_generation;current=a.motion_channel
+if mode.startswith('auto-'):
+ with open(current,'r+b') as file:file.seek(32);file.write(bytes(8))
+ error=-71 if mode=='auto-protocol' else -110
+ print(f'PICO_CONTROLLER_MOTION_STOP rc={error} samples=2',flush=True)
+ if mode not in ['auto-silence','auto-protocol']:
+  now=time.monotonic_ns()
+  if mode=='auto-stale':now-=200000000
+  if mode=='auto-future':now+=1000000000
+  generation_text='0000000000000001' if mode=='auto-wrong-generation' else generation
+  print(f'PICO_CONTROLLER_MOTION_RESUMED instance={a.instance} generation={generation_text} received_ns={now} deadline_ns={now+90000000}',flush=True)
+  if mode=='auto-failed-probe':print(f'PICO_CONTROLLER_MOTION_RESUME_FAILED generation={generation} rc=-71',flush=True)
 while not stopping and not rc:
  if a.motion_channel and select.select([sys.stdin],[],[],.01)[0]:
   command=sys.stdin.readline().split()
   if not command:continue
   _,previous,next_generation=command
-  if mode=='restart-delay':time.sleep(.2)
-  if mode=='restart-failure':
+  if mode in ['restart-delay','auto-delay']:time.sleep(.2)
+  if mode in ['restart-failure','auto-restart-failure']:
    print(f'PICO_CONTROLLER_MOTION_RESTART previous={previous} generation={next_generation} rc=-1',flush=True)
    continue
   with open(current,'r+b') as file:file.seek(32);file.write(bytes(8))
-  if mode!='restart-no-stop':print('PICO_CONTROLLER_MOTION_STOP rc=-108 samples=2',flush=True)
+  if not mode.startswith('auto-') and mode!='restart-no-stop':print('PICO_CONTROLLER_MOTION_STOP rc=-108 samples=2',flush=True)
   current=a.motion_channel+'.'+next_generation;generation=next_generation
   motion_channel(current,generation)
   ack='0000000000000000' if mode=='restart-wrong-ack' else previous
@@ -309,6 +320,66 @@ class PicoControllerSessionTests(unittest.TestCase):
             worker = self.make(mode, motion=self.motion());worker.start();worker.wait_motion_ready(2)
             with self.assertRaises(RuntimeError):worker.restart_motion('0123456789abcdf0', 2)
             self.assertIsNone(worker.process.poll())
+
+    def test_automatic_recovery_requires_fresh_post_timeout_imu_notification(self):
+        worker = self.make('auto-resume', motion=self.motion());worker.start()
+        worker.wait_ready(2);worker._wait(lambda: worker.motion_resumed is not None, 2)
+        pid = worker.process.pid
+        endpoint = worker.recover_motion(2)
+        self.assertEqual(endpoint['generation'], '0123456789abcdf0')
+        self.assertEqual(endpoint, worker.motion_binding())
+        self.assertEqual(worker.process.pid, pid)
+        self.assertIsNone(worker.recover_motion(0))
+        self.assertEqual(worker.motion_history[0]['rc'], -110)
+        self.stop(worker)
+
+    def test_silence_stale_notification_and_protocol_failure_do_not_restart(self):
+        for mode in ['auto-silence', 'auto-stale', 'auto-protocol', 'auto-failed-probe']:
+            worker = self.make(mode, motion=self.motion());worker.start();worker.wait_ready(2)
+            worker._wait(lambda: worker.motion_stop_result is not None, 2)
+            if mode in ['auto-stale','auto-failed-probe']:
+                worker._wait(lambda: worker.motion_resumed is not None, 2)
+            if mode=='auto-failed-probe':worker._wait(lambda: worker.motion_resume_error is not None, 2)
+            self.assertIsNone(worker.recover_motion(0))
+            self.assertIsNone(worker.motion_restart)
+            self.assertIsNone(worker.process.poll())
+
+    def test_automatic_recovery_pending_timeout_completes_without_resending(self):
+        worker = self.make('auto-delay', motion=self.motion());worker.start();worker.wait_ready(2)
+        worker._wait(lambda: worker.motion_resumed is not None, 2)
+        with self.assertRaises(TimeoutError):worker.recover_motion(.01)
+        self.assertTrue(worker.motion_recovery_pending)
+        endpoint = worker.recover_motion(2)
+        self.assertEqual(endpoint['generation'], '0123456789abcdf0')
+        self.assertEqual(len(worker.motion_history),1)
+        self.assertFalse(worker.motion_recovery_pending)
+        self.stop(worker)
+
+    def test_rejected_automatic_restart_does_not_loop_or_kill_worker(self):
+        worker = self.make('auto-restart-failure', motion=self.motion());worker.start();worker.wait_ready(2)
+        worker._wait(lambda: worker.motion_resumed is not None, 2)
+        with self.assertRaises(RuntimeError):worker.recover_motion(2)
+        request = dict(worker.motion_restart)
+        self.assertIsNone(worker.recover_motion(2))
+        self.assertEqual(worker.motion_restart, request)
+        self.assertFalse(worker.motion_recovery_pending)
+        self.assertIsNone(worker.process.poll())
+
+    def test_wrong_resume_generation_future_clock_and_replaced_file_are_refused(self):
+        worker = self.make('auto-wrong-generation', motion=self.motion());worker.start()
+        with self.assertRaises(RuntimeError):worker._wait(lambda: worker.motion_resumed is not None, 2)
+        worker = self.make('auto-future', motion=self.motion());worker.start();worker.wait_ready(2)
+        worker._wait(lambda: worker.motion_resumed is not None, 2)
+        with self.assertRaises(RuntimeError):worker.recover_motion(2)
+        worker = self.make('auto-resume', motion=self.motion());worker.start();worker.wait_ready(2)
+        worker._wait(lambda: worker.motion_resumed is not None, 2)
+        # Establish inode identity before replacing the stopped channel.
+        worker._motion_header()
+        replacement=worker.directory/'replaced-motion'
+        replacement.write_bytes(worker.motion_channel.read_bytes());replacement.chmod(0o644)
+        replacement.replace(worker.motion_channel)
+        with self.assertRaises(RuntimeError):worker.recover_motion(2)
+        self.assertIsNone(worker.motion_restart)
 
 
 if __name__ == '__main__':

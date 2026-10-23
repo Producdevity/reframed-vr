@@ -35,6 +35,16 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
     const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);
 void pico_controller_motion_producer_stop(struct pico_controller_motion_producer *producer);
 
+/* After a receive timeout, 1 means every selected hand has a fresh IMU sample
+ * captured strictly after that stop; 0 means not yet. This only inspects the
+ * synchronized snapshots: no publication, watermark advance or reactivation.
+ * Capture outputs are unchanged on refusal. Other stop reasons cannot recover
+ * automatically. The owner still resets/rebinds through an explicit restart. */
+int pico_controller_motion_producer_resumed(const struct pico_controller_motion_producer *producer,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns,
+    struct ssc_timestamp captures[2]);
+
 /* Explicit owner-controlled restart within the same live DSP connection. The
  * new mapping must be distinct, uninitialized and have no readers yet. The
  * old mapping stays stopped forever. Seed the wire watermark from the current

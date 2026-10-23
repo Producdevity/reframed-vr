@@ -1655,3 +1655,63 @@ The clean repeat still has two overdue samples out of 2,500, so neither motion
 recovery nor complete trace coverage constitutes a timing fix. Raw evidence and
 the correlated windows are in `export-early/`, `export-clean/` and
 `timing-fault-analysis.json` under `output/pico-motion-recovery-20261023-v1/`.
+
+
+## Automatic controller motion recovery (2026-10-23 UTC)
+
+The maintained receiver now inspects fresh, calibrated IMU captures after a
+receive timeout and notifies its serialized owner. `recover_motion` requests an
+increasing motion generation, waits for acknowledgment and fresh samples, then
+returns its endpoint. The owner publishes that endpoint atomically; the Bionic
+consumer resets its controller estimator before rebinding. It does not restart
+RPC, release shared DSP buffers or change the head/world generation. Silence,
+digital-only activity, stale notifications and protocol failures cannot revive
+an old motion channel. Host sanitizer/fixture checks pass all 53 controller
+suite tests, including pending acknowledgments and rejected recovery requests.
+
+A native Linux trial on Pico boot UUID
+`5bb98e78-5a57-4f2c-ba03-5eb456889b5a` pauses the receive worker for 200 ms with
+`SIGSTOP`, then always sends `SIGCONT`. The real DSP/radio and head/camera
+processes continue running. This deliberately produces a receive timeout; it
+is not a simulated IMU stream or a physical controller sleep/wake test.
+
+- Motion generation 104 stops after one sample. Fresh post-stop IMU data
+  triggers automatic generation 105; the endpoint is published 49.948 ms after
+  the host resumes reception. The Bionic estimator resets successfully in
+  1.248 ms, then delivers all 13,665 new-generation IMU samples. Its maximum
+  input age is 21.651 ms, maximum head-bracket wait 13.820 ms and maximum
+  elapsed estimator call 7.103 ms. Head/world generation remains 104.
+- The combined run drains all 4,499 head-camera sets and processes 184,604
+  head callbacks, publishing 182,215 poses with no rejected output result.
+  Controller work runs on a separate thread in the retained private Bionic
+  frontend, preventing its estimator calls from blocking the head-feed loop.
+  This run alone does not prove the cause of an earlier rejected head result.
+- Steam's 1280 by 800 VR overlay is active and visible to OpenVR. The readiness
+  and late probes accept 3,500 head poses. The late 3,000-query window still has
+  one overdue vsync-age sample; it is not a complete compositor timing fix.
+- Radio reports later cease again. Motion correctly times out and remains
+  stopped without a fresh resumption notification. The worker exits with code
+  1 for that unrecovered timeout; all three RPC stop results are zero, SLPI
+  reaches offline before DMA release, and MCU references return to zero.
+
+The first serial-feed trial rejects a head result before dashboard readiness.
+Its failed result was beyond the bounded raw recording window, so its exact
+cause remains unclassified. The separate-thread trial has no rejected head
+result, but its late probe incorrectly requests 60 seconds from a binary that
+accepts at most 30; the harness stops the run. Both failed trials remain in the
+evidence, separately from the corrected automatic-recovery trial above.
+
+Evidence is under `output/pico-auto-recovery-20261023-v1/`. The host validates
+each archive and every member against the exported size/SHA-256 manifest:
+
+| Archive | Files | SHA-256 |
+| --- | ---: | --- |
+| `export-auto.tar.gz` | 211 | `7023a9da2b15a24e21bf1141a8ea99b93f3a73bb9a334ec36994b9eeb3a2109b` |
+| `export-threaded.tar.gz` | 223 | `6cf2cadd7a74e2b7de15ae8c07f74963e761d51e01b86ed58e4aeaa9b26d144c` |
+| `export-controlled.tar.gz` | 269 | `b480fa8b39dbdf8195b4119cde8e58194f356f52a9354f95ce10eb2685c08bd1` |
+
+The controlled receive pause verifies automatic owner/reset/rebind integration
+on hardware. Natural radio sleep/wake, optical controller poses and pointing,
+physical head-motion scale, upright lens output and movement direction remain
+separate acceptance gates. Audio is not opened during these runs. No firmware
+partition is written.

@@ -76,6 +76,33 @@ void pico_controller_motion_producer_stop(struct pico_controller_motion_producer
     if (p && p->channel) fail(p, -ESHUTDOWN);
 }
 
+int pico_controller_motion_producer_resumed(const struct pico_controller_motion_producer *p,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now,
+    struct ssc_timestamp captures[2])
+{
+    if (!p || !p->channel || !first || !second || !captures || now <= 0 || now < p->now)
+        return -EINVAL;
+    if (p->error != -ETIMEDOUT) return -EPERM;
+    struct pico_controller_motion_ring ring = p->ring;
+    struct pico_controller_imu_sample samples[PICO_CONTROLLER_RING_MAX_IMU];
+    int rc = pico_controller_ring_read_motion(&ring, first, second,
+        p->mcu_type, p->radio_type, p->connected_mask, samples);
+    if (rc < 0) return rc;
+    struct ssc_timestamp pending[2] = {{0}};
+    for (unsigned hand = 0; hand < 2; ++hand) if (p->connected_mask & (1U << hand)) {
+        const struct pico_controller_imu_sample *sample = &ring.latest[hand];
+        if (sample->timestamp_us <= p->ring.latest[hand].timestamp_us ||
+            !pico_controller_motion_time(&p->clock, sample->timestamp_us, now,
+                PICO_CONTROLLER_MOTION_MAX_AGE_NS, &pending[hand]) ||
+            pending[hand].timestamp_ns - pending[hand].uncertainty_ns <= p->now) return 0;
+        double values[9];
+        if (!pico_controller_motion_values(sample, &p->config[hand], values)) return -EPROTO;
+    }
+    memcpy(captures, pending, sizeof(pending));
+    return 1;
+}
+
 int pico_controller_motion_producer_restart(struct pico_controller_motion_producer *p,
     struct pico_controller_motion_channel *channel, uint64_t generation,
     const uint8_t first[PICO_CONTROLLER_RING_BYTES],
