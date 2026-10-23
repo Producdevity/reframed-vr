@@ -269,6 +269,30 @@ MCU references return to zero, boot/DTBO readbacks remain unchanged and stock
 return is verified. The source, actual mode/readback and acceptance boundaries
 are retained beside that export.
 
+### Controller result confidence
+
+The b1977 controller tracker is SHA-256
+`9b9ba5484fc5df8f629fff0f9a1d5b130ae4929860252429614dad64c6a45c4a`.
+Its `getAlgorithmControllerResult` does not expose an unmodified optical-valid
+flag. For the left result, instructions `0x15f180`–`0x15f1b4` copy internal byte
+`0xc4` into public confidence `0x41` and diagnostic `0x52`, then overwrite public
+confidence with 1 when internal bytes `0xc4` and `0xd6` are both zero. The right
+getter has the corresponding branch. This describes the getter, not the
+physical meaning of either internal byte.
+
+In the synchronized negative-control recording, all 497 confidence-1 callbacks
+have diagnostic `0x52 == 0`, so their public confidence comes from this
+overwrite. Real and all-black images produce byte-identical position and
+orientation throughout all 6,235 callbacks. Public confidence 1, accepted image
+calls, and pixel-dependent diagnostic `0x54` therefore do not establish optical
+correction. Neither `0x52` nor `0x54` has a verified positive acceptance rule yet.
+Keep controller pose publication disabled until image-content-dependent pose
+correction, loss/recovery and the coordinate conversion are validated.
+
+The disassembly, input hashes and reproduced field counts are retained in
+`output/pico-controller-optical-20261023-v1/`; the original controls are in
+`output/pico-controller-integration-20261023-v1/export-controls/`.
+
 The connected Neo3 Pro Eye running 5.8.4.0 reports **MCU type 1, radio type 2,
 touch enabled**. The stored touch property is empty while the live getter
 returns 1; an empty property must not be interpreted as disabled. The MCU type

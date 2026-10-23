@@ -1278,6 +1278,14 @@ cannot be passed to OpenVR as metres. Controller state 0 also differs from the
 head result's accepted state 1. Confidence alone is insufficient to enable a
 tracked SteamVR pointer.
 
+A subsequent getter inspection identifies the source of those 497 public
+confidence-1 values: internal `0xc4` is copied to diagnostic `0x52` as zero,
+while a separate two-zero-byte branch overwrites public confidence with 1.
+The [controller result contract](pico-controller-protocol.md#controller-result-confidence)
+records the exact binary and instruction range. This explains why the public
+flag cannot serve as the optical acceptance gate; it does not establish why
+the recorded images fail to correct position or orientation.
+
 A file-open trace identifies a missing controller-specific persist cache in the
 isolated runtime. A second control copies the verified stock cache into writable
 RAM, restoring its original contents before each trial. Original persist is
