@@ -42,7 +42,7 @@ def validate(directory):
         artifacts[name] = item
     required = {LIBRARY, ICD, 'kgsl-compile-command.txt', 'dynamic-dependencies.txt',
                 'kgsl-display', 'tu_kgsl_display.h', 'display-format-under-test.h', 'display-image-under-test.h',
-                'display-refresh-under-test.h', 'wsi_display_pico.h'}
+                'display-refresh-under-test.h', 'display-counter-under-test.h', 'wsi_display_pico.h'}
     if not required <= artifacts.keys():
         raise ValueError('Turnip build omits library or compile/link evidence')
     library = (directory / LIBRARY).read_bytes()
@@ -81,6 +81,12 @@ def validate(directory):
             refresh['model_sha256'] != digest(ROOT / 'tests/mesa-display-refresh-tests.c') or
             refresh['helpers_sha256'] != artifacts['display-refresh-under-test.h']['sha256']):
         raise ValueError('Turnip display refresh test sources changed or tests failed')
+    counter = report['display_counter_tests']
+    if (counter.get('status') != 'passed' or
+            counter['runner_sha256'] != digest(ROOT / 'tests/mesa-display-counter-tests.py') or
+            counter['model_sha256'] != digest(ROOT / 'tests/mesa-display-counter-tests.c') or
+            counter['helpers_sha256'] != artifacts['display-counter-under-test.h']['sha256']):
+        raise ValueError('Turnip display counter test sources changed or tests failed')
     pico = report['display_pico_split_tests']
     if (pico.get('status') != 'passed' or
             pico['runner_sha256'] != digest(ROOT / 'tests/mesa-pico-split-tests.py') or
