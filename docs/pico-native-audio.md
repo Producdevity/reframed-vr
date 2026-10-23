@@ -276,7 +276,8 @@ The candidate session configuration is maintained in
 - `wireplumber.conf.d/50-reframed-pico.conf` defines a `pico` policy profile for
   default-node selection and stream linking. It does not enumerate audio,
   Bluetooth or camera hardware; the root UCM owner selects the route, and the
-  static sink owns playback PCM.
+  static sink owns playback PCM. Start WirePlumber with `--profile pico`;
+  the default `main` profile does not activate this opt-in policy.
 
 These files are opt-in templates, not installed services. The tested deployment
 uses Frame's private PipeWire 1.6.8 and WirePlumber `0.5.14-1.3` with their

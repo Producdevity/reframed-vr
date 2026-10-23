@@ -243,15 +243,23 @@ def transaction(alsa, controls, play, report):
     originals = [(control, alsa.value(control)) for control in controls]
     report['originals'] = [{'numid': c['numid'], 'value': v} for c, v in originals]
     attempted = []
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
     try:
         for control, old in originals:
             attempted.append((control, old))
             alsa.value(control, control['target'])
             if alsa.value(control) != control['target']:
                 raise ValueError('Mixer write readback differs: ' + control['name'])
-        play(report)
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            play(report)
+        finally:
+            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
     finally:
-        restore_controls(alsa, attempted, report)
+        try:
+            restore_controls(alsa, attempted, report)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
 
 def ucm_configuration(originals):

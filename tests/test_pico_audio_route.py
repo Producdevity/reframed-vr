@@ -74,6 +74,24 @@ class AudioRouteTests(unittest.TestCase):
         self.assertEqual(mixer.restored, [3, 2, 1])
         self.assertEqual([r['restored'] for r in report['rollback']], [False, True, True])
 
+    def test_termination_before_restore_enters_its_own_signal_mask(self):
+        mixer, report = Mixer(), {}
+        restore = audio.restore_controls
+        def interrupted(*_):
+            raise KeyboardInterrupt()
+        def before_restore(*args):
+            os.kill(os.getpid(), signal.SIGTERM)
+            restore(*args)
+        previous = signal.signal(signal.SIGTERM, interrupted)
+        try:
+            with patch.object(audio, 'restore_controls', side_effect=before_restore):
+                with self.assertRaises(KeyboardInterrupt):
+                    audio.transaction(mixer, self.controls, lambda _: None, report)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+        self.assertEqual(mixer.state, {1: 10, 2: 20, 3: 30})
+        self.assertEqual(mixer.restored, [3, 2, 1])
+
     def test_termination_during_rollback_is_deferred_until_restoration(self):
         class SignallingMixer(Mixer):
             def value(self, control, new=None):
