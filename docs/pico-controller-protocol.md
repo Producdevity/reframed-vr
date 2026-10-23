@@ -370,6 +370,28 @@ reusing or freeing the input pixels. The diagnostic retains every submitted
 set until process exit. A production stream still needs a verified ownership
 or completion contract; increasing the retained-set budget is not that contract.
 
+The 2026-10-24 comparison verifies that the connected stock b1977 library matches
+the inspected tracker, SHA-256
+`9b9ba5484fc5df8f629fff0f9a1d5b130ae4929860252429614dad64c6a45c4a`.
+`ImageDataBuffer::updateImage` also copies those matrix headers into queued
+records at `0x152a88` onward. The C entry point supplies no caller completion
+token. Inspection of the constructor alone therefore cannot establish a safe
+reuse point for the asynchronous consumer.
+
+PicoFrame's [`pico-ctrltrack.c`](https://github.com/TheReal-Flo/PicoFrame/blob/3affbc11ecaae56c56b7bd3eb13344c73a7a03da/rootfs/bionic/pico-ctrltrack.c)
+at the inspected revision rotates 16 retained image sets and explicitly notes
+that its tracker may read pixels after the call returns. That Pico4 policy is
+reference material, not a verified Neo3 release contract; it has not been copied
+into this stream. Evidence: `output/pico-controller-image-lifetime-20261023-v1/`.
+
+The same continuation's stock reference records the headset awake/interactive
+before and after capture; continuous wakefulness is unverified. It has 300
+distinct left-result timestamps, all 1.076–5.172 ms old against QTimer, with
+state/confidence/diagnostic `0,0,0` throughout. Advancing result timestamps do not establish controller
+optical tracking or radio activity, and these observations do not identify why
+tracking is invalid. The right result retains timestamp `-1` despite flags
+`1,1,0`. Neither result can supply a positive tracked-pointing reference.
+
 CPU-only stock initialization observes camera IDs `[0, 1, 2, 3]`, matching the
 native feed. The missing-right-calibration warning does not gate the left
 tracker: both warning branches continue at `0xd8ae4`. Neither finding justifies
