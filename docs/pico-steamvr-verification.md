@@ -1813,3 +1813,98 @@ Wi-Fi off, no network route and updater disabled. The hash-verified quiet
 helper confirms effective music/system volumes zero. No firmware partition
 is written and the Quest is untouched. Receipts are `final-readback-result.log`,
 `quiesce-result.log`, `stock-return-final.json` and `stock-quiet-final.log`.
+
+
+### KGSL fence callback dispatch (2026-10-23 UTC)
+
+A targeted GPU/DMA-fence trace identifies a missed rendering dependency on
+native boot `e33448a3-911f-44b1-bc05-ec1af509c487`. For present 6,041, KMS starts
+waiting on compositor GPU context 1, timestamp 6,057, DMA-fence context 27 at
+monotonic 256.726219 s. The kernel records that job retired at 256.732630 s,
+but its fence signals at 256.736197 s. Vblank 6,207 occurs between them at
+256.735639 s; the flip completes on 6,208. This is a 3.567 ms delay after the
+software retirement trace, not a measurement of GPU execution time. The head
+stream is still valid at the associated overdue-age query.
+
+The retained Neo3 kernel source explains the next measurement. In
+`drivers/gpu/msm/kgsl_events.c`, `signal_event` queues `_kgsl_event_worker` on
+`kgsl-events`; that worker promotes its scheduling priority only after entering
+its callback handler. `drivers/gpu/msm/kgsl.c` creates the queue with
+`WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS`, without `WQ_HIGHPRI`. Native readback
+reports `nice=0`, `cpumask=ff`, `max_active=256`, `numa=1`. Existing Neo3 patches
+do not modify these paths. The source is ByteDance commit
+`9cacc1c1356dd32a048f4cb13bc84af402bd3326`; the pinned archive SHA-256 is
+`88fb81480eb02f1e958a57a818e6b3fc699e5156a223ea53a5cc1b037abe7063`.
+
+A subsequent control adds workqueue queue/start tracepoints filtered to that
+one handler. It matches all 36,817 queue/start/callback records, with no
+unmatched records or trace overruns/drops on any of the eight CPUs. Both
+late-window faults have a delayed worker dispatch after retirement:
+
+| GPU timestamp / DMA context | Retirement | Callback queued | Worker starts | Missed vblank |
+| --- | ---: | ---: | ---: | ---: |
+| 4,480 / 56 | 1242.858979 s | 1242.859027 s | 1242.864069 s | 13,633 at 1242.862385 s |
+| 4,717 / 56 | 1245.536628 s | 1245.536644 s | 1245.540427 s | 13,874 at 1245.540140 s |
+
+KMS waits on those exact compositor fences. Their notifications spend 5.042
+and 3.783 ms queued before execution. Across 24,989 compositor sync callbacks,
+queue-to-start p99 is 1.763 ms and maximum 6.655 ms; worker-entry-to-callback
+p99 is 0.023 ms. These observations establish callback dispatch as a cause of
+the two missed boundaries, without attributing every timing fault to it.
+The control accepts all 9,500 readiness/late head queries, with two overdue
+ages in the 9,000 late queries. The Steam overlay is visible at 1280 by 800.
+
+The first trace uses a 90-second camera capture, shorter than the requested
+three timing windows; only its live-head interval is used above. The first
+longer repeat builds the camera entry point without controller publishing and
+exits before compositor startup. The corrected control completes all timing
+windows, then its inherited 150-second camera alarm terminates acquisition;
+its final feed timeout is therefore not a passing full-capture result. These
+harness failures are retained separately. The priority repeat extends both the
+capture deadline and its watchdog, and changes only `kgsl-events` nice to
+-20 during the measured workload, with restoration afterward.
+
+Raw traces, source-file hashes, analysis and per-file manifest receipts are
+under `output/pico-gpu-deadline-20261023-v1/`. The initial archive is
+`export-gpu.tar.gz`, 255 verified files, SHA-256
+`b2c46b87e58e31a997cf664633b5048ac5cd9484f1546010d30a45d0a245a77a`;
+the filtered control is `export-wq-control2.tar.gz`, 276 verified files,
+SHA-256 `1a347cc6538941fd82ab9d16b00fa0f62790b602f5d18323f1e13a3993217138`.
+
+
+The priority repeat completes all 4,499 camera sets, processes 184,569 head
+callbacks and publishes 182,214 poses without rejected output or feed failure.
+All 9,500 readiness/late head queries are valid and all vsync-age queries pass
+the unchanged two-period bound. Its filtered trace matches all 44,807
+queue/start/callback records and reports zero drops/overruns on all eight CPUs.
+For the comparable three late windows (about 93 seconds including probe
+startup), the compositor's sync-callback dispatch measurements are:
+
+| Measurement | Original queue nice 0 | Queue nice -20 |
+| --- | ---: | ---: |
+| Matched callbacks | 16,712 | 16,774 |
+| Queue-to-start p99 | 1.770 ms | 0.411 ms |
+| Queue-to-start p99.9 | 5.024 ms | 0.807 ms |
+| Maximum queue-to-start | 6.655 ms | 2.651 ms |
+| Queue-to-start over 2 ms | 158 | 4 |
+| Overdue ages / late queries | 2 / 9,000 | 0 / 9,000 |
+
+This supports the queue-policy change for the measured workload; it does not
+establish that every presentation deadline is solved. The retained kernel's
+`kernel/workqueue.c` maps `WQ_HIGHPRI` to nice -20 for unbound pools, and its
+sysfs nice attribute applies the same worker-pool selection mechanism. The
+maintained helper applies this policy without requiring a kernel rebuild.
+The run leaves `cpumask=ff`, `max_active=256` and `numa=1` intact, then reads
+back the original nice 0. All three controller RPC stop results are zero,
+SLPI is offline before DMA release and MCU references return to zero. The
+controller delivers all 24,541 motion samples before later radio silence;
+no fresh resumption cue occurs in this run, so it does not add a recovery
+transition proof beyond the earlier verified resumption trial.
+
+`export-wq-priority.tar.gz` contains 289 manifest-verified files, SHA-256
+`4dc4842d42b71d536dd343e890309ebc66a970de0a38d39054a4aa8da2d480cb`.
+`tools/pico-gpu-events.py` adds device/boot checks, exclusive ownership and
+exception/termination restoration. Its five host fixtures cover failed
+workloads, overlapping owners, previous nondefault priority, rejected device
+identity and a symlink lock. Native sysfs tests additionally verify restoration
+after both the CLI timeout and SIGTERM; see `install-policy-result.log`.

@@ -564,8 +564,8 @@ render thread on ordinary scheduling. Later tests achieve `SCHED_RR` priority 99
 but still record late updates at 120 Hz. Matched 90 Hz tests with ordinary
 scheduling submit about 89.5 presents/second and record zero and one overdue
 sample per 2,000 late checks. The repeat's fault includes a measured 7 ms CPU
-scheduling delay. Neither realtime permissions nor an experimental negative nice
-value is adopted. The 90 Hz candidate changes both the optical profile's frame
+scheduling delay. Neither realtime permissions nor the compositor's experimental
+negative nice value is adopted. The 90 Hz candidate changes both the optical profile's frame
 interval and SteamVR's preferred rate. A fresh Linux boot now starts 90 Hz after
 the maintained 120 Hz display-handoff tool initializes and releases KMS; no
 120 Hz SteamVR session is needed first. Omitting that handoff produced an
@@ -585,6 +585,33 @@ unit's optical coefficients and eye transforms. Initialization at 120 Hz and
 subsequent rendering at 90 Hz serve different purposes. The
 [fresh-boot verification](pico-steamvr-verification.md#fresh-90-hz-handoff-and-controller-tracker-calibration)
 records the tested limits; clean lens output at 90 Hz remains unverified.
+
+### Bounded GPU callback priority
+
+The Neo3 timing trace identifies late `kgsl-events` callback dispatch after GPU
+retirement as a cause of missed presentation boundaries. The opt-in
+`tools/pico-gpu-events.py` helper selects nice -20 for that queue's unbound
+worker pool while a bounded VR session runs. This is a CFS priority setting;
+the compositor's scheduling policy, queue CPU mask and concurrency are preserved.
+A native combined capture verifies reduced callback latency; see the
+[control and acceptance limits](pico-steamvr-verification.md#kgsl-fence-callback-dispatch-2026-10-23-utc).
+
+Run the helper as root in native Pico Linux, using the session's independently
+verified serial and boot UUID:
+
+```sh
+python3 tools/pico-gpu-events.py --boot-serial c980c8d4 \
+  --boot-id 'VERIFIED_NATIVE_BOOT_UUID' --seconds 240
+```
+
+Wait for `PICO_GPU_EVENTS_READY` before starting the bounded VR workload. Stop
+that workload before the helper's deadline, then send it SIGTERM or let its
+bounded wait finish. `PICO_GPU_EVENTS_RESTORED` records the original policy
+readback. Session owners can instead wrap their workload and cleanup in
+`prioritize_events(serial, boot_id)` from the same module; its context restores
+the policy on exceptions. A private exclusive lock prevents overlapping owners.
+The helper checks the native Neo3 compatible string, boot serial and UUID before
+changing the queue. It is not enabled automatically by the driver bundle.
 
 ### Optional tracked left-controller input
 
