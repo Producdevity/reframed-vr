@@ -1307,8 +1307,9 @@ from a disconnected controller or a stopped camera pipeline.
 
 `pico_camera_frame_sequence_push()` now supplies the collection policy. A fresh
 owner discards incomplete startup sets until it has collected all four camera
-IDs for one frame number. Once synchronized, incomplete, duplicate and
-regressing sets remain errors. The callback must copy all four current images
+IDs for one frame number. Once synchronized, a partial current set remains
+pending; duplicates, regressions and advancing past an incomplete set are
+errors. Only complete sets are published. The callback must copy all four current images
 and separately check their timestamps before publication. The helper owns no
 pixels and does not resolve the vendor tracker's borrowed-image lifetime.
 
@@ -1368,8 +1369,9 @@ still requires every external reference to disappear. Its pixel storage is
 9,830,400 bytes, an increase of 4,915,200 bytes. This changes neither submission
 depth nor the single input copy, and exhaustion still returns `EAGAIN`.
 
-The rebuilt adapter passes the same real-SDK CPU probes, including 16 retained
-sets with exhaustion/release, and completes the 150-set synthetic initialization
+The rebuilt adapter passes the same real-SDK CPU probes, including 16 retained-mode
+submissions with at most eight sets held simultaneously and explicit exhaustion/release,
+and completes the 150-set synthetic initialization
 replay with 649 state-one callbacks and clean SDK stop. This fixture uses ideal
 projected LEDs and recorded motion/head inputs; it proves buffer progress after
 initialization, not real optical tracking, pose accuracy or SteamVR pointing.
@@ -1377,11 +1379,20 @@ Evidence is `output/pico-controller-geometry-20261024-v1/maintained-cpu/` and
 `replay-positive-maintained/`. Concurrent diagnostic activity means these CPU
 tests are not performance comparisons.
 
-Build with `tools/build-pico-controller-images.py --ndk <pinned-ndk>
+Build with Python 3.11.4 or later: `python3 tools/build-pico-controller-images.py --ndk <pinned-ndk>
 --opencv-archive <pinned-archive> --output <new-directory>`. Run the stock CPU
-probes with `tools/test-pico-controller-images.py --serial <pico-serial>
+probes with `python3 tools/test-pico-controller-images.py --serial <pico-serial>
 --bundle <build-directory> --output <new-evidence-directory>`. Both scripts retain
 receipts; the builder has no device actions and the test starts no sensors.
+
+The 2026-10-24 PR follow-up validates the bytes of all four copied planes,
+requires successful public submit/stop calls, and rejects an empty image in
+the required consumer callback without rejecting optional empty startup
+caches. All six stock SDK CPU modes pass, including 1,000 owned submissions,
+1,000 delayed submissions, 16 retained-mode submissions, the malformed-image
+case and 300 public submissions. The firmware/updater checks and temporary-file
+cleanup also pass. Evidence is `output/pr-2-monitor/controller-images-stock-test/`;
+this remains synthetic ownership proof, not optical controller acquisition.
 
 ### Native acquisition boundary
 

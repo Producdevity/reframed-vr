@@ -52,7 +52,7 @@ int main(int argc,char **argv)
     auto stop=function<int(*)()>(library,"alg_controller_stop");
     auto image=function<int(*)(void*,const void*,const void*)>(library,"alg_controller_update_all_image_with_head");
     assert(configure(library)==0);
-    int init_rc=init(nullptr,nullptr);printf("PUBLIC_OWNER_INIT rc=%d\n",init_rc);
+    int init_rc=init(nullptr,nullptr);printf("PUBLIC_OWNER_INIT rc=%d\n",init_rc);assert(init_rc==0);
     constexpr size_t plane=640*480,bytes=4*plane;
     auto source=static_cast<unsigned char*>(mmap(nullptr,bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0));assert(source!=MAP_FAILED);
     std::vector<Frame> frames(4);unsigned completed=0;
@@ -61,16 +61,17 @@ int main(int argc,char **argv)
         std::array<const void*,4> input,output;for(unsigned i=0;i<4;++i)input[i]=source+i*plane;
         int prepared=prepare(iteration+1,input.data(),plane,output.data());
         printf("PUBLIC_OWNER_PREPARE set=%u rc=%d\n",iteration+1,prepared);assert(prepared==0);
+        for(unsigned i=0;i<4;++i)assert(!memcmp(output[i],input[i],plane));
         assert(mprotect(source,bytes,PROT_NONE)==0);
         int64_t timestamp=now();
         for(unsigned i=0;i<4;++i)frames[i]={static_cast<uint8_t>(i),{},640,480,0x20203859,0,40,16,0,timestamp,timestamp,iteration+1,plane,0,static_cast<const uint8_t*>(output[i])};
         unsigned char before[368],after[368];head(before,timestamp-1000000);head(after,timestamp+1000000);
-        int rc=image(&frames,before,after);int result=0;
+        int rc=image(&frames,before,after);assert(rc==0);int result=0;
         for(unsigned poll=0;poll<1000;++poll){result=done(iteration+1);if(result)break;usleep(1000);}
         printf("PUBLIC_OWNER_COMPLETION set=%u rc=%d done=%d adoptions=%llu\n",iteration+1,rc,result,static_cast<unsigned long long>(copies()));assert(result==1);
         ++completed;
     }
-    int stop_rc=stop();struct rusage usage{};assert(getrusage(RUSAGE_SELF,&usage)==0);
+    int stop_rc=stop();assert(stop_rc==0);struct rusage usage{};assert(getrusage(RUSAGE_SELF,&usage)==0);
     printf("PICO_IMAGE_OWNER_PUBLIC_PASS sets=%u adoptions=%llu stop_rc=%d maxrss_kib=%ld hardware_tracking=0\n",completed,static_cast<unsigned long long>(copies()),stop_rc,usage.ru_maxrss);
     _Exit(0);
 }

@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <deque>
 #include <functional>
 #include <sys/mman.h>
 #include <sys/resource.h>
@@ -26,6 +27,8 @@ struct Frame {
 };
 static_assert(sizeof(Frame) == 72);
 struct alignas(16) Head { unsigned char bytes[128]; };
+struct Packet { std::vector<cv::Mat> images; unsigned char padding[40]; Head head; };
+static_assert(sizeof(Packet)==192 && offsetof(Packet,head)==64);
 using Ctor = void (*)(void *, int, int);
 using Update = void (*)(void *, int, std::vector<Frame>&, Head&, std::function<void()>, const std::vector<int>&);
 using Consume = void (*)(void *, std::function<void()>);
@@ -42,9 +45,10 @@ template<typename T> static T function(void *handle, const char *name)
 int main(int argc, char **argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    assert(argc == 3 && (!strcmp(argv[2], "negative") || !strcmp(argv[2], "owned") || !strcmp(argv[2], "delayed") || !strcmp(argv[2], "retained")));
+    assert(argc == 3 && (!strcmp(argv[2], "negative") || !strcmp(argv[2], "owned") || !strcmp(argv[2], "delayed") || !strcmp(argv[2], "retained") || !strcmp(argv[2], "empty")));
     bool delayed = !strcmp(argv[2], "delayed");
     bool retained = !strcmp(argv[2], "retained");
+    bool empty = !strcmp(argv[2], "empty");
     bool owned = strcmp(argv[2], "negative") != 0;
     alarm(90);
     auto library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
@@ -70,7 +74,7 @@ int main(int argc, char **argv)
         slot = static_cast<uint8_t *>(mmap(nullptr, set_size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0));
         assert(slot != MAP_FAILED);
     }
-    unsigned count = owned ? (retained ? 2 * PICO_CONTROLLER_IMAGES_POOL_SETS : 1000) : 1;
+    unsigned count = empty ? 1 : owned ? (retained ? 2 * PICO_CONTROLLER_IMAGES_POOL_SETS : 1000) : 1;
     std::array<std::vector<cv::Mat>,PICO_CONTROLLER_IMAGES_POOL_SETS> held;
     unsigned exhausted = 0;
     for (unsigned iteration = 0; iteration < count; ++iteration) {
@@ -103,6 +107,17 @@ int main(int argc, char **argv)
             assert(mprotect(slots[slot],set_size,PROT_NONE) == 0);
         }
         update(buffer, 0, frames, head, []{}, order);
+        if (empty) {
+            auto &queue = *reinterpret_cast<std::deque<Packet> *>(buffer+0x1e8);
+            assert(!queue.empty() && queue.front().images.size()==4);
+            queue.front().images[0].release();
+            unsigned callbacks=0;
+            consume(buffer,[&] { ++callbacks; });
+            assert(!callbacks && done(iteration+1)==-EIO);
+            std::array<const void*,4> unused{};
+            assert(prepare(iteration+2,addresses.data(),plane,unused.data())==-EIO);
+            break;
+        }
         unsigned callbacks = 0;
         std::atomic<bool> entered{false}, release{false};
         auto callback = [&] {
@@ -140,6 +155,6 @@ int main(int argc, char **argv)
     if (retained) assert(exhausted == held.size());
     struct rusage usage{}; assert(getrusage(RUSAGE_SELF, &usage) == 0);
     printf("PICO_IMAGE_OWNER_%s_PASS sets=%u adoptions=%llu maxrss_kib=%ld hardware_tracking=0\n",
-           delayed ? "DELAYED" : retained ? "RETAINED" : owned ? "OWNED" : "NEGATIVE",count,static_cast<unsigned long long>(copies()),usage.ru_maxrss);
+           empty ? "EMPTY" : delayed ? "DELAYED" : retained ? "RETAINED" : owned ? "OWNED" : "NEGATIVE",count,static_cast<unsigned long long>(copies()),usage.ru_maxrss);
     _Exit(0);
 }

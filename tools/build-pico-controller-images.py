@@ -29,6 +29,8 @@ def main():
     parser.add_argument('--opencv-archive', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if not hasattr(tarfile, 'data_filter'):
+        parser.error('Safe archive extraction requires Python 3.11.4 or later')
     profile = json.loads((ROOT / 'profiles/pico-controller-images.json').read_text())
     ndk, archive, output = args.ndk.resolve(), args.opencv_archive.resolve(), args.output.resolve()
     if digest(archive) != profile['opencv']['archive_sha256']:

@@ -9,6 +9,11 @@ import subprocess
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_INPUTS = {'src/pico-controller-images.cpp', 'src/pico-controller-images.h',
+                   'src/pico-controller-images.exports', 'tests/pico-controller-images.cpp',
+                   'tests/pico-controller-images-public.cpp', 'profiles/pico-controller-images.json',
+                   'tools/build-pico-controller-images.py'}
+FINGERPRINT = 'Pico/A7H10/PICOA7H10:10/5.8.4.0/smartcm.1696861506:user/test-keys'
 
 
 def digest(path):
@@ -30,6 +35,8 @@ def main():
     profile = json.loads((ROOT / 'profiles/pico-controller-images.json').read_text())
     if build['status'] != 'compiled' or build['profile'] != profile:
         parser.error('Bundle profile is stale')
+    if set(build['source_sha256']) != EXPECTED_INPUTS:
+        parser.error('Bundle source manifest is incomplete or unexpected')
     for name, expected in build['source_sha256'].items():
         if (Path(name).is_absolute() or '..' in Path(name).parts or
                 digest(ROOT / name) != expected):
@@ -61,6 +68,11 @@ def main():
     try:
         if shell(['getprop', 'ro.serialno']).stdout.strip() != args.serial:
             raise ValueError('Unexpected physical device serial')
+        if (shell(['getprop', 'ro.product.device']).stdout.strip() != 'PICOA7H10' or
+                shell(['getprop', 'ro.build.fingerprint']).stdout.strip() != FINGERPRINT):
+            raise ValueError('Expected the verified Neo3 b1977 stock firmware')
+        if 'package:com.picovr.updatesystem' not in shell(['pm', 'list', 'packages', '-d']).stdout.splitlines():
+            raise ValueError('Stock updater must already be disabled')
         report['boot_id'] = shell(['cat', '/proc/sys/kernel/random/boot_id']).stdout.strip()
         if shell(['sha256sum', sdk]).stdout.split()[0] != profile['sdk']['sha256']:
             raise ValueError('Device SDK differs from verified ABI')
@@ -76,7 +88,7 @@ def main():
             if shell(['sha256sum', remote + '/' + name]).stdout.split()[0] != build['artifacts'][name]:
                 raise ValueError('Transfer differs: ' + name)
         shell(['chmod', '700', *(remote + '/' + name for name in names[:2])])
-        for mode in ['negative', 'owned', 'delayed', 'retained', 'public']:
+        for mode in ['negative', 'owned', 'delayed', 'retained', 'empty', 'public']:
             binary = 'pico-controller-images-public' if mode == 'public' else 'pico-controller-images'
             command = ['env', 'LD_PRELOAD=' + miniglog + ':' + remote + '/libpico-controller-images.so',
                        remote + '/' + binary, sdk]
@@ -97,11 +109,22 @@ def main():
         report.update(status='failed', error=str(error))
         raise
     finally:
+        cleanup_failed = False
         if created:
-            cleanup = [shell(['rm', '-f', remote + '/' + name], check=False).returncode for name in names]
-            cleanup.append(shell(['rmdir', remote], check=False).returncode)
-            report['temporary_files_removed'] = not any(cleanup)
+            for command in [['rm', '-f', remote + '/' + name] for name in names] + [['rmdir', remote]]:
+                try:
+                    cleanup_failed |= shell(command, check=False).returncode != 0
+                except (OSError, subprocess.SubprocessError) as error:
+                    cleanup_failed = True
+                    report.setdefault('cleanup_errors', []).append(str(error))
+            report['temporary_files_removed'] = not cleanup_failed
+        was_passed = report['status'] == 'passed'
+        if cleanup_failed:
+            report['status'] = 'failed'
+            report['cleanup_error'] = 'Temporary probe files were not all removed'
         (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+        if cleanup_failed and was_passed:
+            raise RuntimeError(report['cleanup_error'])
 
 
 if __name__ == '__main__':

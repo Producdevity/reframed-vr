@@ -215,7 +215,11 @@ void owner_image_thread(void *buffer, std::function<void()> callback)
                 auto &images = *static_cast<std::vector<cv::Mat> *>(buffer);
                 if (images.size() != 4) throw std::runtime_error("image count");
                 bool active = pending;
-                for (auto &image : images) active = (adopt(image) == static_cast<int>(active_slot)) && active;
+                for (auto &image : images) {
+                    int slot = adopt(image);
+                    if (slot < 0) throw std::runtime_error("empty callback image");
+                    active = (slot == static_cast<int>(active_slot)) && active;
+                }
                 if (active) sequence = submitted;
             }
             if (callback) callback();
