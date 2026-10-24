@@ -100,7 +100,7 @@ def eye_size(view, width):
     return width, height
 
 
-def load_capture(directory, optics):
+def load_capture(directory, optics, eye_width=916):
     metadata_path, raw_path = directory/'metadata.json', directory/'native.bin'
     if metadata_path.stat().st_size > 65536 or optics.stat().st_size > 262144:
         raise ValueError('Metadata or optical profile exceeds its size limit')
@@ -127,7 +127,7 @@ def load_capture(directory, optics):
     if len(views) != 2 or [v['viewport'] for v in views] != [[0, 0, 1920, 1832], [0, 1832, 1920, 1832]]:
         raise ValueError('Unsupported eye viewports')
     for view in views:
-        eye_size(view, 916)
+        eye_size(view, eye_width)
         model = view['analytic_distortion']
         if model['type'] != 'pico-radial-2' or view['rotation'] not in (
                 [1, 0, 0, 1], [0, 1, -1, 0], [-1, 0, 0, -1], [0, -1, 1, 0]):
@@ -161,7 +161,7 @@ def main():
     args = parser.parse_args()
     if args.output.exists() or args.output.is_symlink() or not 64 <= args.eye_width <= 1832:
         parser.error('Use a new output directory and an eye width from 64 to 1832')
-    pixels, profile, metadata = load_capture(args.capture, args.optics)
+    pixels, profile, metadata = load_capture(args.capture, args.optics, args.eye_width)
     sizes = [eye_size(view, args.eye_width) for view in profile['views']]
     if sizes[0] != sizes[1]:
         raise ValueError('Stereo preview requires matching per-eye dimensions')

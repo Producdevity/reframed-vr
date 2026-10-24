@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -70,6 +71,29 @@ class PicoScanoutPreviewTests(unittest.TestCase):
                 self.assertTrue(np.all(coverage))
                 np.testing.assert_array_equal(got, expected)
                 self.assertLess(residual, 1e-8)
+
+    def test_requested_smaller_width_controls_output_height_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            optics = view(1920, 1832)
+            optics['display'] = [512, 4096]
+            other = copy.deepcopy(optics)
+            other['viewport'][1] = 1832
+            profile = {'schema_version': 3, 'device': 'PICOA7H10', 'serial': 'fixture',
+                       'screen': {'width': 1920, 'height': 3664}, 'views': [optics, other]}
+            raw = bytes(1920*3664*4)
+            (root/'native.bin').write_bytes(raw)
+            (root/'metadata.json').write_text(json.dumps({'boot_serial': 'fixture', 'size': [1920, 3664],
+                'pitch': 7680, 'modifier': 0, 'offset': 0, 'fourcc': 'XR24',
+                'native_bytes': len(raw), 'native_sha256': hashlib.sha256(raw).hexdigest()}))
+            (root/'optics.json').write_text(json.dumps(profile))
+            with self.assertRaisesRegex(ValueError, 'output aspect'):
+                preview.load_capture(root, root/'optics.json')
+            with patch('sys.argv', ['preview', '--capture', str(root), '--optics', str(root/'optics.json'),
+                                   '--output', str(root/'preview'), '--eye-width', '64']):
+                preview.main()
+            report = json.loads((root/'preview/preview.json').read_text())
+            self.assertEqual(report['eye_size'], [64, 512])
 
     def test_recovers_neutral_source_from_separated_panel_channels(self):
         width, height = 80, 64
