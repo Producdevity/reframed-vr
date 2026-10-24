@@ -1538,3 +1538,28 @@ and a successful unchanged retry. Its cause remains unverified; the policy helpe
 was not changed. Evidence is `output/pico-controller-integration-20261024-v5/`.
 The earlier v4 run's incomplete full export remains a separate failed evidence
 attempt and is not used for these timing claims.
+
+### Recorded input dispatch order
+
+The next bounded recorder uses version 2 of the acquisition carriers. The
+third metadata word of each IMU row and image set is a shared increasing
+dispatch ordinal, recorded immediately before the SDK input call. Image
+payloads and the two raw head brackets remain unchanged. Capture timestamps
+alone cannot recover this cross-stream call order.
+
+`python3 tools/analyze-pico-controller-acquisition.py --motion <motion.raw>
+--images <images.raw>` validates capacities, record lengths, tracked head
+brackets, camera identities, common frame numbers and a contiguous dispatch
+sequence within one estimator generation. It reports source hashes and record
+offsets in the observed order. Version-1 inputs are refused because they did
+not record that order. This validates a recorded prefix; it does not reproduce
+the original wall timing, prove optical validity or enable pose publication.
+
+The native recording in `output/pico-optical-acquisition-20261024-v4/` passes
+with 150 image sets and 3,304 IMU rows. Two isolated stock-SDK CPU replays use
+identical bytes, comparing the recorded order with the previous estimated
+capture-plus-20-ms order. Both produce 3,304 state-zero callbacks and clean SDK
+stop. Recorded order therefore does not restore acquisition in this recording;
+no tracker threshold or library byte was changed. Four host tests additionally
+reject legacy/truncated inputs, missing or duplicate ordinals, generation
+changes, invalid head brackets and mixed camera sets.
