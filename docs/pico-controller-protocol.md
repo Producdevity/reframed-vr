@@ -1325,3 +1325,42 @@ head pose. Applying the current head transform there would be incorrect.
 The exact disassembly is retained as `controller-stock-publication.asm` in the
 same evidence directory. Coordinate, prediction-time and pixel-ownership
 contracts still need validation before these raw results can drive a pointer.
+
+### Owning b1977 controller image pixels
+
+`pico-controller-images` supplies an opt-in Bionic adapter for the exact SDK in
+`profiles/pico-controller-images.json`. Load it before opening the SDK, verify
+the complete SDK hash in the launcher, and call `configure` before SDK init.
+The adapter additionally rejects a different loaded ELF build ID. It depends on
+private b1977 C++ layouts and the pinned NDK ABI; it is not a general Pico SDK
+compatibility layer.
+
+The SDK wraps caller pixels in borrowed OpenCV matrices. Its queue, timer cache
+and consumer copy matrix headers without acquiring pixel ownership. The adapter
+copies each four-camera input once into a four-set pool, then promotes those SDK
+aliases to reference-counted matrices. Synchronizing with the timer's complete
+snapshot/publication section prevents an unowned local snapshot from surviving
+completion. A submission completes only after promotion and the consumer
+callback have both finished. Pool reuse also requires all external matrix
+references to disappear. Busy/exhausted pools return `EAGAIN`; callers must defer
+or drop controller frames without blocking head tracking. The allocator remains
+alive for the worker's process lifetime; neither library may be unloaded.
+
+OpenCV core comes from the attributed upstream 3.4.0 commit in the profile.
+That is not claimed to be the vendor's exact dirty source revision. The bundled
+license, archive hash, source hashes and compiler commands accompany the build;
+the adapter hides its OpenCV/libc++ symbols from other libraries.
+
+On 2026-10-24, CPU-only probes on this Pico's unchanged b1977 SDK reproduced the
+old borrowed-buffer mutation and passed 1,000 owned sets, 1,000 delayed-consumer
+sets, pool exhaustion/release, and 300 sets through the actual public asynchronous
+API with clean SDK stop. Owned tests make the original input pages inaccessible
+immediately after copying. These are synthetic-pixel ownership tests, not camera,
+optical tracking, pointer, frame-pacing or lens-sharpness acceptance. Evidence is
+`output/pico-controller-ownership-20261024-v2/final-cpu/`.
+
+Build with `tools/build-pico-controller-images.py --ndk <pinned-ndk>
+--opencv-archive <pinned-archive> --output <new-directory>`. Run the stock CPU
+probes with `tools/test-pico-controller-images.py --serial <pico-serial>
+--bundle <build-directory> --output <new-evidence-directory>`. Both scripts retain
+receipts; the builder has no device actions and the test starts no sensors.

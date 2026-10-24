@@ -1,0 +1,1 @@
+{ global: pico_controller_images_*; _ZN10picosensor15ImageDataBuffer15imageThreadFuncENSt6__ndk18functionIFvvEEE; _ZN10picosensor15ImageDataBuffer11updateImageEiRNSt6__ndk16vectorI12frame_item_tNS1_9allocatorIS3_EEEERNS_8HeadDataENS1_8functionIFvvEEERKNS2_IiNS4_IiEEEE; local: *; };
