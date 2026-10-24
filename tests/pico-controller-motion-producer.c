@@ -121,8 +121,9 @@ static void boundaries(void)
 
     assert(!pico_controller_motion_producer_init(&p, c, 7, 8, &clock, config, 1, 2, 1, 1000000000));
     record(a, 2000000, 1); memcpy(b, a, 1000);
-    assert(pico_controller_motion_producer_update(&p, 8, a, b, 1000000000) == -ETIMEDOUT);
+    assert(pico_controller_motion_producer_update(&p, 8, a, b, 1000000000) == -EPROTO);
     assert(!c->sequence && !c->active);
+    assert(pico_controller_motion_producer_resumed(&p,a,b,2001000000,captures)==-EPERM);
 
     assert(!pico_controller_motion_producer_init(&p, c, 9, 10, &clock, config, 1, 2, 1, 1000000000));
     memset(a, 0, 1000); record(a, 1001000, 1); memcpy(b, a, 1000);

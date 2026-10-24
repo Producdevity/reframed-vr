@@ -186,7 +186,11 @@ int main(int argc, char **argv)
             assert(decoded.timestamp_ns<=INT64_MAX-2000000);
             replay.now=decoded.timestamp_ns+2000000;
             bool tracked=decoded.state==1&&decoded.confidence==1;
+            pico_slam_pose converted{};
+            bool malformed_pose=tracked&&!pico_slam_pose_convert(&config.pose,&decoded,
+                config.uncertainty_ns,replay.now,&converted);
             bool refused=stopped || decoded.state!=1 || decoded.confidence>1 ||
+                malformed_pose ||
                 decoded.timestamp_ns<previous_timestamp ||
                 (seen_published && (!tracked || decoded.timestamp_ns==previous_timestamp));
             auto expected=refused?PICO_SLAM_CHANNEL_REFUSED:tracked?PICO_SLAM_CHANNEL_PUBLISHED:PICO_SLAM_CHANNEL_WAITING;

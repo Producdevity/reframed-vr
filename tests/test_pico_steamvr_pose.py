@@ -34,8 +34,9 @@ class PicoSteamvrPoseTests(unittest.TestCase):
                            check=True, capture_output=True, text=True, timeout=30)
             result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=10)
             self.assertIn('PICO_STEAMVR_POSE_PASS', result.stdout)
-            def record(timestamp,confidence=1,state=1):
+            def record(timestamp,confidence=1,state=1,position=0):
                 raw=bytearray(0x170);struct.pack_into('<q',raw,0,timestamp)
+                struct.pack_into('<d',raw,8,position)
                 struct.pack_into('<d',raw,32,1);raw[64]=state;raw[65]=confidence
                 return raw
             replay=Path(temp)/'replay.bin'
@@ -43,6 +44,9 @@ class PicoSteamvrPoseTests(unittest.TestCase):
                                record(1002000000,0)+record(1003000000))
             replayed=subprocess.run([str(binary),str(replay)],check=True,capture_output=True,text=True,timeout=10)
             self.assertIn('replay_records=4 published=1',replayed.stdout)
+            replay.write_bytes(record(1000000000,position=1000001))
+            outlier=subprocess.run([str(binary),str(replay)],check=True,capture_output=True,text=True,timeout=10)
+            self.assertIn('replay_records=1 published=0',outlier.stdout)
             for invalid,reason in [(b'', 'records'),(record((1<<63)-1),'timestamp_ns')]:
                 replay.write_bytes(invalid)
                 refused=subprocess.run([str(binary),str(replay)],capture_output=True,text=True,timeout=10)

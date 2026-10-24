@@ -16,6 +16,7 @@
 static struct pico_slam_channel channel;
 static _Atomic bool done;
 static _Atomic unsigned reads;
+static _Atomic unsigned updated_reads;
 
 static struct pico_slam_channel_sample sample(uint64_t generation, int64_t timestamp)
 {
@@ -42,6 +43,7 @@ static void *reader(void *unused)
             assert(result.timestamp_ns==1000000000+(int64_t)result.pose.position[0]);
             assert(result.published_ns==result.timestamp_ns+1000);
             atomic_fetch_add(&reads,1);
+            if (result.pose.position[0]>0) atomic_fetch_add(&updated_reads,1);
         }
     } while (!atomic_load(&done));
     return NULL;
@@ -179,10 +181,12 @@ int main(int argc, char **argv)
     for(unsigned i=1;i<=100000;++i) {
         r=sample(9,1000000000+i);r.pose.position[0]=i;r.pose.position[1]=-(double)i;r.pose.position[2]=i*.5;
         assert(pico_slam_channel_publish(&channel,&r));
+        // The fixed reader clock first accepts a sample at the 1 us uncertainty margin.
+        if (i==1000) while (!atomic_load(&updated_reads)) {}
     }
     atomic_store(&done,true);
     for(unsigned i=0;i<4;++i)assert(!pthread_join(threads[i],NULL));
-    assert(atomic_load(&reads)>0);assert(pico_slam_channel_stop(&channel,9));absent(42,9,2000000000);
+    assert(atomic_load(&updated_reads)>0);assert(pico_slam_channel_stop(&channel,9));absent(42,9,2000000000);
     printf("PICO_SLAM_CHANNEL_PASS updates=100000 readers=4 coherent_reads=%u\n",atomic_load(&reads));
     return 0;
 }

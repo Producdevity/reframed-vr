@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,6 +19,9 @@ CJSON = ROOT / 'output/pico-steamvr-deps/cjson'
                      'requires pinned OpenVR, cJSON and host compilers')
 class PicoSteamvrProviderTests(unittest.TestCase):
     def test_controller_registration_failure_preserves_hmd_and_board_identity_is_unique(self):
+        sdk = json.loads((ROOT / 'profiles/openvr.json').read_text())
+        self.assertEqual(hashlib.sha256((SDK / 'openvr_driver.h').read_bytes()).hexdigest(),
+                         sdk['files']['headers/openvr_driver.h'])
         for name, digest in json.loads((ROOT / 'profiles/pico-steamvr-cjson.json').read_text())['sha256'].items():
             self.assertEqual(hashlib.sha256((CJSON / name).read_bytes()).hexdigest(), digest)
         with tempfile.TemporaryDirectory() as temporary:
@@ -61,6 +65,8 @@ class PicoSteamvrProviderTests(unittest.TestCase):
             path = work / 'optics.json'
             path.write_text(json.dumps(optics))
             result = subprocess.run([str(binary), str(path), str(work)],
-                                    capture_output=True, text=True, timeout=10)
+                                    capture_output=True, text=True, timeout=10,
+                                    env={k: v for k, v in os.environ.items()
+                                         if not k.startswith('PICO_STEAMVR_')})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('PICO_STEAMVR_PROVIDER_PASS', result.stdout)

@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 import subprocess
 import struct
 import tempfile
@@ -29,6 +30,8 @@ class PicoControllerMotionProducerTests(unittest.TestCase):
                 self.assertNotEqual(replayed.returncode,0)
                 self.assertNotIn('runtime error:',replayed.stderr)
                 self.assertNotIn('PICO_CONTROLLER_MOTION_REPLAY_PASS',replayed.stdout)
+            if shutil.which('c++') is None:
+                return
             objects=[]
             for unit in units:
                 target=Path(temp)/(unit+'.o')

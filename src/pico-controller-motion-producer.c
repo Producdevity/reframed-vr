@@ -55,7 +55,12 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
         *e = (struct pico_controller_motion_event){.timestamp_us = s->timestamp_us,
             .received_ns = now, .hand = s->hand, .sequence = s->sequence, .flags = s->flags};
         if (!pico_controller_motion_time(&p->clock, s->timestamp_us, now,
-                PICO_CONTROLLER_MOTION_MAX_AGE_NS, &e->time)) return fail(p, -ETIMEDOUT);
+                PICO_CONTROLLER_MOTION_MAX_AGE_NS, &e->time)) {
+            struct ssc_timestamp diagnostic;
+            bool expired = pico_controller_motion_time(&p->clock, s->timestamp_us,
+                now, INT64_MAX, &diagnostic);
+            return fail(p, expired ? -ETIMEDOUT : -EPROTO);
+        }
         if (!pico_controller_motion_values(s, &p->config[s->hand - 1], e->values)) return fail(p, -EPROTO);
         delivered |= 1U << (s->hand - 1);
     }

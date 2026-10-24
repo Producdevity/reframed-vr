@@ -31,17 +31,21 @@ if mode=='exit':raise SystemExit(3)
 path=Path(a.channel);instance=int(a.instance,16)
 with path.open('xb') as output:output.write(struct.pack('<QQ',0x5256504943430001,instance)+bytes(112))
 path.chmod(0o644)
-def refresh_motion(path,generation):
+def refresh_motion(path,generation,initialize=False):
  now=time.monotonic_ns()-1000000
  if mode=='motion-stale':now-=200000000
  empty=mode=='motion-empty'
  header=[0x525650434d430001,instance,int(generation,16),0 if empty else 2,1,
          now if mask&1 and not empty else 0,now if mask&2 and not empty else 0,now]
  if mode=='motion-wrong-generation':header[2]+=1
- with Path(path).open('r+b') as output:output.write(struct.pack('<8Q',*header))
+ with Path(path).open('r+b') as output:
+  if initialize:output.write(struct.pack('<8Q',*header))
+  else:
+   output.seek(24);output.write(struct.pack('<Q',header[3]))
+   output.seek(40);output.write(struct.pack('<3Q',*header[5:]))
 def motion_channel(path,generation):
  with Path(path).open('xb') as output:output.write(bytes(32832))
- Path(path).chmod(0o644);refresh_motion(path,generation)
+ Path(path).chmod(0o644);refresh_motion(path,generation,initialize=True)
 if a.motion_channel:
  mask=int(bool(a.left_motion_config))|int(bool(a.right_motion_config))<<1
  motion_channel(a.motion_channel,a.motion_generation)
