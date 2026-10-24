@@ -277,15 +277,6 @@ Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.
  	if (!syncobj)
  		return -ENOENT;
  
-@@ -333,7 +337,7 @@
- 	 */
- 	if (flags & DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT) {
- 		might_sleep();
--		lockdep_assert_none_held_once();
-+		WARN_ON_ONCE(lockdep_depth(current));
- 	}
- 
- 	*fence = drm_syncobj_fence_get(syncobj);
 @@ -787,7 +791,7 @@
  					    struct drm_syncobj_transfer *args)
  {
@@ -312,15 +303,6 @@ Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.
  	chain = kzalloc(sizeof(struct dma_fence_chain), GFP_KERNEL);
  	if (!chain) {
  		ret = -ENOMEM;
-@@ -902,7 +912,7 @@
- 
- 	if (flags & (DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT |
- 		     DRM_SYNCOBJ_WAIT_FLAGS_WAIT_AVAILABLE))
--		lockdep_assert_none_held_once();
-+		WARN_ON_ONCE(lockdep_depth(current));
- 
- 	points = kmalloc_array(count, sizeof(*points), GFP_KERNEL);
- 	if (points == NULL)
 --- a/include/linux/dma-fence-array.h
 +++ b/include/linux/dma-fence-array.h
 @@ -75,7 +75,7 @@

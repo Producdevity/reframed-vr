@@ -462,7 +462,7 @@ Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.
 +	 */
 +	if (flags & DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT) {
 +		might_sleep();
-+		lockdep_assert_none_held_once();
++		WARN_ON_ONCE(lockdep_depth(current));
 +	}
 +
  	*fence = drm_syncobj_fence_get(syncobj);
@@ -762,7 +762,7 @@ Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.
  
 +	if (flags & (DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT |
 +		     DRM_SYNCOBJ_WAIT_FLAGS_WAIT_AVAILABLE))
-+		lockdep_assert_none_held_once();
++		WARN_ON_ONCE(lockdep_depth(current));
 +
 +	points = kmalloc_array(count, sizeof(*points), GFP_KERNEL);
 +	if (points == NULL)

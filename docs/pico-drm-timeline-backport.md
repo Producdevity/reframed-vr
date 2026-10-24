@@ -236,6 +236,15 @@ cleanup cycles, OR/AND unwrapping, 32-bit wrapping and 8,192-node chain teardown
 also pass. Reference counts inspect the actual retained fence; descriptor
 counts alone would not expose the query leak.
 
+The current runner's `--expect-query-leak` mode explicitly skips the later
+empty-container regression case so it can still exercise this older kernel.
+It requires a `DRM_SYNCOBJ_UNWRAP_EMPTY_SKIPPED_QUERY_BASELINE` marker and does
+not report empty-container acceptance. Normal runs require that case and
+reject the skip marker. If the original compiler image is unavailable,
+`--compiler-image sha256:<digest>` selects an immutable fixture compiler;
+the receipt records it separately from the kernel's original compiler image
+and still verifies all kernel artifacts and cached build inputs.
+
 The corrected canonical QEMU kernel under
 `output/kernel/pico-neo3/qemu-timeline-20261021-v5/` passes the same suite in
 `output/pico-drm-timeline-20261021-v1/vm-final-v1/`. Query references remain
@@ -255,9 +264,23 @@ the patch and checks consecutive empty containers and reference release.
 At review time, the existing QEMU kernel also passed the ioctl suite with the
 shared build cache mounted read-only. The test init installs a SIGALRM handler; a
 separate forced-timeout run verifies its failure marker and power-off as PID 1.
+This was a manual diskless QEMU run, separate from `tools/test-drm-syncobj.py`:
+`output/pr-2-review-20261023-v1/drm-vm/watchdog.c` contains the reduced init that
+arms the real handler for one second and waits without issuing DRM ioctls.
+`watchdog-result.json` in that directory records the exact `compile_command`
+and `qemu_command` arrays; `watchdog-boot.log` records the expected
+`DRM_SYNCOBJ_FAIL watchdog timeout` marker and clean power-off. That expected
+failure is not an ordinary ioctl-suite pass.
 These runs validate the test fixture on the existing kernel, not a boot of the
 newly corrected series. Review evidence is retained in
 `output/pr-2-review-20261023-v1/`.
+
+The 2026-10-24 PR follow-up moves the two 4.19-compatible lockdep diagnostics
+from patch 0013 into 0012, where their callers are introduced. Reversing and
+reapplying the revised series without fuzz leaves all 17 affected final source
+files byte-identical to the compiled physical tree. The current fixture passes
+both the query-leak negative baseline and the complete corrected QEMU suite;
+receipts are `output/pr-2-monitor/drm-query-baseline-v2/` and `drm-corrected/`.
 
 On 2026-10-24, the complete corrected series builds for the physical Pico with
 38 modules and for QEMU with 40 modules. The physical build is

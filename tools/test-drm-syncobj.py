@@ -28,7 +28,7 @@ def run(args):
     if (build.get('status') != 'compiled' or build.get('qemu_transports') is not True or
             build.get('repository') != 'bytedance/neo3-kernel'):
         raise ValueError('Requires a compiled Pico QEMU variant; refuses physical kernels')
-    image = build['container_image']
+    image = args.compiler_image or build['container_image']
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
         raise ValueError('Expected immutable compiler image')
     expected = {entry['path']: entry['sha256'] for entry in build['artifacts']}
@@ -52,8 +52,10 @@ def run(args):
              ROOT / 'tools/test-dma-buf-sync.py', Path(__file__),
              *sorted((ROOT / 'tests/kernel-drm-syncobj').iterdir())]
     pins = {str(p.relative_to(ROOT)): dma.digest(p) for p in paths if p.is_file()}
-    report = {'status': 'started', 'scope': 'core DRM syncobj and software fences, no GPU or panel',
+    report = {'status': 'started', 'scope': ('query-leak negative baseline; excludes empty-container acceptance'
+              if args.expect_query_leak else 'core DRM syncobj and software fences, no GPU or panel'),
               'hardware_verified': False, 'flash_image': False, 'compiler_image': image,
+              'kernel_compiler_image': build['container_image'],
               'kernel_build_sha256': dma.digest(kernel / 'build.json'),
               'kernel_sha256': expected['Image'], 'source_sha256': pins, 'commands': [],
               'expect_query_leak': args.expect_query_leak}
@@ -115,10 +117,15 @@ def run(args):
                  (' reframed.query_leak=expected' if args.expect_query_leak else '')], 'boot.log', 60)
         text = (output / 'boot.log').read_text(errors='replace')
         cases = ['FUTURE_AND_OPAQUE_FD', 'TRANSFER_COMPLETION', 'COUNTERS_AND_CLEANUP',
-                 'WIDTH_AND_RELEASE', 'UNWRAP_EMPTY', 'UNWRAP_AND', 'UNWRAP_OR', 'FIXTURE_UNLOAD', 'ALL']
+                 'WIDTH_AND_RELEASE', 'UNWRAP_AND', 'UNWRAP_OR', 'FIXTURE_UNLOAD', 'ALL']
+        if not args.expect_query_leak:
+            cases.append('UNWRAP_EMPTY')
         cases.append('QUERY_LEAK_REPRODUCED' if args.expect_query_leak else 'QUERY_REFS')
         if any('DRM_SYNCOBJ_' + name + '_PASS' not in text for name in cases):
             raise RuntimeError('Missing syncobj acceptance; inspect boot.log')
+        skipped = 'DRM_SYNCOBJ_UNWRAP_EMPTY_SKIPPED_QUERY_BASELINE' in text
+        if skipped != args.expect_query_leak:
+            raise RuntimeError('Unexpected empty-container coverage; inspect boot.log')
         if ('reboot: Power down' not in text or any(marker in text for marker in
                 ('DRM_SYNCOBJ_FAIL', 'DRM_SYNCOBJ_KERNEL_FAIL', 'WARNING:', 'BUG:', 'Kernel panic', 'Oops:'))):
             raise RuntimeError('Kernel failure or missing clean power-off; inspect boot.log')
@@ -148,6 +155,7 @@ if __name__ == '__main__':
                         help='Negative baseline: require the known owning-reference leak')
     parser.add_argument('--volume', default='reframed-vr-pico-neo3-kernel')
     parser.add_argument('--engine', default=os.environ.get('CONTAINER_ENGINE', 'docker'))
+    parser.add_argument('--compiler-image', help='Immutable sha256 image for building the test fixture; leaves kernel inputs unchanged')
     parser.add_argument('--qemu', default='qemu-system-aarch64')
     parser.add_argument('--accel', choices=('hvf', 'kvm', 'tcg'),
                         default='hvf' if platform.system() == 'Darwin' and platform.machine() == 'arm64' else 'tcg')

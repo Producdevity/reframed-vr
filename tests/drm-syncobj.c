@@ -310,7 +310,8 @@ int main(void)
     CHECK(signal(SIGALRM, timed_out) != SIG_ERR);
     alarm(30);
     int module = open("/drm_syncobj_test.ko", O_RDONLY | O_CLOEXEC);
-    CHECK(module >= 0 && syscall(SYS_finit_module, module, "", 0) == 0);
+    CHECK(module >= 0 && syscall(SYS_finit_module, module,
+          expect_leak ? "query_leak_baseline=1" : "", 0) == 0);
     close(module);
     int drm = -1;
     for (unsigned i = 0; i < 100 && drm < 0; ++i) {

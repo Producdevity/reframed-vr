@@ -254,14 +254,19 @@ out:
     return ret;
 }
 
+static bool query_leak_baseline;
+module_param(query_leak_baseline, bool, 0444);
+
 static int __init test_start(void)
 {
     int ret;
     if (!of_machine_is_compatible("linux,dummy-virt"))
         return -ENODEV;
     ret = sequence_width_and_release();
-    if (!ret)
+    if (!ret && !query_leak_baseline)
         ret = empty_container_iteration();
+    if (!ret && query_leak_baseline)
+        pr_info("DRM_SYNCOBJ_UNWRAP_EMPTY_SKIPPED_QUERY_BASELINE\n");
     if (!ret)
         ret = array_completion(false);
     if (!ret)
