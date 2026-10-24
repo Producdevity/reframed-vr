@@ -78,3 +78,24 @@ disabled. The modifier-enabled branch compiled but was not hardware-tested in
 this change. No extra CPU readback is introduced by forwarding; Steam's current
 software-browser/shared-memory compatibility path remains. See
 [native VR UI setup and acceptance](../../docs/pico-steamvr-ui.md).
+
+## Non-Steam windows without DMA imports
+
+Apply `0003-compose-nonsteam-without-dma.patch` after `0002`; its source and
+binary hashes are `nonsteam_composition_patch` and
+`diagnostic_artifacts.nonsteam_composition_sha256` in the profile. It uses the
+same builder and Meson options.
+
+The connector forces full composition when modifiers are disabled, but an
+explicit non-Steam window overrides that decision. Its individual layers then
+reach a subview presentation path that requires DMA imports and asserts in
+Vulkan-only mode. A native startup reproduced this abort before the Steam main
+panel appeared. The third patch keeps full composition for those windows when
+DMA imports are unavailable, preserving their existing policy when modifiers
+are enabled. This fixes a presentation prerequisite; it does not alter the Pico
+optical calibration.
+
+The rebuilt candidate survived native startup and the three late main/bar API
+probes in `output/pico-optics-validation-20261024-v3/`. Its early pixel captures
+contain only the skybox, so this is startup/API acceptance, not renewed visible
+Steam UI acceptance. See the [rendering and capture guide](../../docs/pico-rendering.md).
