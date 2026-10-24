@@ -194,6 +194,29 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "display-refresh-under-test.h"),
                 "executable_sha256": digest(output / "mesa-display-refresh-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/mesa-display-counter-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-counter-tests.log", timeout=120)
+            report["display_counter_tests"] = {
+                "status": "passed",
+                "scope": "actual WSI counter dispatch; modeled DRM queries and output bounds",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-counter-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-counter-tests.c"),
+                "helpers_sha256": digest(output / "display-counter-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-counter-tests"),
+            }
+
+            run([sys.executable, str(ROOT / "tests/mesa-display-master-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-master-tests.log", timeout=120)
+            report["display_master_tests"] = {
+                "status": "passed",
+                "scope": "actual WSI master reference counting with modeled vendor-kernel permissions",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-master-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-master-tests.c"),
+                "helpers_sha256": digest(output / "display-master-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-master-tests"),
+            }
             run([sys.executable, str(ROOT / "tests/mesa-pico-split-tests.py"),
                  str(source / "src/vulkan/wsi/wsi_display_pico.h"), str(output)],
                 "mesa-pico-split-tests.log", timeout=120)
@@ -276,7 +299,7 @@ def build(profile, driver="lavapipe"):
             (output / "dynamic-dependencies.txt").write_text(dynamic)
             report["kgsl_drm_bridge_compiled"] = True
             report["kgsl_display_compiled"] = True
-        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
+        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "display-counter-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
         for name in (*names, "vulkan-external-sync", "vulkan-interop", *evidence):
             path = output / name
             report["artifacts"].append({"path": name, "bytes": path.stat().st_size, "sha256": digest(path)})

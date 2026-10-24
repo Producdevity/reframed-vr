@@ -1,0 +1,42 @@
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -1850,16 +1850,21 @@
+ 		commit->fifo = false;
+ 	}
+ 
+-	if ( gamescope::OwningRc<CVulkanTexture> pTexture = s_BufferMemos.LookupVulkanTexture( buf ) )
+-	{
+-		// Going from OwningRc -> Rc now.
+-		commit->vulkanTex = pTexture;
+-		return commit;
+-	}
+-
+ 	struct wlr_dmabuf_attributes dmabuf = {0};
++	const bool bDmabuf = wlr_buffer_get_dmabuf( buf, &dmabuf );
++	// Shared-memory uploads are snapshots; reusing a wl_buffer can change its pixels.
++	if ( bDmabuf )
++	{
++		if ( gamescope::OwningRc<CVulkanTexture> pTexture = s_BufferMemos.LookupVulkanTexture( buf ) )
++		{
++			// Going from OwningRc -> Rc now.
++			commit->vulkanTex = pTexture;
++			return commit;
++		}
++	}
++
+ 	gamescope::OwningRc<gamescope::IBackendFb> pBackendFb;
+-	if ( wlr_buffer_get_dmabuf( buf, &dmabuf ) )
++	if ( bDmabuf )
+ 	{
+ 		pBackendFb = GetBackend()->ImportDmabufToBackend( &dmabuf );
+ 	}
+@@ -1873,7 +1878,8 @@
+ 
+ 	commit->vulkanTex = pOwnedTexture;
+ 
+-	s_BufferMemos.MemoizeBuffer( buf, std::move( pOwnedTexture ) );
++	if ( bDmabuf )
++		s_BufferMemos.MemoizeBuffer( buf, std::move( pOwnedTexture ) );
+ 
+ 	return commit;
+ }

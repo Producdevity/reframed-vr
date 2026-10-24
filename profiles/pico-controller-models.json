@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/immersive-web/webxr-input-profiles",
+  "revision": "f4992299601614adbfefd398dc8e281556bb7444",
+  "directory": "packages/assets/profiles/pico-neo3",
+  "license": "MIT",
+  "sha256": {
+    "left.glb": "68443598d99f3b7273d4f5c4eeeaa7fa47491d7406b8cb3a98ffb1db9b254022",
+    "right.glb": "42191f7075c61d7b338b4c9c4618c3e765519798fee12c29b8e79db4b6bab0a7"
+  }
+}

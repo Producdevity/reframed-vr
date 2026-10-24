@@ -28,7 +28,8 @@ int remote_handle64_open(const char *name, remote_handle64 *handle) {
             *handle = 258;
         return mode_error;
     }
-    assert(!strcmp(name, "sns_low_lat_stream" SDSP_DOMAIN));
+    assert(!strcmp(name, "file:///libsns_low_lat_stream_skel.so?"
+                         "sns_low_lat_stream_skel_invoke" SDSP_DOMAIN));
     record('O');
     if (!open_error)
         *handle = UINT64_C(0x100000001);

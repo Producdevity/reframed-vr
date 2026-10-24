@@ -1,0 +1,633 @@
+Subject: [Pico Linux] Add 64-bit fence chains with explicit legacy wrapping
+
+Port Linux b312d8ca3a7c, 5e498abf1485 and 078dec3326e2 prerequisites.
+Import dma-fence-chain.c/h from Linux v5.4.302 (9e3157c56ec7), including
+iterative chain release and its stable lifetime fixes. Existing KGSL and
+software fences retain 32-bit wrap comparison unless ops explicitly opt in.
+Adapt the vendor trace format to the widened counter; rebuild all modules.
+Upstream authors and licenses are retained. See docs/pico-drm-timeline-backport.md.
+
+--- a/drivers/dma-buf/Makefile
++++ b/drivers/dma-buf/Makefile
+@@ -1,4 +1,4 @@
+-obj-y := dma-buf.o dma-fence.o dma-fence-array.o dma-fence-merge.o reservation.o seqno-fence.o
++obj-y := dma-buf.o dma-fence.o dma-fence-array.o dma-fence-merge.o dma-fence-chain.o reservation.o seqno-fence.o
+ obj-$(CONFIG_SYNC_FILE)		+= sync_file.o
+ obj-$(CONFIG_SW_SYNC)		+= sw_sync.o sync_debug.o
+ obj-$(CONFIG_DEBUG_DMA_BUF_REF)	+= dma-buf-ref.o
+--- /dev/null
++++ b/drivers/dma-buf/dma-fence-chain.c
+@@ -0,0 +1,256 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * fence-chain: chain fences together in a timeline
++ *
++ * Copyright (C) 2018 Advanced Micro Devices, Inc.
++ * Authors:
++ *	Christian König <christian.koenig@amd.com>
++ */
++
++#include <linux/dma-fence-chain.h>
++
++static bool dma_fence_chain_enable_signaling(struct dma_fence *fence);
++
++/**
++ * dma_fence_chain_get_prev - use RCU to get a reference to the previous fence
++ * @chain: chain node to get the previous node from
++ *
++ * Use dma_fence_get_rcu_safe to get a reference to the previous fence of the
++ * chain node.
++ */
++static struct dma_fence *dma_fence_chain_get_prev(struct dma_fence_chain *chain)
++{
++	struct dma_fence *prev;
++
++	rcu_read_lock();
++	prev = dma_fence_get_rcu_safe(&chain->prev);
++	rcu_read_unlock();
++	return prev;
++}
++
++/**
++ * dma_fence_chain_walk - chain walking function
++ * @fence: current chain node
++ *
++ * Walk the chain to the next node. Returns the next fence or NULL if we are at
++ * the end of the chain. Garbage collects chain nodes which are already
++ * signaled.
++ */
++struct dma_fence *dma_fence_chain_walk(struct dma_fence *fence)
++{
++	struct dma_fence_chain *chain, *prev_chain;
++	struct dma_fence *prev, *replacement, *tmp;
++
++	chain = to_dma_fence_chain(fence);
++	if (!chain) {
++		dma_fence_put(fence);
++		return NULL;
++	}
++
++	while ((prev = dma_fence_chain_get_prev(chain))) {
++
++		prev_chain = to_dma_fence_chain(prev);
++		if (prev_chain) {
++			if (!dma_fence_is_signaled(prev_chain->fence))
++				break;
++
++			replacement = dma_fence_chain_get_prev(prev_chain);
++		} else {
++			if (!dma_fence_is_signaled(prev))
++				break;
++
++			replacement = NULL;
++		}
++
++		tmp = cmpxchg((void **)&chain->prev, (void *)prev, (void *)replacement);
++		if (tmp == prev)
++			dma_fence_put(tmp);
++		else
++			dma_fence_put(replacement);
++		dma_fence_put(prev);
++	}
++
++	dma_fence_put(fence);
++	return prev;
++}
++EXPORT_SYMBOL(dma_fence_chain_walk);
++
++/**
++ * dma_fence_chain_find_seqno - find fence chain node by seqno
++ * @pfence: pointer to the chain node where to start
++ * @seqno: the sequence number to search for
++ *
++ * Advance the fence pointer to the chain node which will signal this sequence
++ * number. If no sequence number is provided then this is a no-op.
++ *
++ * Returns EINVAL if the fence is not a chain node or the sequence number has
++ * not yet advanced far enough.
++ */
++int dma_fence_chain_find_seqno(struct dma_fence **pfence, uint64_t seqno)
++{
++	struct dma_fence_chain *chain;
++
++	if (!seqno)
++		return 0;
++
++	chain = to_dma_fence_chain(*pfence);
++	if (!chain || chain->base.seqno < seqno)
++		return -EINVAL;
++
++	dma_fence_chain_for_each(*pfence, &chain->base) {
++		if ((*pfence)->context != chain->base.context ||
++		    to_dma_fence_chain(*pfence)->prev_seqno < seqno)
++			break;
++	}
++	dma_fence_put(&chain->base);
++
++	return 0;
++}
++EXPORT_SYMBOL(dma_fence_chain_find_seqno);
++
++static const char *dma_fence_chain_get_driver_name(struct dma_fence *fence)
++{
++        return "dma_fence_chain";
++}
++
++static const char *dma_fence_chain_get_timeline_name(struct dma_fence *fence)
++{
++        return "unbound";
++}
++
++static void dma_fence_chain_irq_work(struct irq_work *work)
++{
++	struct dma_fence_chain *chain;
++
++	chain = container_of(work, typeof(*chain), work);
++
++	/* Try to rearm the callback */
++	if (!dma_fence_chain_enable_signaling(&chain->base))
++		/* Ok, we are done. No more unsignaled fences left */
++		dma_fence_signal(&chain->base);
++	dma_fence_put(&chain->base);
++}
++
++static void dma_fence_chain_cb(struct dma_fence *f, struct dma_fence_cb *cb)
++{
++	struct dma_fence_chain *chain;
++
++	chain = container_of(cb, typeof(*chain), cb);
++	irq_work_queue(&chain->work);
++	dma_fence_put(f);
++}
++
++static bool dma_fence_chain_enable_signaling(struct dma_fence *fence)
++{
++	struct dma_fence_chain *head = to_dma_fence_chain(fence);
++
++	dma_fence_get(&head->base);
++	dma_fence_chain_for_each(fence, &head->base) {
++		struct dma_fence_chain *chain = to_dma_fence_chain(fence);
++		struct dma_fence *f = chain ? chain->fence : fence;
++
++		dma_fence_get(f);
++		if (!dma_fence_add_callback(f, &head->cb, dma_fence_chain_cb)) {
++			dma_fence_put(fence);
++			return true;
++		}
++		dma_fence_put(f);
++	}
++	dma_fence_put(&head->base);
++	return false;
++}
++
++static bool dma_fence_chain_signaled(struct dma_fence *fence)
++{
++	dma_fence_chain_for_each(fence, fence) {
++		struct dma_fence_chain *chain = to_dma_fence_chain(fence);
++		struct dma_fence *f = chain ? chain->fence : fence;
++
++		if (!dma_fence_is_signaled(f)) {
++			dma_fence_put(fence);
++			return false;
++		}
++	}
++
++	return true;
++}
++
++static void dma_fence_chain_release(struct dma_fence *fence)
++{
++	struct dma_fence_chain *chain = to_dma_fence_chain(fence);
++	struct dma_fence *prev;
++
++	/* Manually unlink the chain as much as possible to avoid recursion
++	 * and potential stack overflow.
++	 */
++	while ((prev = rcu_dereference_protected(chain->prev, true))) {
++		struct dma_fence_chain *prev_chain;
++
++		if (kref_read(&prev->refcount) > 1)
++		       break;
++
++		prev_chain = to_dma_fence_chain(prev);
++		if (!prev_chain)
++			break;
++
++		/* No need for atomic operations since we hold the last
++		 * reference to prev_chain.
++		 */
++		chain->prev = prev_chain->prev;
++		RCU_INIT_POINTER(prev_chain->prev, NULL);
++		dma_fence_put(prev);
++	}
++	dma_fence_put(prev);
++
++	dma_fence_put(chain->fence);
++	dma_fence_free(fence);
++}
++
++const struct dma_fence_ops dma_fence_chain_ops = {
++	.use_64bit_seqno = true,
++	.get_driver_name = dma_fence_chain_get_driver_name,
++	.get_timeline_name = dma_fence_chain_get_timeline_name,
++	.enable_signaling = dma_fence_chain_enable_signaling,
++	.signaled = dma_fence_chain_signaled,
++	.release = dma_fence_chain_release,
++};
++EXPORT_SYMBOL(dma_fence_chain_ops);
++
++/**
++ * dma_fence_chain_init - initialize a fence chain
++ * @chain: the chain node to initialize
++ * @prev: the previous fence
++ * @fence: the current fence
++ *
++ * Initialize a new chain node and either start a new chain or add the node to
++ * the existing chain of the previous fence.
++ */
++void dma_fence_chain_init(struct dma_fence_chain *chain,
++			  struct dma_fence *prev,
++			  struct dma_fence *fence,
++			  uint64_t seqno)
++{
++	struct dma_fence_chain *prev_chain = to_dma_fence_chain(prev);
++	uint64_t context;
++
++	spin_lock_init(&chain->lock);
++	rcu_assign_pointer(chain->prev, prev);
++	chain->fence = fence;
++	chain->prev_seqno = 0;
++	init_irq_work(&chain->work, dma_fence_chain_irq_work);
++
++	/* Try to reuse the context of the previous chain node. */
++	if (prev_chain && __dma_fence_is_later(seqno, prev->seqno, prev->ops)) {
++		context = prev->context;
++		chain->prev_seqno = prev->seqno;
++	} else {
++		context = dma_fence_context_alloc(1);
++		/* Make sure that we always have a valid sequence number. */
++		if (prev_chain)
++			seqno = max(prev->seqno, seqno);
++	}
++
++	dma_fence_init(&chain->base, &dma_fence_chain_ops,
++		       &chain->lock, context, seqno);
++}
++EXPORT_SYMBOL(dma_fence_chain_init);
+--- a/drivers/dma-buf/dma-fence.c
++++ b/drivers/dma-buf/dma-fence.c
+@@ -30,13 +30,16 @@
+ EXPORT_TRACEPOINT_SYMBOL(dma_fence_emit);
+ EXPORT_TRACEPOINT_SYMBOL(dma_fence_enable_signal);
+ 
++static DEFINE_SPINLOCK(dma_fence_stub_lock);
++static struct dma_fence dma_fence_stub;
++
+ /*
+  * fence context counter: each execution context should have its own
+  * fence context, this allows checking if fences belong to the same
+  * context or not. One device can have multiple separate contexts,
+  * and they're used if some engine can run independently of another.
+  */
+-static atomic64_t dma_fence_context_counter = ATOMIC64_INIT(0);
++static atomic64_t dma_fence_context_counter = ATOMIC64_INIT(1);
+ 
+ /**
+  * DOC: DMA fences overview
+@@ -67,6 +70,37 @@
+  *   implicit fences are stored in &struct reservation_object through the
+  *   &dma_buf.resv pointer.
+  */
++
++static const char *dma_fence_stub_get_name(struct dma_fence *fence)
++{
++        return "stub";
++}
++
++static const struct dma_fence_ops dma_fence_stub_ops = {
++	.get_driver_name = dma_fence_stub_get_name,
++	.get_timeline_name = dma_fence_stub_get_name,
++};
++
++/**
++ * dma_fence_get_stub - return a signaled fence
++ *
++ * Return a stub fence which is already signaled.
++ */
++struct dma_fence *dma_fence_get_stub(void)
++{
++	spin_lock(&dma_fence_stub_lock);
++	if (!dma_fence_stub.ops) {
++		dma_fence_init(&dma_fence_stub,
++			       &dma_fence_stub_ops,
++			       &dma_fence_stub_lock,
++			       0, 0);
++		dma_fence_signal_locked(&dma_fence_stub);
++	}
++	spin_unlock(&dma_fence_stub_lock);
++
++	return dma_fence_get(&dma_fence_stub);
++}
++EXPORT_SYMBOL(dma_fence_get_stub);
+ 
+ /**
+  * dma_fence_context_alloc - allocate an array of fence contexts
+@@ -615,7 +649,7 @@
+  */
+ void
+ dma_fence_init(struct dma_fence *fence, const struct dma_fence_ops *ops,
+-	       spinlock_t *lock, u64 context, unsigned seqno)
++	       spinlock_t *lock, u64 context, u64 seqno)
+ {
+ 	BUG_ON(!lock);
+ 	BUG_ON(!ops || !ops->get_driver_name || !ops->get_timeline_name);
+--- a/drivers/dma-buf/sw_sync.c
++++ b/drivers/dma-buf/sw_sync.c
+@@ -158,7 +158,7 @@
+ {
+ 	struct sync_timeline *parent = dma_fence_parent(fence);
+ 
+-	return !__dma_fence_is_later(fence->seqno, parent->value);
++	return !__dma_fence_is_later(fence->seqno, parent->value, fence->ops);
+ }
+ 
+ static bool timeline_fence_enable_signaling(struct dma_fence *fence)
+@@ -169,7 +169,7 @@
+ static void timeline_fence_value_str(struct dma_fence *fence,
+ 				    char *str, int size)
+ {
+-	snprintf(str, size, "%d", fence->seqno);
++	snprintf(str, size, "%lld", fence->seqno);
+ }
+ 
+ static void timeline_fence_timeline_value_str(struct dma_fence *fence,
+--- a/drivers/dma-buf/sync_file.c
++++ b/drivers/dma-buf/sync_file.c
+@@ -144,7 +144,7 @@
+ 	} else {
+ 		struct dma_fence *fence = sync_file->fence;
+ 
+-		snprintf(buf, len, "%s-%s%llu-%d",
++		snprintf(buf, len, "%s-%s%llu-%lld",
+ 			 fence->ops->get_driver_name(fence),
+ 			 fence->ops->get_timeline_name(fence),
+ 			 fence->context,
+@@ -258,7 +258,8 @@
+ 
+ 			i_b++;
+ 		} else {
+-			if (pt_a->seqno - pt_b->seqno <= INT_MAX)
++			if (__dma_fence_is_later(pt_a->seqno, pt_b->seqno,
++						 pt_a->ops))
+ 				add_fence(fences, &i, pt_a);
+ 			else
+ 				add_fence(fences, &i, pt_b);
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_sa.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_sa.c
+@@ -388,7 +388,7 @@
+ 			   soffset, eoffset, eoffset - soffset);
+ 
+ 		if (i->fence)
+-			seq_printf(m, " protected by 0x%08x on context %llu",
++			seq_printf(m, " protected by 0x%016llx on context %llu",
+ 				   i->fence->seqno, i->fence->context);
+ 
+ 		seq_printf(m, "\n");
+--- a/drivers/gpu/drm/i915/i915_sw_fence.c
++++ b/drivers/gpu/drm/i915/i915_sw_fence.c
+@@ -393,7 +393,7 @@
+ 	if (!fence)
+ 		return;
+ 
+-	pr_warn("asynchronous wait on fence %s:%s:%x timed out\n",
++	pr_warn("asynchronous wait on fence %s:%s:%llx timed out\n",
+ 		cb->dma->ops->get_driver_name(cb->dma),
+ 		cb->dma->ops->get_timeline_name(cb->dma),
+ 		cb->dma->seqno);
+--- a/drivers/gpu/drm/i915/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/intel_engine_cs.c
+@@ -1243,7 +1243,7 @@
+ 
+ 	x = print_sched_attr(rq->i915, &rq->sched.attr, buf, x, sizeof(buf));
+ 
+-	drm_printf(m, "%s%x%s [%llx:%x]%s @ %dms: %s\n",
++	drm_printf(m, "%s%x%s [%llx:%llx]%s @ %dms: %s\n",
+ 		   prefix,
+ 		   rq->global_seqno,
+ 		   i915_request_completed(rq) ? "!" : "",
+--- a/drivers/gpu/drm/vgem/vgem_fence.c
++++ b/drivers/gpu/drm/vgem/vgem_fence.c
+@@ -63,13 +63,13 @@
+ 
+ static void vgem_fence_value_str(struct dma_fence *fence, char *str, int size)
+ {
+-	snprintf(str, size, "%u", fence->seqno);
++	snprintf(str, size, "%llu", fence->seqno);
+ }
+ 
+ static void vgem_fence_timeline_value_str(struct dma_fence *fence, char *str,
+ 					  int size)
+ {
+-	snprintf(str, size, "%u",
++	snprintf(str, size, "%llu",
+ 		 dma_fence_is_signaled(fence) ? fence->seqno : 0);
+ }
+ 
+--- /dev/null
++++ b/include/linux/dma-fence-chain.h
+@@ -0,0 +1,73 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * fence-chain: chain fences together in a timeline
++ *
++ * Copyright (C) 2018 Advanced Micro Devices, Inc.
++ * Authors:
++ *	Christian König <christian.koenig@amd.com>
++ */
++
++#ifndef __LINUX_DMA_FENCE_CHAIN_H
++#define __LINUX_DMA_FENCE_CHAIN_H
++
++#include <linux/dma-fence.h>
++#include <linux/irq_work.h>
++
++/**
++ * struct dma_fence_chain - fence to represent an node of a fence chain
++ * @base: fence base class
++ * @lock: spinlock for fence handling
++ * @prev: previous fence of the chain
++ * @prev_seqno: original previous seqno before garbage collection
++ * @fence: encapsulated fence
++ * @cb: callback structure for signaling
++ * @work: irq work item for signaling
++ */
++struct dma_fence_chain {
++	struct dma_fence base;
++	spinlock_t lock;
++	struct dma_fence __rcu *prev;
++	u64 prev_seqno;
++	struct dma_fence *fence;
++	struct dma_fence_cb cb;
++	struct irq_work work;
++};
++
++extern const struct dma_fence_ops dma_fence_chain_ops;
++
++/**
++ * to_dma_fence_chain - cast a fence to a dma_fence_chain
++ * @fence: fence to cast to a dma_fence_array
++ *
++ * Returns NULL if the fence is not a dma_fence_chain,
++ * or the dma_fence_chain otherwise.
++ */
++static inline struct dma_fence_chain *
++to_dma_fence_chain(struct dma_fence *fence)
++{
++	if (!fence || fence->ops != &dma_fence_chain_ops)
++		return NULL;
++
++	return container_of(fence, struct dma_fence_chain, base);
++}
++
++/**
++ * dma_fence_chain_for_each - iterate over all fences in chain
++ * @iter: current fence
++ * @head: starting point
++ *
++ * Iterate over all fences in the chain. We keep a reference to the current
++ * fence while inside the loop which must be dropped when breaking out.
++ */
++#define dma_fence_chain_for_each(iter, head)	\
++	for (iter = dma_fence_get(head); iter; \
++	     iter = dma_fence_chain_walk(iter))
++
++struct dma_fence *dma_fence_chain_walk(struct dma_fence *fence);
++int dma_fence_chain_find_seqno(struct dma_fence **pfence, uint64_t seqno);
++void dma_fence_chain_init(struct dma_fence_chain *chain,
++			  struct dma_fence *prev,
++			  struct dma_fence *fence,
++			  uint64_t seqno);
++
++#endif /* __LINUX_DMA_FENCE_CHAIN_H */
+--- a/include/linux/dma-fence.h
++++ b/include/linux/dma-fence.h
+@@ -77,7 +77,7 @@
+ 	struct list_head cb_list;
+ 	spinlock_t *lock;
+ 	u64 context;
+-	unsigned seqno;
++	u64 seqno;
+ 	unsigned long flags;
+ 	ktime_t timestamp;
+ 	int error;
+@@ -111,6 +111,14 @@
+  *
+  */
+ struct dma_fence_ops {
++	/**
++	 * @use_64bit_seqno:
++	 *
++	 * True if this dma_fence implementation uses 64bit seqno, false
++	 * otherwise.
++	 */
++	bool use_64bit_seqno;
++
+ 	/**
+ 	 * @get_driver_name:
+ 	 *
+@@ -244,7 +252,7 @@
+ };
+ 
+ void dma_fence_init(struct dma_fence *fence, const struct dma_fence_ops *ops,
+-		    spinlock_t *lock, u64 context, unsigned seqno);
++		    spinlock_t *lock, u64 context, u64 seqno);
+ 
+ void dma_fence_release(struct kref *kref);
+ void dma_fence_free(struct dma_fence *fence);
+@@ -410,13 +418,22 @@
+  * __dma_fence_is_later - return if f1 is chronologically later than f2
+  * @f1: the first fence's seqno
+  * @f2: the second fence's seqno from the same context
++ * @ops: dma_fence_ops associated with the seqno
+  *
+  * Returns true if f1 is chronologically later than f2. Both fences must be
+  * from the same context, since a seqno is not common across contexts.
+  */
+-static inline bool __dma_fence_is_later(u32 f1, u32 f2)
+-{
+-	return (int)(f1 - f2) > 0;
++static inline bool __dma_fence_is_later(u64 f1, u64 f2,
++					const struct dma_fence_ops *ops)
++{
++	/* This is for backward compatibility with drivers which can only handle
++	 * 32bit sequence numbers. Use a 64bit compare when the driver says to
++	 * do so.
++	 */
++	if (ops->use_64bit_seqno)
++		return f1 > f2;
++
++	return (int)(lower_32_bits(f1) - lower_32_bits(f2)) > 0;
+ }
+ 
+ /**
+@@ -433,7 +450,7 @@
+ 	if (WARN_ON(f1->context != f2->context))
+ 		return false;
+ 
+-	return __dma_fence_is_later(f1->seqno, f2->seqno);
++	return __dma_fence_is_later(f1->seqno, f2->seqno, f1->ops);
+ }
+ 
+ /**
+@@ -541,27 +558,28 @@
+ 	return ret < 0 ? ret : 0;
+ }
+ 
++struct dma_fence *dma_fence_get_stub(void);
+ u64 dma_fence_context_alloc(unsigned num);
+ 
+ #define DMA_FENCE_TRACE(f, fmt, args...) \
+ 	do {								\
+ 		struct dma_fence *__ff = (f);				\
+ 		if (IS_ENABLED(CONFIG_DMA_FENCE_TRACE))			\
+-			pr_info("f %llu#%u: " fmt,			\
++			pr_info("f %llu#%llu: " fmt,			\
+ 				__ff->context, __ff->seqno, ##args);	\
+ 	} while (0)
+ 
+ #define DMA_FENCE_WARN(f, fmt, args...) \
+ 	do {								\
+ 		struct dma_fence *__ff = (f);				\
+-		pr_warn("f %llu#%u: " fmt, __ff->context, __ff->seqno,	\
++		pr_warn("f %llu#%llu: " fmt, __ff->context, __ff->seqno,\
+ 			 ##args);					\
+ 	} while (0)
+ 
+ #define DMA_FENCE_ERR(f, fmt, args...) \
+ 	do {								\
+ 		struct dma_fence *__ff = (f);				\
+-		pr_err("f %llu#%u: " fmt, __ff->context, __ff->seqno,	\
++		pr_err("f %llu#%llu: " fmt, __ff->context, __ff->seqno,	\
+ 			##args);					\
+ 	} while (0)
+ 
+--- a/include/trace/events/dma_fence.h
++++ b/include/trace/events/dma_fence.h
+@@ -19,7 +19,7 @@
+ 		__string(driver, fence->ops->get_driver_name(fence))
+ 		__string(timeline, fence->ops->get_timeline_name(fence))
+ 		__field(unsigned int, context)
+-		__field(unsigned int, seqno)
++		__field(u64, seqno)
+ 	),
+ 
+ 	TP_fast_assign(
+@@ -29,7 +29,7 @@
+ 		__entry->seqno = fence->seqno;
+ 	),
+ 
+-	TP_printk("driver=%s timeline=%s context=%u seqno=%u",
++	TP_printk("driver=%s timeline=%s context=%u seqno=%llu",
+ 		  __get_str(driver), __get_str(timeline), __entry->context,
+ 		  __entry->seqno)
+ );

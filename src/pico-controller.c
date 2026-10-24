@@ -163,6 +163,7 @@ bool pico_controller_decode_imu(const void *record, size_t length, unsigned mcu_
         sample->timestamp_us = timestamp;
         sample->hand = mcu_type == 2 ? 2 - slot : (data[7] & 0x40 ? 1 : 2);
         sample->sequence = raw[22];
+        sample->flags = data[86 + slot];
         for (unsigned i = 0; i < 3; i++) {
             sample->gyroscope[i] = read_i16(raw + i * 2);
             sample->acceleration[i] = read_i16(raw + 6 + i * 2);

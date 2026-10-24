@@ -1,0 +1,161 @@
+{
+  "controller_type": "reframed_pico_neo3",
+  "name": "Neo3 digital legacy controls",
+  "description": "Digital buttons and touches; analog axes, haptics and tracked controller poses are not yet available.",
+  "bindings": {
+    "/actions/legacy": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/system",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_system_press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/application_menu",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_applicationmenu_press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/x",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_a_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/left_a_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/y",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_applicationmenu_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/left_applicationmenu_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_grip_press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/joystick",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_axis0_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/left_axis0_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/left_axis1_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/left_axis1_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/system",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_system_press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/application_menu",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_applicationmenu_press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_a_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/right_a_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_applicationmenu_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/right_applicationmenu_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_grip_press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/joystick",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_axis0_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/right_axis0_touch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/right_axis1_press"
+            },
+            "touch": {
+              "output": "/actions/legacy/in/right_axis1_touch"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

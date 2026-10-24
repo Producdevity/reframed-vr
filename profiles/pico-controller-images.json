@@ -1,0 +1,22 @@
+{
+  "sdk": {
+    "filename": "libpico_controller_tracking.pxr.so",
+    "sha256": "9b9ba5484fc5df8f629fff0f9a1d5b130ae4929860252429614dad64c6a45c4a",
+    "build_id": "3d8de3cf7520196907de3a8076f076212bcda146",
+    "reported_opencv": "3.4.0-2-g0e9d865b79-dirty",
+    "device_build": "Pico Neo3 Pro Eye 5.8.4.0 b1977"
+  },
+  "opencv": {
+    "repository": "https://github.com/opencv/opencv",
+    "commit": "6d4f66472e14b29b8e1623859cfebfdc67f677c3",
+    "archive_sha256": "d825d3404aabd1e8582e6d126ee01241dc8e7eee35fea85910526a35d163a232",
+    "license_sha256": "e974db937899a2505f0eb43ece9d2f2eb36e8580ad88785e3ffac0d697ebaf5d",
+    "exact_vendor_source_match": false
+  },
+  "ndk_revision": "27.1.12297006",
+  "android_api": 29,
+  "camera_count": 4,
+  "width": 640,
+  "height": 480,
+  "pool_sets": 4
+}

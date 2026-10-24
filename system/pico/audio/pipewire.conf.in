@@ -1,0 +1,54 @@
+context.properties = {
+    core.daemon = true
+    core.name = pipewire-0
+    clock.power-of-two-quantum = false
+    default.clock.rate = 48000
+    default.clock.allowed-rates = [ 48000 ]
+    default.clock.quantum = 600
+    default.clock.min-quantum = 600
+    default.clock.max-quantum = 600
+}
+context.spa-libs = {
+    support.* = support/libspa-support
+    audio.convert.* = audioconvert/libspa-audioconvert
+    api.alsa.* = alsa/libspa-alsa
+}
+context.modules = [
+    { name = libpipewire-module-protocol-native }
+    { name = libpipewire-module-access args = { access.legacy = true } }
+    { name = libpipewire-module-client-node }
+    { name = libpipewire-module-client-device }
+    { name = libpipewire-module-adapter }
+    { name = libpipewire-module-link-factory }
+    { name = libpipewire-module-spa-node-factory }
+    { name = libpipewire-module-metadata }
+    { name = libpipewire-module-protocol-pulse
+      args = { server.address = [ "unix:native" ] pulse.allow-module-loading = false }
+    }
+]
+context.objects = [
+    { factory = spa-node-factory
+      args = { factory.name = support.node.driver node.name = Dummy-Driver priority.driver = 20000 }
+    }
+    { factory = adapter
+      args = {
+          factory.name = api.alsa.pcm.sink
+          node.name = ReframedPicoSpeaker
+          node.description = "Pico Neo3 Speakers"
+          media.class = Audio/Sink
+          audio.channels = 2
+          audio.rate = 48000
+          audio.format = S16LE
+          audio.position = [ FL FR ]
+          api.alsa.path = @PLAYBACK_PCM@
+          api.alsa.period-size = 600
+          api.alsa.period-num = 4
+          api.alsa.headroom = 1200
+          api.alsa.disable-mmap = false
+          api.alsa.soft-mixer = true
+          api.alsa.disable-mixer-path = true
+          api.alsa.use-chmap = false
+          adapter.auto-port-config = { mode = dsp monitor = false position = preserve }
+      }
+    }
+]

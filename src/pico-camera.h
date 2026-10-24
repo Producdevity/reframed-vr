@@ -47,6 +47,20 @@ struct pico_camera_frame_set {
     int64_t first_ns, last_ns;
 };
 
+struct pico_camera_frame_sequence {
+    uint64_t frame_number;
+    unsigned mask;
+    bool synchronized;
+};
+
+/* A zero-initialized, single-owner four-camera sequence may join mid-set.
+ * Skip incomplete startup sets until the first complete set; thereafter reject
+ * missing, duplicate or regressing frames. Returns 0 while collecting, 1 for a
+ * complete set, -1 on error (state unchanged). Owns no pixels and establishes
+ * neither timestamp skew nor pixel lifetime. Reset only for a new stream. */
+int pico_camera_frame_sequence_push(struct pico_camera_frame_sequence *sequence,
+                                     unsigned camera, uint64_t frame_number);
+
 /* Require two or four complete head images in the explicitly configured camera
  * order, within the selected skew (at most stock's 100 us bound). No missing
  * camera, zero capture time or controller frame is admitted. All frames must

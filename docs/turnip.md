@@ -185,6 +185,60 @@ interrupts without vblank-fence timeouts. Both runs still average about 80
 completions/s. This is a startup correction, separate from patch 0013's timeout
 result fix, and it does not establish clean physical optics or a runtime winner.
 
+### Frame compositor counter timing
+
+Patch 0015 implements a process-scoped compatibility ABI for the retained Frame
+compositor. Its `vkGetSwapchainCounterEXT` call uses private counter `0x7ffffffd`
+and expects two `uint64_t` outputs: vblank sequence and CLOCK_MONOTONIC time in
+nanoseconds. Mesa 26.1.8 ignored the counter argument and returned success after
+writing only the sequence. The compositor's zero-initialized timestamp stayed
+zero, producing a vsync age equal to monotonic uptime.
+
+The contract is verified independently in Valve's retained official
+`deckard-mesa-linux-aarch64-26.3.0_devel+gite07916b4-5-aarch64` package. Its
+`wsi_GetSwapchainCounterEXT` compares the private value and calls
+`drmCrtcGetSequence(fd, crtc, out, out + 1)`. Package SHA-256 is
+`c30eb810cf537e839f5b7ff66b1088e3c29cf67e17bcbf44856b3ac38064b7cb`;
+the reference `libvulkan_freedreno.so` has SHA-256
+`6bed18a0a9d59fc0132766947f1c2657b50c4188776f718cfdf723cf8dd7b4ee`.
+This patch independently implements the observed Valve ABI; it does not import
+Frame optical calibration or add a public Vulkan enum.
+
+Set `MESA_VK_WSI_FRAME_COUNTER_TIMING=1` only for this compositor process.
+The private path returns both values from one real DRM query. Inactive display,
+query failure or a missing timestamp returns an error without changing output.
+Other unsupported counters are rejected. Public one-word vblank queries retain
+their existing behavior even with the option enabled; there is no change to
+query waits, GPU synchronization or connector timestamp caching.
+
+`tests/mesa-display-counter-tests.py` extracts the actual patched function and
+checks dispatch, failure output preservation and output bounds with ASan/UBSan.
+The original Mesa function fails the unsupported-counter control; a guard-only
+implementation fails the paired-output control. The complete ARM64 build passes
+this suite, the other eleven helper suites and all five Freedreno tests.
+Native Pico GPU interop and all four binary/timeline OPAQUE_FD buffer-sharing
+cases pass. Two corrected Facet captures match their reported kernel vblank
+timestamp within 9 microseconds in the sampled checks. Some client notifications
+remain delayed; this is not proof of sustained 120 FPS or clean physical optics.
+See the [full verification](pico-steamvr-verification.md#frame-counter-abi-and-pose-read-order).
+
+### Presentation completion tracing
+
+Patch 0016 adds opt-in `MESA_VK_WSI_PRESENT_TRACE=1` diagnostics for display
+queueing, atomic commits, page-flip completion and both phases of present waits.
+Each line records monotonic time, thread, swapchain, image and present ID, plus
+the relevant flags, completed ID or result. It preserves `errno` and ignores
+write errors; wait and completion semantics are unchanged. Leave it disabled
+for normal operation. Enabled trace I/O adds overhead and is not a performance
+optimization.
+
+The isolated ARM64 build under
+`output/mesa/pico-present-trace-20261023-v1/` passes all twelve helper suites and
+five Freedreno tests. Its library SHA-256 is
+`85129536b1b05de22544f303a6799b5e63666f08491981aa449e52062998440b`.
+The native Pico combined trial retains 106,890 correlated events. See the
+[present-ID analysis](pico-steamvr-verification.md#present-id-correlation).
+
 ## Correction to earlier build evidence
 
 The September 10 `output/mesa/turnip-drm-v5/` driver compiled with

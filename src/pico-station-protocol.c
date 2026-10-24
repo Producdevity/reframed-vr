@@ -56,6 +56,12 @@ bool pico_station_camera_status(bool failure_counters, uint8_t *output)
     return encode(4, &value, 1, output);
 }
 
+bool pico_station_camera_hand_mode(bool enabled, uint8_t *output)
+{
+    const uint8_t data[] = {9, enabled ? 1 : 0};
+    return encode(4, data, sizeof(data), output);
+}
+
 bool pico_station_camera_read_register(unsigned slave, unsigned address, uint8_t *output)
 {
     if (slave < 0xe0 || slave > 0xe8 || slave % 2 || address > UINT16_MAX) return false;
@@ -66,6 +72,13 @@ bool pico_station_camera_read_register(unsigned slave, unsigned address, uint8_t
 bool pico_station_version(uint8_t *output)
 {
     return encode(1, NULL, 0, output);
+}
+
+bool pico_station_controller_imu(unsigned hand, bool enabled, uint8_t *output)
+{
+    if (hand < 1 || hand > 2) return false;
+    const uint8_t data[] = {(uint8_t)hand, enabled ? 1 : 0};
+    return encode(7, data, sizeof(data), output);
 }
 
 bool pico_station_acknowledge(uint16_t sequence, uint8_t *output)

@@ -1,0 +1,48 @@
+{
+  "version": "3.16.29",
+  "repository": "https://github.com/ValveSoftware/gamescope",
+  "commit": "8f212644c46460549035971ab914421180f61a7c",
+  "source_package": {
+    "url": "https://kojipkgs.fedoraproject.org/packages/gamescope/3.16.29/1.fc44/src/gamescope-3.16.29-1.fc44.src.rpm",
+    "bytes": 3035302,
+    "sha256": "1e863400cdd72931ae721fc9a523b2c3ceb94189fd6bf3ef668d6cba1c144e82"
+  },
+  "fedora_patches_sha256": {
+    "0001-cstdint.patch": "05637e3bf96bbc80545c641a22e0f2a62cfedf732b3f136c162944688b2cc1f7",
+    "Allow-to-use-system-wlroots.patch": "e344803e6ce0912fdcfe1e6bf85dc85868481e32307748e40f54cd174115ba9f",
+    "Use-system-stb-glm.patch": "42f1167fbf8b73283393bb025b2fd453e9ec6ef015579e49cf8ef5f5e7010485"
+  },
+  "local_patch": {
+    "path": "patches/gamescope/0001-refresh-shared-memory-uploads.patch",
+    "sha256": "c710b31b6f3db1cfa2dc06245320ba617b5b9cafe11bd3ed1750ded28ad283aa",
+    "file": "src/steamcompmgr.cpp",
+    "before_sha256": "e32ccf49655bc40617777efb1d6d5441c3fe0e32704337c3df875da40ebde716",
+    "after_sha256": "3968c77d45a5572dfb91ec0d44c3badb2f3061ca33a68c4cac70bef3b284f2a5"
+  },
+  "license": {
+    "path": "patches/gamescope/LICENSE",
+    "sha256": "907dd845489cd09c25f18b6819f476805285e2adcad8c099e3506260023e9e5f"
+  },
+  "meson_options": [
+    "--prefix=/usr",
+    "--libdir=lib64",
+    "-Dbuildtype=release",
+    "-Davif_screenshots=enabled",
+    "-Dbenchmark=disabled",
+    "-Ddrm_backend=enabled",
+    "-Denable_gamescope=true",
+    "-Denable_gamescope_wsi_layer=true",
+    "-Denable_openvr_support=true",
+    "-Dforce_fallback_for=[]",
+    "-Dinput_emulation=enabled",
+    "-Dpipewire=enabled",
+    "-Drt_cap=enabled",
+    "-Dsdl2_backend=enabled",
+    "-Dwrap_mode=nodownload"
+  ],
+  "diagnostic_artifacts": {
+    "architecture": "aarch64-linux",
+    "control_sha256": "661b1d8bfb03b87a26b547dd34022e3946dfc790712565f49792cff1994f08f2",
+    "patched_sha256": "289c2b43ffd932e29d515f364192e3f37c9ccbc2940921b82b97d18ef2eaf30b"
+  }
+}

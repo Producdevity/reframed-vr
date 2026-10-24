@@ -191,6 +191,35 @@ establish a completed return, measured scale, axis alignment or loop closure.
 It establishes a live positional response under native Linux, independently of
 an Android framework session. No positional pose is published to SteamVR yet.
 
+### Runtime pose conversion
+
+`pico-slam-pose` converts the decoded result to an explicitly configured head
+frame without depending on Monado or OpenVR. The caller supplies the raw pose's
+transform direction, metres per vendor unit, `T_world_slam`, `T_body_head` and
+current monotonic clock uncertainty. It composes the complete transforms,
+including the rotating head lever arm; an inverse pose inverts translation as
+well as orientation. It does not infer an axis convention, metric scale,
+head offset or world origin from a plausible-looking quaternion.
+
+Only the observed b1977 state 1 / confidence 1 combination passes. Unknown
+statuses, non-finite or malformed transforms, future/stale times and excessive
+uncertainty are refused without changing the caller's output. The opaque
+vendor error field is preserved by the decoder and does not become a guessed
+failure code. A fresh stationary position at exactly zero remains valid.
+
+Synthetic transform and validity cases pass address/undefined-behavior
+sanitizers. Replay of the retained one-minute capture passes all 61,905 records
+on the host and under the actual Pico Bionic loader in an isolated ARM64 Linux
+container; exactly 59,342 confidence-1 records pass the gate. That replay uses
+explicit identity test transforms and does not establish physical OpenXR axes,
+metric scale, head extrinsics or live runtime publication. Private build and
+replay evidence is retained in `output/pico-pose-runtime-20261021-v1/`.
+
+PicoFrame's separate Bionic SLAM process and SteamVR consumer are useful
+architectural references. Its PICO 4 `SlamTracker` uses a different pose contract
+and estimates orientation conventions; those guesses and hardware constants
+are not used as Neo3 calibration.
+
 The carrier archive in `live-20261020-v1/vio-export.tar.gz` is 4,198,518 bytes,
 SHA-256 `75014c026bf06cc067c45acd93b344d559599b4bace093e08412e87ccba1545d`.
 Its embedded manifest verifies all 20 exported members, including both complete
@@ -213,6 +242,26 @@ available IMU history are refused. Stale input, time regressions, stream gaps an
 queue exhaustion permanently stop that feed; callbacks from older generations
 cannot affect it. Calls are serialized by its process owner. The feed starts no
 hardware or vendor algorithm and publishes no poses.
+
+The vendor feed holds at most 256 unpaired IMU samples per sensor. SSC can
+deliver accelerometer and gyroscope events in separate bursts: the earlier
+32-sample bound stopped a native SteamVR run with `ENOBUFS`. Its counters show
+the failure on the 33rd unpaired input, while only one camera set was pending
+against an eight-set limit. The retained stream contains the corresponding
+gyro burst; the failed record itself was overwritten after the consumer stopped.
+The larger queue changes neither sample freshness nor the maximum IMU gap,
+matching rules or terminal failure policy. A synthetic regression covers
+56-sample bursts in either sensor order, rejects an expired partner batch and
+still stops at the new finite capacity. This host check does not establish
+sustained headset tracking.
+
+With that change, a subsequent combined run reaches 69,921 matched pairs without
+`ENOBUFS`, then fails closed with `ETIMEDOUT` while five camera sets await IMU
+coverage. The IMU producer reports stopped accelerometer delivery; both DSPs
+remain online. This is a separate unresolved delivery/stall failure, not evidence
+that increasing capacity makes the whole session stable. The manifest-checked
+archive is `output/pico-steamvr-session-20261022-v2/export-shm-ready.tar.gz`,
+SHA-256 `a6f11cc3c483c3ac95178db66e00e3d5529d6010fa008e0807334828823eb66b`.
 
 The default lifetime policy keeps pixel storage and vector metadata until the
 caller has stopped and destroyed the vendor backend. It retains at most 384
@@ -486,6 +535,18 @@ reject it as future input. Clock failure or regression stops the generation,
 and empty event queues still receive a fresh timeout check. Timestamp-only
 polling remains available for fixed recorded batches.
 
+The four-camera vendor-backend capture uses two transports sharing CRM/sync
+descriptors. Its continuous event service calls
+`pico_camera_transport_event_refill()` for each transport before dequeuing the
+next event. This dispatches the event and fills available capacity, up to eight
+stereo pairs per transport, sampling the monotonic clock after callbacks and
+each queued pair. Every shared event must reach every transport in order; any
+failure requires stopping the whole capture owner. Queue-full is normal,
+whereas clock and other queue failures terminate the generation. This service
+opens no device, dequeues no events and does not poll the estimator. The caller
+still enforces silence timeouts and estimator freshness. See the
+[native queue-starvation comparison](pico-steamvr-verification.md#camera-queue-starvation-under-compositor-load).
+
 Stop invalidates poses and attempts all affected stream stops. The caller must
 then establish DMA quiescence independently before retiring requests,
 unsubscribing events and releasing command buffers and hardware handles. An
@@ -543,6 +604,89 @@ revision. It does not enable camera capture in the automatic prober or provide
 physical calibration. A physical owner still needs exclusive device access,
 verified settings, regular polling and independently established DMA shutdown.
 Do not call the quiescence acknowledgment solely because a stop ioctl succeeded.
+
+## Pose transport to SteamVR
+
+`pico-slam-channel` transports converted head poses between the separate Bionic
+SLAM producer and a native Linux consumer. Its ABI-2, 232-byte mapping uses two
+payload slots, lock-free atomic words and a bounded sequence check. The owner serializes one
+writer, creates a fresh mapping before sharing it, and binds readers to explicit
+process-instance and estimator-generation identifiers. It must not truncate or
+reinitialize a mapping that readers still hold.
+
+Startup confidence 0 remains untracked. Once a pose has been published,
+confidence loss or failed conversion stops that generation. Resuming requires
+the owner to establish the world frame again and bind a new generation; an old
+callback cannot publish into or stop the replacement generation. Readers reject
+stale, future, malformed and clock-uncertain samples without returning an old
+pose as tracked.
+
+Live SteamVR reads copy a coherent channel snapshot before sampling the reader's
+monotonic clock. Sampling time first can falsely reject a publication made
+between the clock read and the copy as future data. The live reader makes at
+most 64 snapshot attempts without sleeping; the fixed-time replay API retains
+its four-attempt bound. Neither path caches a successful pose on failure.
+`pose-read-stats` is a read-only OpenVR driver debug request that distinguishes
+contention, inactive generation, future time, stale data and malformed data.
+Native controls reproduced the clock-order failure; two corrected runs had no
+future-time rejections but retained four and one contention rejections at the
+late observation point. Their 100 Hz clients each received 2,000 valid late
+poses, which does not establish loss-free publication by the faster driver.
+See the [timing and pose verification](pico-steamvr-verification.md#frame-counter-abi-and-pose-read-order).
+
+ABI 2 fixes the remaining publication contention structurally. The writer fills
+the inactive slot, then publishes a new sequence selecting that slot. Readers
+can copy the last committed sample while a write is in progress, retrying if a
+commit overlaps the copy. The writer-claim bit alone no longer invalidates a
+read. This follows the two-copy principle described in Linux's
+[latch sequence-counter documentation](https://docs.kernel.org/locking/seqlock.html#latch-sequence-counters-seqcount-latch-t).
+It retains ordinary atomic payload accesses and the existing bounded retries;
+it does not use kernel seqlock APIs or disable preemption.
+
+Freshness, uncertainty, generation and terminal-stop checks still apply to the
+committed sample. An interrupted publisher cannot extend its lifetime past the
+configured age limit. Both producer and consumer must be rebuilt for ABI 2 and
+bound to a fresh mapping; ABI 1 and its old size are refused. Host regressions
+cover a partially written inactive slot, expiry during an interrupted write,
+old-version refusal and concurrent/process transport. The first complete native
+capture's late observer records 48,188 successful reads with no rejections and
+2,000 valid client poses. This is bounded evidence, not indefinite loss-free
+tracking or measured physical motion acceptance.
+
+`pico-steamvr-pose` converts that channel into the actual OpenVR `DriverPose_t`.
+It carries the capture age in `poseTimeOffset`, maps quaternion component order,
+and supplies no invented height, neck model, velocity or prediction. The input
+must already use the calibrated OpenVR head origin and right/up/back world axes.
+Tracking loss returns an invalid pose immediately.
+
+`pico-vendor-slam-output` owns result-side callback serialization, including
+`getAlgorithmResult`, decoding and channel publication. It rejects invalid
+configuration before beginning a generation. A failed result call, malformed
+packet, regressing clock or stale tracked result stops publication. Stop waits
+for an in-flight result call, then prevents late callbacks from accessing the
+vendor handle. The process owner must still join/unregister vendor callbacks
+before releasing the output object.
+
+Host sanitizer tests and offline ARM64 tests pass. Concurrent Bionic-to-glibc
+and glibc-to-Bionic process tests verify coherent transport with the actual Pico
+Bionic loader. The result owner also passes 4,000 concurrent callbacks, eight
+fault cases and shutdown during a blocked result read. Replay through the
+complete decoder/conversion/publication/OpenVR chain processes all 61,905
+retained packets and publishes exactly 59,342 tracked poses; the remaining
+startup packets stay invalid. Bionic and glibc result-owner replays agree.
+Replay uses explicit identity test transforms, not verified head calibration.
+The 2026-10-21 native Pico run subsequently publishes 8,148 live tracked poses
+from 10,821 callbacks into the channel. An independent native OpenVR-structure
+observer receives them and verifies terminal invalidation. Both camera groups
+stop, the IMU worker joins and MCU power references return to zero. This run
+uses explicit identity diagnostic transforms; it does not establish calibrated
+head poses or a connection through SteamVR's server.
+
+The [physical Neo3 SteamVR driver](pico-steamvr.md) now builds against the pinned
+SDK and uses the same private optics contract. The existing `steamvr-headset.h`
+remains a simulator. Firmware-derived head-frame binding, actual server/client
+publication, compositor presentation and physical acceptance remain separate
+integration gates.
 
 ## Remaining integration
 

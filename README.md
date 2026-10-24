@@ -1,6 +1,6 @@
 # Reframed VR
 
-An independent operating system project to bring a SteamOS experience standalone VR headsets.
+An independent operating system project to bring a SteamOS experience to standalone VR headsets.
 
 This is an experimental ARM64 Linux VR environment and headset board-support project.
 Quest 3 and Pico Neo3 Pro Eye are development targets. Neo3 Pro requires
@@ -9,8 +9,9 @@ There is no validated headset installation image.
 
 The development environment uses Fedora, Armada's FEX packaging, native Monado
 and OpenXR, and Proton for Windows applications. Quest work retains Meta's vendor
-kernel and board drivers, with Mesa Turnip for KGSL. QEMU provides a separate
-virtual target for functional tests.
+kernel and board drivers, with Mesa Turnip for KGSL. The Pico path targets Valve’s
+native ARM64 SteamVR compositor and gamescope’s OpenVR Steam overlay. QEMU
+provides a separate virtual target for functional tests.
 
 ## Status
 
@@ -19,13 +20,13 @@ virtual target for functional tests.
 | Quest kernel      | ARM64 kernel, 272 modules and 14 device-tree artifacts compile; QEMU checks userspace interfaces and simulated thermal behavior                                                                                                                             | Exact-device boot and peripheral operation                                                                                                                           |
 | Quest cameras     | Sensor/PHY/IFE setup, stream packets, DMA ownership, MCU commands and timestamped capture tested against retained stock code and the vendor kernel, including failure cleanup                                                                               | Active camera routing/settings, exposure timing, physical capture and shutdown                                                                                       |
 | Quest tracking    | Installed ARM64 runtime connects FIFO/IMU input, stereo capture, calibrated geometry and Basalt; reference replay and tracking-loss tests pass                                                                                                              | Exact-device camera/IMU alignment, active calibration, controller poses and physical 6DoF                                                                            |
-| Pico kernel       | Vendor/Linux builds with 38 modules; Binder, namespace networking and SELinux denial checks pass in QEMU                                                                                                                                                    | Physical driver operation, recovery and exact-device boot                                                                                                            |
-| Pico userspace    | Matched native root and unsigned boot containers assembled; QEMU root boots, starts user sessions, enforces service isolation and powers off without disk writes                                                                                            | Physical root transport, complete application stack and hardware startup                                                                                             |
-| Pico HMD          | Monado HMD with explicit calibration input; orientation, stereo geometry, both controllers and tracking-loss handling pass with synthetic SSC streams                                                                                                       | Device calibration, panel output, controller poses and positional tracking                                                                                           |
-| Pico VIO          | Native Basalt, owned camera/IMU input and HMD pose integration; six reference replays produce matching 185-pose trajectories (6.4 mm RMS)                                                                                                                   | Live camera startup, active calibration, camera/IMU alignment and physical 6DoF                                                                                      |
-| Pico cameras      | Sensor/ISP command encoding, request transport, DMA ownership and event routing checked against retained firmware/kernel code and fault-tested offline                                                                                                      | Active sensor mapping, initialization, hardware synchronization and capture                                                                                          |
-| Pico optics       | Radial/RGB and screen-to-texture mapping compared with saved stock code; analytic calibration works through both software compositor paths                                                                                                                  | Active profile/IPD, panel orientation and physical optical alignment                                                                                                 |
-| Graphics          | KGSL Turnip and native Monado builds; software Vulkan stereo/RGB-distortion framebuffer checks, synchronization and display-selection tests                                                                                                                 | GPU execution, panel scanout and compositor timing on the headset                                                                                                    |
+| Pico kernel | Native 4.19 RAM boots and verified stock returns; live USB, camera/ISP, SSC and MCU operation | Persistent installation, newer DRM features and remaining peripherals |
+| Pico userspace | Native Linux USB-root sessions with isolated Bionic SLAM dependencies and read-only stock firmware/calibration | Reproducible installed Frame-based application stack and unattended startup |
+| Pico HMD | Physical Neo3 SteamVR driver loads factory optics and receives live SLAM; native dashboard checks return tracked HMD poses | Lens acceptance, measured head calibration and controllers |
+| Pico VIO | Live vendor SLAM consumes native synchronized camera/IMU input and publishes tracked head poses; Basalt reference replays retained | Measured position scale/direction, head/world acceptance and sustained integration |
+| Pico cameras | All four tracking cameras stream natively; 2,249 synchronized head-frame sets consumed in a 90-second run, with clean shutdown | Physical camera-order/exposure verification and longer captures |
+| Pico optics | Factory-profile structure and 52,272 distortion UV comparisons pass; SteamVR constructs both eye distortion meshes | Clean lens output, active IPD and physical optical alignment |
+| Graphics | Pico passes binary/timeline GPU sharing; Valve's compositor renders Steam's setup UI into both eye views through both DMA planes | Sustained timing, physical motion accuracy, input usability and clean lens acceptance |
 | VR applications   | Native and Windows OpenXR stereo samples and virtual controller actions in QEMU                                                                                                                                                                             | Games, physical tracking, controllers, audio and sustained performance                                                                                               |
 | SteamVR           | Native Frame ARM64 presentation, cached Library navigation/scrolling with both virtual controllers, and Windows OpenXR on fresh native backends pass in QEMU; translated baseline retained                                                                  | Complete reproducible image, compositor validation/timing, game and sustained runtime acceptance                                                                     |
 | Android container | Lepton boots Android 11 on the Quest test kernel; Binder, isolation, APK input/saves and networking pass. Private Android Mesa builds render Vulkan and GLES OpenXR stereo through native SteamVR, with independent compositor captures and normal shutdown | Matching source-built init, reproducible Android driver packaging, persistent XR orchestration, frame timing, controller actions, actual games and hardware graphics |
@@ -74,7 +75,7 @@ used by the recorded SteamVR tests.
 - [Turnip](docs/turnip.md), [Monado](docs/monado.md), and [DMA-buffer synchronization](docs/dma-buf-sync.md)
 - [SteamVR](docs/steamvr.md), [native ARM64 runtime](docs/steamvr-arm64.md), [Windows OpenXR](docs/windows-openxr.md), and [controller acceptance](docs/controller-tests.md)
 - [VR acceptance milestones](docs/vr-milestones.md), [Steam Frame components](docs/steam-frame.md), and [Android container checks](docs/android-containers.md)
-- [Pico firmware and boot access](docs/pico-firmware.md), [HMD integration and calibration](docs/pico-hmd.md), [visual-inertial tracking](docs/pico-slam.md)
+- [Pico firmware and boot access](docs/pico-firmware.md), [HMD integration and calibration](docs/pico-hmd.md), [visual-inertial tracking](docs/pico-slam.md), and [native SteamVR integration](docs/pico-steamvr.md)
 
 Source revisions, archive hashes and build profiles are recorded under
 `profiles/`. Build tooling retains upstream license files. Firmware, calibration,

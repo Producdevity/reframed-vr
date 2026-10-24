@@ -1,0 +1,9 @@
+{
+  "repository": "https://gitlab.freedesktop.org/monado/monado",
+  "commit": "01c1f6b23ab73c1459c8f4cfd2eb16d5142214c2",
+  "directory": "src/external/cjson/cjson",
+  "sha256": {
+    "cJSON.c": "75c51de8fa40ac9d7a99319c6330719bd692eb81c0a869265f3d4c682533f9b9",
+    "cJSON.h": "0578cc29132912edbc88f83207a8fc76e5db3db0605497e909a9384ef3cc474b"
+  }
+}
