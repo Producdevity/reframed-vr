@@ -1417,3 +1417,36 @@ The complete exports and recoveries are hash-verified. BOOT/DTBO readbacks match
 the Pico returns to unchanged offline stock with updater disabled and verified
 AudioManager music/system volume zero. Per-run READMEs retain rejected diagnostic
 fields and harness attempts separately from the accepted observations.
+
+### SDK initialization rejection
+
+The next acquisition recording, under
+`output/pico-controller-acquisition-20261024-v3/`, contains 150 owned four-camera
+sets and 3,301 motion rows. CPU-only replay on the unchanged b1977 SDK submits
+those sets and 3,031 corresponding motion rows, reconstructing arrival order
+from capture timestamps. All 3,031 result callbacks have public state zero and
+SDK stop returns zero. Replay does not reproduce the original scheduling or
+establish hardware tracking.
+
+Process-local logging and read-only observations locate rejection after blob
+detection, in the five-point initialization and brute correspondence scorer.
+The observed early views have four accepted features in calibrated camera 2
+and four or five in camera 3. These are SDK detector features, not verified LED
+identities. The scorer checks pixel reprojection and gravity-direction agreement
+with adaptive acceptance limits; no validity flag or threshold is changed.
+Its 35 brute attempts remain rejected, with minimum reported reprojection
+0.535789 pixels and gravity difference 17.606310 degrees for that candidate.
+
+A diagnostic replay with four times the search budget changes three of the 35
+candidate fits but accepts none. A separate doubled-contrast replay also returns
+only state zero. Neither diagnostic is installed in the runtime. Fresh cached
+left-controller calibration is byte-identical to the native input. Parser and
+IMU readiness therefore do not explain the remaining image-dependent rejection;
+the upstream geometry or acquisition cause is still unverified.
+
+An ordinary stock wake/getter comparison produces 300 distinct left timestamps,
+all within 4.53 ms of qtimer, but all have state/confidence zero. This supplies
+fresh invalid results, not a working stock optical baseline. Tracked pointing
+still requires accepted image-dependent poses, loss/reacquisition and physical
+validation before publication to SteamVR. The private replay receipts, native
+export manifest and `rejection-analysis.json` retain the proof boundaries.
