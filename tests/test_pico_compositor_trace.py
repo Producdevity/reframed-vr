@@ -22,7 +22,7 @@ class PicoCompositorTraceTests(unittest.TestCase):
             p = root / 'events' / event / 'enable'
             p.parent.mkdir(parents=True)
             p.write_text('0')
-        for event in MODULE.EVENTS[2:]:
+        for event in MODULE.EVENTS:
             (root / 'events' / event / 'filter').write_text('none\n')
 
     def test_pid_inheritance_and_pre_exec_marker(self):
@@ -68,7 +68,21 @@ class PicoCompositorTraceTests(unittest.TestCase):
             for event in MODULE.EVENTS[2:]:
                 self.assertEqual((root / 'events' / event / 'filter').read_text(), 'id == 29 || id == 98')
             for event in MODULE.EVENTS[:2]:
-                self.assertFalse((root / 'events' / event / 'filter').exists())
+                self.assertEqual((root / 'events' / event / 'filter').read_text(), 'none\n')
+
+    def test_existing_scheduler_filters_refuse_launch_without_mutating_selection(self):
+        for event in MODULE.EVENTS[:2]:
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                self.files(root)
+                expression = 'prev_pid == 99' if event.endswith('sched_switch') else 'pid == 99'
+                (root / 'events' / event / 'filter').write_text(expression)
+                with self.assertRaisesRegex(ValueError, 'Trace event already filtered'):
+                    MODULE.arm(root, 1234, [29])
+                self.assertEqual((root / 'events' / event / 'filter').read_text(), expression)
+                self.assertEqual((root / 'set_event_pid').read_text(), 'no pid\n')
+                self.assertEqual((root / 'tracing_on').read_text(), '0')
+                self.assertEqual((root / 'trace_marker').read_text(), '')
 
     def test_invalid_syscall_ids_leave_instance_idle(self):
         for numbers in ([-1], [2147483648], [True], ['29']):

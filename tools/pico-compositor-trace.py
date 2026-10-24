@@ -24,7 +24,7 @@ def arm(instance, pid, syscalls=()):
     for event in EVENTS:
         if (instance / 'events' / event / 'enable').read_text().strip() != '0':
             raise ValueError('Trace event already enabled: ' + event)
-    for event in EVENTS[2:]:
+    for event in EVENTS:
         if (instance / 'events' / event / 'filter').read_text().strip() not in ('', 'none', '0'):
             raise ValueError('Trace event already filtered: ' + event)
     clock = instance / 'trace_clock'
@@ -57,7 +57,7 @@ def main():
     parser.add_argument('--boot', required=True)
     parser.add_argument('--user', default='vr')
     parser.add_argument('--syscall', type=int, action='append', default=[],
-                        help='Retain only this syscall ID (repeatable; scheduling remains unfiltered)')
+                        help='Retain only this syscall ID (repeatable; scheduler events retain the compositor PID selection)')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
