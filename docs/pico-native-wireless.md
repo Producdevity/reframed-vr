@@ -11,9 +11,13 @@ before and after the successful test. No partition was flashed or erased.
 This establishes firmware startup, managed-interface creation and passive
 reception. It does not establish association, DHCP, throughput, power management,
 coexistence with tracking/SteamVR, or persistent image integration. The test
-driver used a fallback MAC; the unit's proper address must be provisioned from a
-verified stock source before association. BSS entries are observations, not a
-count of distinct networks.
+driver used a fallback MAC. A later test provisions this unit's verified stock
+address before bringing the managed interface up, reads it back and completes a
+passive scan returning 214 BSS entries. It remains unassociated and unloads
+cleanly. The stock source reports permanent address assignment while Wi-Fi is
+disabled; the unit-specific address stays in private evidence. This is a bounded
+test, not an installed address-provisioning service. BSS entries are observations,
+not a count of distinct networks.
 
 Evidence: `output/pico-wireless-20261024-v1/native-single-client-scan/`, especially
 `managed-scan-result.json`, `bluetooth-transport-result.json`, `console.log` and
@@ -78,12 +82,82 @@ timeouts and the failed scan-harness attempt remain in the evidence.
 
 ## Bluetooth
 
-The physical tests load and unload the signed H4 `hci_uart` transport cleanly.
-No HCI adapter is registered: chipset power/firmware initialization, attachment,
-pairing, audio and coexistence remain unverified. Installing BlueZ alone does
-not provide those missing steps.
+The native QCA6390 TTY path now passes ROM-version reading and firmware
+initialization on the physical Neo3. The original vendor protocol dereferences
+the absent serdev device in TTY-reachable paths and its firmware helper lacks
+QCA6390 handling. Installing BlueZ alone does not resolve either problem.
 
-Do not attach the pinned vendor QCA UART protocol blindly. Its setup path
-dereferences the serdev device and lacks QCA6390 handling; a TTY-only attachment
-does not satisfy that contract. Bluetooth is also separate from the Pico
-controllers' MCU/DSP radio path and does not resolve optical controller tracking.
+The opt-in diagnostic patch
+`patches/kernel/pico-neo3/experimental/0054-qca6390-tty.patch` retains the vendor
+UART core, guards those accesses and backports `btqca.c`/`btqca.h` from
+[Linux v5.10, commit 2c85ebc](https://github.com/torvalds/linux/tree/2c85ebc57b3e1817b6ce1a6b703928e113a90442/drivers/bluetooth).
+It preserves upstream copyright and GPL-2.0-only notices. The ordinary TTY
+default remains ROME; QCA6390 requires `qca6390_tty=1`. Serdev still supplies its
+own chip type. The optional `qca_version_only=1` returns `ECANCELED` immediately
+after reading the ROM version, before firmware download; this diagnostic does
+not produce a fully initialized adapter.
+
+An isolated external-module build against the retained kernel produces signed
+`btqca.ko` and `hci_uart.ko` with 18 and 72 matching imports respectively. Their
+signatures verify against the actual kernel's embedded certificate; tampering
+with an ELF byte makes verification fail. The baseline kernel configuration,
+symbol versions, linked image and signing keys remain unchanged. The patch
+applies without fuzz to the pinned vendor files and reproduces the compiled
+sources exactly. It remains outside the default kernel patch set until normal
+startup and the remaining functionality are integrated and tested.
+
+The first bounded native run unblocks the stock `bt_power` rfkill device and
+attaches `/dev/ttyHS0` using `btattach -P qca -S 115200` with hardware flow
+control. It receives product `0x10`, SoC `0x400a0200` and ROM `0x0200`. The second
+run downloads the authentic `htbtfw20.tlv` and `htnv20.bin` from the retained
+b1977 Bluetooth firmware partition image into controller RAM, then reports
+`QCA setup on UART is completed`. BlueZ management lists one HCI adapter with
+BR/EDR and LE capabilities, left unpowered for normal use. No discovery, pairing
+or Bluetooth audio test is performed.
+
+The stock Bluetooth HAL's `FormRegularPaths` reads
+`persist.pvr.bluetooth.firmware.load`, defaulting to `0`, which selects the
+ordinary NVM. The observed property is unset. The alternative `htnv20swift.bin`
+is therefore not substituted. Firmware hashes, HAL hash and selection analysis
+remain in private evidence; no unit identity or firmware binary is committed.
+
+The adapter still reports the firmware's default Bluetooth address. Provisioning
+the verified unit address is required before normal use. One initial frame
+reassembly error (`-84`) occurs before the successful version exchange; sustained
+UART reliability remains unverified. Pairing, audio, power management,
+Wi-Fi/tracking coexistence and installed startup remain open. Bluetooth is
+separate from the Pico controllers' MCU/DSP receive path and does not resolve
+optical controller tracking.
+
+Both runs restore platform rfkill state and unload the test modules. The second
+also restores the firmware search path; its first cleanup wrote a newline as the
+path, then an explicit empty-string write and readback corrected it before
+returning to stock. NetworkManager and BlueZ are masked only in the RAM overlay.
+Full BOOT/DTBO hashes remain unchanged. Evidence is
+`output/pico-bluetooth-20261024-v1/`, particularly `native-version/`,
+`native-firmware/`, `patch-validation.json`, `signature-validation.json` and the
+directory README/hash manifest. The unit-MAC Wi-Fi scan shares the second boot;
+the two radios are exercised sequentially, not concurrently.
+
+## Unit identity collection
+
+`tools/pico-wireless-config.py` reads the stock WLAN address and the Bluetooth
+address reported by both the secure setting and Bluetooth manager. It requires
+the exact b1977 fingerprint and Bluetooth HAL hash, disabled Wi-Fi, Bluetooth
+OFF, empty IPv4/IPv6 main route tables and permanent WLAN assignment. Two complete
+snapshots and their surrounding boot IDs must agree. Missing, multicast or known
+placeholder addresses are rejected. It issues no radio setters or firmware
+commands and refuses to overwrite an existing output.
+
+```sh
+python3 tools/pico-wireless-config.py --serial DEVICE_SERIAL \
+  --output output/pico-radio-identities.json
+```
+
+The mode-0600 receipt contains private unit addresses, source identity and read
+results. It has been tested on the offline physical Pico; stock Bluetooth manager
+and its cached setting agree while Bluetooth is OFF. This is a stock identity
+collection boundary, not independent factory-address attestation or a native
+Bluetooth address-programming test. The native WLAN test above uses the same
+stock address, with successful Linux readback; native Bluetooth programming and
+automatic installed startup remain unverified.
