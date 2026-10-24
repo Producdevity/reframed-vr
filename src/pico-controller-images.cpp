@@ -37,7 +37,8 @@ static Consumer consumer;
 static Update updater;
 static std::mutex owner_mutex;
 // SDK matrix headers can survive stop(); retain allocator storage until process exit.
-static auto &pool = *new std::array<std::array<cv::Mat, 4>, 4>;
+// Tracking retains keyframes beyond the consumer callback; leave room for new input.
+static auto &pool = *new std::array<std::array<cv::Mat, 4>, PICO_CONTROLLER_IMAGES_POOL_SETS>;
 static void *image_buffer;
 static uint64_t submitted, completed, adoptions;
 static unsigned active_slot;

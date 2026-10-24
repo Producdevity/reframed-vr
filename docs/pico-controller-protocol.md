@@ -1338,7 +1338,7 @@ compatibility layer.
 
 The SDK wraps caller pixels in borrowed OpenCV matrices. Its queue, timer cache
 and consumer copy matrix headers without acquiring pixel ownership. The adapter
-copies each four-camera input once into a four-set pool, then promotes those SDK
+copies each four-camera input once into an eight-set pool, then promotes those SDK
 aliases to reference-counted matrices. Synchronizing with the timer's complete
 snapshot/publication section prevents an unowned local snapshot from surviving
 completion. A submission completes only after promotion and the consumer
@@ -1359,6 +1359,23 @@ API with clean SDK stop. Owned tests make the original input pages inaccessible
 immediately after copying. These are synthetic-pixel ownership tests, not camera,
 optical tracking, pointer, frame-pacing or lens-sharpness acceptance. Evidence is
 `output/pico-controller-ownership-20261024-v2/final-cpu/`.
+
+A subsequent calibrated synthetic initialization fixture exposed a limit that
+the blank-image probes did not exercise: the initialized tracker retains four
+distinct input sets before the next submission. The original four-set pool
+therefore exhausted after initialization. The pool now has eight sets; reuse
+still requires every external reference to disappear. Its pixel storage is
+9,830,400 bytes, an increase of 4,915,200 bytes. This changes neither submission
+depth nor the single input copy, and exhaustion still returns `EAGAIN`.
+
+The rebuilt adapter passes the same real-SDK CPU probes, including 16 retained
+sets with exhaustion/release, and completes the 150-set synthetic initialization
+replay with 649 state-one callbacks and clean SDK stop. This fixture uses ideal
+projected LEDs and recorded motion/head inputs; it proves buffer progress after
+initialization, not real optical tracking, pose accuracy or SteamVR pointing.
+Evidence is `output/pico-controller-geometry-20261024-v1/maintained-cpu/` and
+`replay-positive-maintained/`. Concurrent diagnostic activity means these CPU
+tests are not performance comparisons.
 
 Build with `tools/build-pico-controller-images.py --ndk <pinned-ndk>
 --opencv-archive <pinned-archive> --output <new-directory>`. Run the stock CPU
@@ -1443,6 +1460,17 @@ only state zero. Neither diagnostic is installed in the runtime. Fresh cached
 left-controller calibration is byte-identical to the native input. Parser and
 IMU readiness therefore do not explain the remaining image-dependent rejection;
 the upstream geometry or acquisition cause is still unverified.
+
+Further read-only checks confirm that the SDK stores all 16 supplied calibrated
+LED coordinates at metre scale and that all four parsed camera rotations and
+translations agree with factory `T_BS`. A controlled five-LED projection passes
+the inner fit check even with dim points, but needs sufficient intensity to pass
+the following distance-dependent brightness check and initialize. That positive
+control narrows the integration boundary; it does not identify real-image LED
+correspondences or establish that brightness is the cause of the real recording's
+gravity/reprojection rejection. No SDK threshold, validity gate or library byte
+is changed. The synthetic eight-LED fixture did not initialize and is retained
+as a failed control rather than tracking evidence.
 
 An ordinary stock wake/getter comparison produces 300 distinct left timestamps,
 all within 4.53 ms of qtimer, but all have state/confidence zero. This supplies

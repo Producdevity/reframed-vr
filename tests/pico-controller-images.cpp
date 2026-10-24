@@ -1,3 +1,4 @@
+#include "pico-controller-images.h"
 #include <opencv2/core.hpp>
 #include <array>
 #include <atomic>
@@ -69,8 +70,8 @@ int main(int argc, char **argv)
         slot = static_cast<uint8_t *>(mmap(nullptr, set_size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0));
         assert(slot != MAP_FAILED);
     }
-    unsigned count = owned ? (retained ? 8 : 1000) : 1;
-    std::array<std::vector<cv::Mat>,4> held;
+    unsigned count = owned ? (retained ? 2 * PICO_CONTROLLER_IMAGES_POOL_SETS : 1000) : 1;
+    std::array<std::vector<cv::Mat>,PICO_CONTROLLER_IMAGES_POOL_SETS> held;
     unsigned exhausted = 0;
     for (unsigned iteration = 0; iteration < count; ++iteration) {
         unsigned slot = iteration % 2;
@@ -87,9 +88,9 @@ int main(int argc, char **argv)
         if (owned) {
             std::array<const void *,4> destination;
             int prepared = prepare(iteration+1, addresses.data(),plane,destination.data());
-            if (retained && iteration >= 4) {
+            if (retained && iteration >= held.size()) {
                 assert(prepared == -EAGAIN);
-                held[(iteration-4)%4].clear();
+                held[iteration % held.size()].clear();
                 ++exhausted;
                 prepared = prepare(iteration+1, addresses.data(),plane,destination.data());
             }
@@ -111,7 +112,7 @@ int main(int argc, char **argv)
                 assert(image.rows == 480 && image.cols == 640 && image.data[0] == tag && image.data[plane-1] == tag);
                 assert((image.u != nullptr) == owned);
             }
-            if (retained) held[iteration%4] = images;
+            if (retained) held[iteration % held.size()] = images;
             entered.store(true,std::memory_order_release);
             while (delayed && !release.load(std::memory_order_acquire)) usleep(50);
             ++callbacks;
@@ -136,7 +137,7 @@ int main(int argc, char **argv)
             for (const auto &image : images) assert(image.data[0] == 0xee && image.u == nullptr);
         }
     }
-    if (retained) assert(exhausted == 4);
+    if (retained) assert(exhausted == held.size());
     struct rusage usage{}; assert(getrusage(RUSAGE_SELF, &usage) == 0);
     printf("PICO_IMAGE_OWNER_%s_PASS sets=%u adoptions=%llu maxrss_kib=%ld hardware_tracking=0\n",
            delayed ? "DELAYED" : retained ? "RETAINED" : owned ? "OWNED" : "NEGATIVE",count,static_cast<unsigned long long>(copies()),usage.ru_maxrss);

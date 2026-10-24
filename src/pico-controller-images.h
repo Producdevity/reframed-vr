@@ -7,13 +7,15 @@
 extern "C" {
 #endif
 
+enum { PICO_CONTROLLER_IMAGES_POOL_SETS = 8 };
+
 /* b1977 ARM64 Bionic SDK only; preload before dlopen, configure before init.
  * The launcher must verify the full SDK SHA in profiles/pico-controller-images.json.
  * configure also checks the loaded ELF build ID before inspecting private ABI.
  * Use one SDK instance for the process lifetime; do not unload either library. */
 int pico_controller_images_configure(void *sdk_handle);
 
-/* Copies four tightly packed 640x480 RAW8 planes into a bounded four-set pool.
+/* Copies four tightly packed 640x480 RAW8 planes into a bounded eight-set pool.
  * Replace each submitted frame's pixels with destination, then call the SDK's
  * public all-image entry. Input pixels may be recycled on successful return.
  * Sequence must increase. EAGAIN leaves the current lease and outputs unchanged;
