@@ -1549,8 +1549,8 @@ alone cannot recover this cross-stream call order.
 
 `python3 tools/analyze-pico-controller-acquisition.py --motion <motion.raw>
 --images <images.raw>` validates capacities, record lengths, tracked head
-brackets, camera identities, common frame numbers and a contiguous dispatch
-sequence within one estimator generation. It reports source hashes and record
+brackets, camera identities, exposure/gain bounds, common frame numbers and a
+contiguous dispatch sequence within one estimator generation. It reports source hashes and record
 offsets in the observed order. Version-1 inputs are refused because they did
 not record that order. This validates the retained subset; it does not establish
 complete live input coverage, reproduce the original wall timing, prove optical

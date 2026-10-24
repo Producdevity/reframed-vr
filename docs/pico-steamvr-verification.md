@@ -2420,8 +2420,9 @@ the earlier v6/v7 rejected harnesses are recorded separately.
 
 The trace launcher accepts repeatable `--syscall ID` filters for a dedicated
 idle instance. It applies and reads back the filter on both entry and exit
-events before enabling tracing; scheduler events remain unfiltered. Existing
-syscall filters are refused. This permits focused GPU ioctl diagnostics without
+events before enabling tracing; scheduling events retain the inherited compositor
+PID selection without the syscall-ID filter. Existing syscall or scheduler
+filters are refused. This permits focused GPU ioctl diagnostics without
 retaining the unrelated high-volume syscalls that exhausted the previous capture.
 IDs must match the target kernel ABI; see the kernel's
 [event filtering documentation](https://docs.kernel.org/trace/events.html#event-filtering).
@@ -2441,3 +2442,64 @@ All 136 export members and full BOOT/DTBO readbacks verify, and muted offline
 stock return passes. Staging-manifest and continuation-script errors occurred
 before setup and are retained with their verified in-RAM repairs. No priority,
 affinity or rendering policy is adopted from this instrumented result.
+### GPU-thread affinity and camera failure isolation (2026-10-25)
+
+The untraced ABBA comparison in `output/pico-frame-affinity-20261025-v3/`
+identifies the compositor's GPU render thread from 111 observations of its
+DRM render-node timeline wait. Its original CPU affinity is 4–6. Only that thread
+is allowed onto CPU 7 in the middle two 20-second windows, after two-second
+settles; other observed affinities and nice values remain unchanged. The exact
+original affinity is restored and verified.
+
+The original-mask windows report 88 drops in 3,460 sampled frames; the candidate
+reports 75 in 3,473. Interval p99 remains 20.55–21.35 ms at 90 Hz, and the final
+original-mask window is comparable to both candidate windows. This small,
+inconsistent difference does not justify a persistent affinity change. All
+8,000 measured head queries and 8,000 vsync-age queries pass. The feed consumes 4,499 camera
+sets, publishes 182,216 confident head outputs and has no camera refusal. All
+13,747 controller callbacks lack public optical confidence; pointing remains
+unverified. All 147 export members, shutdown, full BOOT/DTBO readbacks and muted,
+offline stock return verify. Earlier v1/v2 affinity harness failures are retained
+separately and supply no performance comparison.
+
+A cold Facet system-layer-in-distortion-pass retry, with the current forwarded
+overlay layout correction, fails before dashboard readiness. In
+`output/pico-layer-pass-20261025-v1/`, the kernel rejects camera request 1,945 for
+congestion at monotonic 160.959844 s. At 161.038007 s, frame 1,949 arrives while
+head frame 1,947 is incomplete; the collector refuses it and stops tracking.
+The readiness probe correctly rejects its 436 invalid head queries. No late
+measurement window is reached. The selected runtime settings are exported and
+hash-matched independently of the source profile. The early stable readback
+contains a dark grid in both reconstructed eyes, not an accepted Steam panel.
+The 120-member export, full firmware readbacks, shutdown and offline muted stock
+return verify. This establishes the failure sequence, not its scheduling cause
+or a general fault in the layer option; the maintained option remains off.
+
+The v2 retry restores the 189 hash-verified Mesa cache files to a new private
+RAM cache. It reaches dashboard readiness, then accepts 3,000 head queries in
+the first 30-second window but records 24 overdue vsync ages. Its retained
+1,346 frames each report a drop; GPU median/p99 are 13.167/13.763 ms, above the
+11.111 ms budget, and interval median is 22.282 ms. The stable scanout contains
+fragmented geometry in both reconstructed eyes despite visible-overlay flags.
+The harness rejects the timing result and does not run later windows. Its
+head-ring-full message occurs after that rejection during cleanup, so it is
+not evidence for the initial timing failure. All 134 export members, firmware
+readbacks, shutdown and quiet offline stock return verify. This candidate is
+not promoted. The matched v3 cold control changes only that option back to off;
+all other payload member hashes match v2, including the restored cache. All three
+late windows pass 9,000 head queries and 9,000 vsync-age queries in total.
+GPU medians return to 7.24–7.27 ms and both stable and late readbacks contain
+the modern sign-in panel and toolbar in both reconstructed eyes. Thus the
+restored cache is usable with the retained rendering path. This separate-boot
+comparison rejects the candidate configuration, without establishing its internal
+renderer/driver cause or a general performance claim.
+
+The control still reports 194 drops in 7,970 sampled frames, with interval p99
+21.01–21.91 ms. Controller output has 13,751 decoded callbacks and zero public
+confident poses. Neither frame-pacing nor pointing acceptance is complete.
+All 144 export members, full firmware readbacks and MCU/DSP shutdown verify.
+An initial post-reboot ADB UUID query fails with a protocol fault; its receipt
+is retained, and an unchanged verification retry confirms muted offline stock.
+No firmware partition was flashed. Eleven exact duplicate staging archives are
+removed only after matching their remote/retained-host hashes; recovery,
+calibration and host evidence remain intact.
