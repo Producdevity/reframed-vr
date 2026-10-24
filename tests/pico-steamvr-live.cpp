@@ -298,14 +298,18 @@ int main(int argc,char **argv)
     bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
     if (overlay) {
         std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);
-        if (argc==6) {
+        if (argc>=6) {
             vr::VROverlayHandle_t selected=vr::k_ulOverlayHandleInvalid;
             auto found=overlay->FindOverlay(argv[5],&selected);
             bool active=found==vr::VROverlayError_None&&overlay->IsActiveDashboardOverlay(selected);
             bool visible=found==vr::VROverlayError_None&&overlay->IsOverlayVisible(selected);
-            std::printf("PICO_STEAMVR_DASHBOARD_SELECTED key=%s find=%d active=%d visible=%d\n",
-                        argv[5],found,active,visible);
-            dashboard_visible=dashboard_visible&&active&&visible;
+            uint32_t width=0,height=0;
+            auto texture=found==vr::VROverlayError_None?
+                overlay->GetOverlayTextureSize(selected,&width,&height):found;
+            std::printf("PICO_STEAMVR_DASHBOARD_SELECTED key=%s find=%d active=%d visible=%d texture=%d size=%ux%u\n",
+                        argv[5],found,active,visible,texture,width,height);
+            dashboard_visible=dashboard_visible&&active&&visible&&
+                texture==vr::VROverlayError_None&&width&&height;
         }
         const char *keys[]={"valve.steam.gamepadui.main","reframed.pico.steam"};
         for (const char *key:keys) {
