@@ -10,7 +10,7 @@ fallback is not sufficient evidence that either works.
 Prepare the native ARM64 SteamVR compositor, Pico display driver, calibrated
 head tracking and runtime environment described in [driver setup](pico-steamvr.md).
 Use the opt-in [`pico-steamvr-ui-90hz.json`](../profiles/pico-steamvr-ui-90hz.json)
-settings, all three [gamescope patches](../patches/gamescope/README.md), and
+settings, all four [gamescope patches](../patches/gamescope/README.md), and
 `gamescope_vr_use_modifiers=false`. The UI profile enables Steam overlays and VR
 Gamepad UI forwarding; it leaves the base Pico profile unchanged.
 

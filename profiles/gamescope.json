@@ -45,7 +45,8 @@
     "control_sha256": "661b1d8bfb03b87a26b547dd34022e3946dfc790712565f49792cff1994f08f2",
     "patched_sha256": "289c2b43ffd932e29d515f364192e3f37c9ccbc2940921b82b97d18ef2eaf30b",
     "ui_forwarding_sha256": "82f81ad4e54a4e921b9324cbd7ae71c3a6bd5fadba747718eed2cc2cb76ed062",
-    "nonsteam_composition_sha256": "0156f123102fb564b7e491a7ac5cbf36040df008b758b956b6ddb15a61d40657"
+    "nonsteam_composition_sha256": "0156f123102fb564b7e491a7ac5cbf36040df008b758b956b6ddb15a61d40657",
+    "overlay_layout_sha256": "facef831ab4c99c750ac208b6e1c06f21fb083fdd2455116a67a091b51fd9ac9"
   },
   "ui_forwarding_patch": {
     "path": "patches/gamescope/0002-forward-vulkan-ui-textures.patch",
@@ -81,5 +82,13 @@
     "file": "src/Backends/OpenVRBackend.cpp",
     "before_sha256": "09a97da38e62bdcf954abe726b86c91dbf3becc5a0518ec373cf76a6bf446817",
     "after_sha256": "2c9ca26889e178155635c1dbf5c6597e5dd33c0c3f0250cb9ef1d716760797aa"
+  },
+  "overlay_layout_patch": {
+    "path": "patches/gamescope/0004-transition-forwarded-overlay-images.patch",
+    "sha256": "f814a5634b8b7d8c7d06e8729a143480ee2a1f8274dcded6e517fac72582491e",
+    "after_local_patch": "patches/gamescope/0003-compose-nonsteam-without-dma.patch",
+    "file": "src/Backends/OpenVRBackend.cpp",
+    "before_sha256": "2c9ca26889e178155635c1dbf5c6597e5dd33c0c3f0250cb9ef1d716760797aa",
+    "after_sha256": "fad2f0d85e0c35ea6e712eea2770ce839fd376b2c6e1410ab82ebcbacb82ca77"
   }
 }

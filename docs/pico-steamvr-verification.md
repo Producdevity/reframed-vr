@@ -2342,3 +2342,44 @@ backups, DSP owners stop with zero MCU references, and their
 No firmware partition was flashed; Quest untouched. See the
 [acceptance record](pico-vr-acceptance.md) for remaining physical and controller
 requirements.
+
+### Forwarded overlay layout correction
+
+`output/pico-overlay-layout-20261024-v1/` isolates one renderer change against
+the passing geometry-v2 payload. Forwarded surface images remained in Vulkan
+`GENERAL`, while OpenVR requires `TRANSFER_SRC_OPTIMAL`. The fourth gamescope
+patch copies into reusable local output images, waits for the copy and lets the
+existing output barrier transition to the required layout. Source sampling and
+external ownership remain unchanged. The exact deployed ARM64 renderer hash is
+`facef831ab4c99c750ac208b6e1c06f21fb083fdd2455116a67a091b51fd9ac9`.
+
+All 32 setup recipes and the bounded feed complete. Gamescope logs the new
+presentation-copy path. The stable scanout and its host reconstruction contain
+the modern sign-in panel and native toolbar in both eyes. Stable and late full
+buffer hashes are respectively
+`2ce9f87d06d383813eca4bdb6733dc96d3a73e0bad1e9ac18e3a72f22b57e312` and
+`267928766584b1fd5484e24cd2c366c02d710d5dcec89f8b220bbc332547b8e7`;
+both have two matching readbacks. This exercises the corrected transport but
+does not establish that the layout bug caused every earlier visibility failure.
+
+The three late stationary windows contain 9,000 valid head queries, zero invalid
+queries and zero overdue vsync ages. They cover 8,293 consecutive frame indices
+with 180 reported drops, interval p99 21.186 ms and compositor GPU p99 7.923 ms
+at a 90 Hz target. The earlier five-second observer reports nine overdue vsync
+queries. The prior run's 193 drops and 7.885 ms GPU p99 are observational
+comparisons, not a controlled performance result. Frame pacing and head-motion
+latency remain open.
+
+The feed consumes all 4,499 camera sets and publishes 182,215 confident head
+outputs. Controller output still has zero public confident optical poses;
+ownership or radio reports do not establish tracked pointing. No optical, IPD,
+physical-motion or controller acceptance is claimed.
+
+`native/export-receipt.json` verifies the 15,599,739-byte archive, SHA-256
+`56b6b0d8af3020b791caae17007ee4c7dfb40c9efd8a9a87860db7ad0de5f058`,
+and all 122 selected members. `native/provenance.json` binds the replacement
+binary to the outer source/build receipts; the copied payload's older gamescope
+metadata describes the baseline. MCU references reach zero, SLPI/CDSP stop,
+BOOT/DTBO match their full backup hashes and offline, muted b1977 return is
+verified. The exact staged test archive is removed after hash verification.
+No firmware partition was flashed; Quest untouched.

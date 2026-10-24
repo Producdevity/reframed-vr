@@ -99,3 +99,27 @@ The rebuilt candidate survived native startup and the three late main/bar API
 probes in `output/pico-optics-validation-20261024-v3/`. Its early pixel captures
 contain only the skybox, so this is startup/API acceptance, not renewed visible
 Steam UI acceptance. See the [rendering and capture guide](../../docs/pico-rendering.md).
+
+## Forwarded Vulkan image layout
+
+Apply `0004-transition-forwarded-overlay-images.patch` after `0003`; the profile
+records `overlay_layout_patch` and `diagnostic_artifacts.overlay_layout_sha256`.
+[OpenVR's Vulkan contract](https://github.com/ValveSoftware/openvr/wiki/Vulkan)
+requires submitted images in `TRANSFER_SRC_OPTIMAL`, with transfer-source and
+sampled usage. The forwarded surface uploads remain in `GENERAL`; adding usage
+flags in `0002` does not transition them.
+
+The fourth patch copies each changed forwarded texture into a local output
+image and completes the existing command-buffer submission before handing it
+to SteamVR. Gamescope's output-image barrier selects the backend's presentation
+layout. The source retains its existing sampling and external queue ownership
+rules. A pool of at most four images per plane follows the composite-target
+pattern and retains queued/visible references across page flips; exhaustion
+leaves forwarding pending. The modifier-enabled path is unchanged.
+
+This adds a GPU copy, with no CPU pixel readback. A bounded native Pico run
+exercises the new path and stores the modern main panel and toolbar in both
+eyes. Late frame pacing remains imperfect; the single stationary run does not
+establish a performance improvement, physical clarity or motion latency.
+See `output/pico-overlay-layout-20261024-v1/` and the
+[verification record](../../docs/pico-steamvr-verification.md).
