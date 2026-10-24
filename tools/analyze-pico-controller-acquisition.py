@@ -94,11 +94,12 @@ def analyze(motion, images):
         with path.open('rb') as stream:
             if hashlib.file_digest(stream, 'sha256').hexdigest() != inputs[kind]:
                 raise ValueError('Acquisition changed during analysis')
-    return {'scope': 'Recorded SDK call ordering and head brackets; no optical tracking or timing acceptance',
+    return {'scope': 'Retained SDK input subset ordering and head brackets; no complete live input, optical or timing acceptance',
             'format_version': 2, 'source_sha256': inputs, 'events': events,
             'motion_records': sum(e['kind'] == 'motion' for e in events),
             'image_sets': sum(e['kind'] == 'images' for e in events),
             'dispatch_order_recorded': True, 'original_wall_timing_reproduced': False,
+            'complete_live_input_coverage_verified': False,
             'optical_tracking_verified': False}
 
 

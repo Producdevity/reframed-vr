@@ -1543,7 +1543,7 @@ attempt and is not used for these timing claims.
 
 The next bounded recorder uses version 2 of the acquisition carriers. The
 third metadata word of each IMU row and image set is a shared increasing
-dispatch ordinal, recorded immediately before the SDK input call. Image
+record ordinal, recorded immediately before each retained SDK input call. Image
 payloads and the two raw head brackets remain unchanged. Capture timestamps
 alone cannot recover this cross-stream call order.
 
@@ -1552,17 +1552,25 @@ alone cannot recover this cross-stream call order.
 brackets, camera identities, common frame numbers and a contiguous dispatch
 sequence within one estimator generation. It reports source hashes and record
 offsets in the observed order. Version-1 inputs are refused because they did
-not record that order. This validates a recorded prefix; it does not reproduce
-the original wall timing, prove optical validity or enable pose publication.
+not record that order. This validates the retained subset; it does not establish
+complete live input coverage, reproduce the original wall timing, prove optical
+validity or enable pose publication. The version-2 recorder independently caps
+the two streams and increments ordinals only for recorded calls. Its contiguous
+record ordinals cannot detect peer inputs omitted after either stream stops.
 
 The native recording in `output/pico-optical-acquisition-20261024-v4/` passes
 with 150 image sets and 3,304 IMU rows. Two isolated stock-SDK CPU replays use
 identical bytes, comparing the recorded order with the previous estimated
 capture-plus-20-ms order. Both produce 3,304 state-zero callbacks and clean SDK
-stop. Recorded order therefore does not restore acquisition in this recording;
+stop. Neither ordering restores acquisition from that retained subset;
 no tracker threshold or library byte was changed. Four host tests additionally
 reject legacy/truncated inputs, missing or duplicate ordinals, generation
 changes, invalid head brackets and mixed camera sets.
+
+The 150th recorded image has ordinal 3,179 and capture time 129.755583181 s;
+recorded IMU continues through ordinal 3,454 and 130.307959358 s. Those later
+IMU rows do not imply that the intervening live image calls were recorded.
+The analyzer explicitly reports complete live input coverage as unverified.
 
 ### Stock result-coordinate oracle
 
