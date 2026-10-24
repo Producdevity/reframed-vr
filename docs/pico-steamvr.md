@@ -4,6 +4,10 @@
 SteamVR server and compositor. It is separate from `reframed_virtual` and does
 not use Monado. Nothing enables or installs it automatically.
 
+For Steam's native VR main panel and toolbar, use the separate
+[VR UI session guide](pico-steamvr-ui.md). It describes the required input seat,
+gamescope forwarding patches and opt-in UI profile.
+
 Peripheral integration is tracked separately: the
 [controller receiver](pico-controller-protocol.md#native-fastrpc-input-worker)
 has verified physical left-controller button, touch and analog reports through

@@ -18,6 +18,12 @@
   "driver_reframed_pico": {
     "enable": true
   },
+  "dashboard": {
+    "allowSteamOverlays": true,
+    "allowVRGamepadUI": true,
+    "allowVRGamepadUIViaGamescope": true,
+    "expectSteam": true
+  },
   "driver_null": {
     "enable": false
   },

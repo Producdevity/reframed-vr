@@ -43,6 +43,34 @@
   "diagnostic_artifacts": {
     "architecture": "aarch64-linux",
     "control_sha256": "661b1d8bfb03b87a26b547dd34022e3946dfc790712565f49792cff1994f08f2",
-    "patched_sha256": "289c2b43ffd932e29d515f364192e3f37c9ccbc2940921b82b97d18ef2eaf30b"
+    "patched_sha256": "289c2b43ffd932e29d515f364192e3f37c9ccbc2940921b82b97d18ef2eaf30b",
+    "ui_forwarding_sha256": "82f81ad4e54a4e921b9324cbd7ae71c3a6bd5fadba747718eed2cc2cb76ed062"
+  },
+  "ui_forwarding_patch": {
+    "path": "patches/gamescope/0002-forward-vulkan-ui-textures.patch",
+    "sha256": "5dce3c9ce10256c66bafbdd2770cef68d5f8c859e4f3bae1d4400399c3a0dfed",
+    "after_local_patch": "patches/gamescope/0001-refresh-shared-memory-uploads.patch",
+    "files": {
+      "src/backend.h": {
+        "before_sha256": "9f59736db68d7daaa0a55ff02cf2c3d41032169d893d8459174c838b60dc00db",
+        "after_sha256": "138ec459bf0c7e7974c73941f7cd1b315d0545bd7abe9ec3f26da51479c13630"
+      },
+      "src/steamcompmgr.cpp": {
+        "before_sha256": "3968c77d45a5572dfb91ec0d44c3badb2f3061ca33a68c4cac70bef3b284f2a5",
+        "after_sha256": "df2a2638e868691d96f0e5b482bc170b8be0fa279872812c93f961472023f3e6"
+      },
+      "src/Backends/OpenVRBackend.cpp": {
+        "before_sha256": "40de37d4be8cbdf6198b4d030122af0305f51e5ff1d0a1592a5d197cb42496ea",
+        "after_sha256": "09a97da38e62bdcf954abe726b86c91dbf3becc5a0518ec373cf76a6bf446817"
+      },
+      "src/Backends/DeferredBackend.h": {
+        "before_sha256": "6cb29dee7fc81596ff90b551d67cd16fc3a0c6884047638dce202b14f7f271f6",
+        "after_sha256": "15753db5499cbc09f8b8bebe51139f2ad506ebca1cbfb292c4963f265946813b"
+      },
+      "src/rendervulkan.cpp": {
+        "before_sha256": "a348dd59c6fe82940ba0a00c805439f6d52bb4e55f8532ef71cfd2772b15c33c",
+        "after_sha256": "f5434b586ecac8106f3d31dc0e18e50c9eb5da8a5b8bcda3030606eac3feea41"
+      }
+    }
   }
 }

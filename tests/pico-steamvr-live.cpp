@@ -311,7 +311,8 @@ int main(int argc,char **argv)
             dashboard_visible=dashboard_visible&&active&&visible&&
                 texture==vr::VROverlayError_None&&width&&height;
         }
-        const char *keys[]={"valve.steam.gamepadui.main","reframed.pico.steam"};
+        const char *keys[]={"valve.steam.gamepadui.main","valve.steam.gamepadui.bar",
+                            "valve.steam.gamepadui.fallback","reframed.pico.steam"};
         for (const char *key:keys) {
             vr::VROverlayHandle_t handle=vr::k_ulOverlayHandleInvalid;
             auto found=overlay->FindOverlay(key,&handle);

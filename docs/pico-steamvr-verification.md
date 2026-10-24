@@ -3,6 +3,8 @@
 These records distinguish source and VM checks from bounded native Pico tests.
 Private calibration, binary artifacts and hash manifests remain in gitignored
 `output/`. See [driver setup](pico-steamvr.md) for the opt-in configuration.
+The [native VR UI guide](pico-steamvr-ui.md) describes the separate main-panel
+and toolbar launch contract; its acceptance record is below.
 
 Host ASan/UBSan and native ARM64 tests verify 52,272 UV comparisons across four
 panel rotations, identity and chromatic models, projection signs, eye transforms,
@@ -2161,3 +2163,47 @@ Stock return was verified in a new b1977 boot, with Wi-Fi off, the updater
 disabled, no external-interface routes, and music/system volume zero. Receipts
 are `native/stock-return-final.json` and `native/stock-network-final.json` in the
 evidence directory. No firmware partition was written and the Quest was untouched.
+
+## Native Steam VR UI (2026-10-24)
+
+Evidence: `output/pico-modern-ui-20261024-v7/`. The final RAM boot used the
+maintained UI launcher, opt-in 90 Hz profile, seatd, and the gamescope Vulkan
+forwarding patch. Earlier attempts are retained separately; v6 established
+valid main/bar textures but returned to stock before its full capture could be
+exported. The v7 archive is 5,696,557 bytes, SHA-256
+`3a38e2ad3aa428829e6e382633d62354c8d30e5fae84a23a640d87e47215ee16`;
+all 108 manifest members were checked after receipt. The deployed gamescope
+hash matches `diagnostic_artifacts.ui_forwarding_sha256` in its source profile.
+
+All three late probes report the selected main panel active and visible, with
+a valid 1920×1080 texture. The separate native toolbar has a valid, visible
+1800×120 texture. The 1600×1000 desktop fallback is hidden, and the old custom
+`reframed.pico.steam` overlay is absent. A missing selected overlay returns 9
+with frame history enabled. A synchronized DMA-buffer readback of the shared
+1920×3664 scanout contains the stereoscopic sign-in panel and toolbar. The
+stored-pixel preview does not establish a coherent single frame, through-lens
+clarity or physical interaction with settings. It retains visible seams, whose
+optical significance was not checked in this unattended run.
+
+The stationary native head pipeline consumed 4,499 synchronized head-camera
+sets and published 182,217 confident head poses, with no rejected vendor head
+results. Three late 30-second OpenVR probes received 9,000 valid head samples,
+zero invalid samples and zero overdue vsync-age queries. These checks establish
+the live stream alongside the modern UI; they are not a fresh physical
+motion-scale or controller-pointing acceptance.
+
+Deduplicating the overlapping late histories yields 8,300 consecutive frame
+indices spanning 94.50 seconds. Compositor GPU p99 is 7.89 ms, but reported
+drops total 186 and frame-interval p99 is 20.74 ms, above the 11.11 ms 90 Hz
+budget. Frame pacing remains open. This single offline sign-in scene does not
+establish a performance improvement over the earlier flat UI or gaming load.
+The forwarding fix adds no CPU readback; the existing software-browser upload
+path remains enabled.
+
+Before stock return, MCU references reached zero, SLPI and CDSP were offline,
+and audio PCMs were closed. Full BOOT/DTBO hashes still matched the retained
+stock backups. `native/stock-return-v2.json` verifies a new b1977 boot with
+Wi-Fi off, no external routes, updater disabled and music/system volume zero;
+the final Bluetooth query also reports OFF. No firmware partition was written
+and the Quest was untouched. Signed-in library operation, controller optical
+acquisition and a new lens clarity check remain unverified.

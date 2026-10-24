@@ -1,11 +1,14 @@
-# gamescope shared-memory uploads
+# gamescope compatibility patches
 
-This opt-in patch targets Valve's gamescope 3.16.29, commit
+These opt-in patches target Valve's gamescope 3.16.29, commit
 `8f212644c46460549035971ab914421180f61a7c`. The pinned source package,
 Fedora patches, input/output source hashes, build options and measured ARM64
 binary hashes are in [`profiles/gamescope.json`](../../profiles/gamescope.json).
 The accompanying `LICENSE` preserves upstream's copyright and license notices.
-Valve's gamescope is the original work; the upload change is local to Reframed.
+Valve's gamescope is the original work; the upload and VR forwarding changes
+are local to Reframed.
+
+## Shared-memory uploads
 
 `import_commit()` memoizes a Vulkan texture by `wlr_buffer`. DMA-BUF imports
 refer to shared storage, but the shared-memory path uploads a pixel snapshot.
@@ -32,6 +35,13 @@ Dependency/toolchain changes may change binary hashes; retain a build manifest.
 This recipe does not install or enable the binary. Keep the control binary and
 run the candidate from a private session path for comparison.
 
+The Fedora source package supplies `pkgconfig/stb.pc`. Include that directory
+when configuring the build:
+
+```sh
+export PKG_CONFIG_PATH="$PWD/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+```
+
 The unmodified rebuild retained Steam's initial loading logo while the client
 had reached login. The patched rebuild rendered the login form into the Pico's
 stereo scanout. See the [hardware record](../../docs/pico-steamvr-verification.md)
@@ -47,3 +57,24 @@ that measured growth. The opt-in service environment is bundled as
 [`gamescope.conf`](../../system/steamvr-pico/gamescope.conf); it applies to the
 gamescope service, separately from Valve's compositor service. This is a tested
 transport workaround, not a claim that all DMA-BUF presentation is defective.
+
+## Native VR UI forwarding
+
+Apply `0002-forward-vulkan-ui-textures.patch` after `0001`. Its five input/output
+source hashes, patch hash and measured ARM64 binary hash are recorded separately
+as `ui_forwarding_patch` and `diagnostic_artifacts.ui_forwarding_sha256` in the
+profile. Use the same Meson options and build procedure above.
+
+The original forwarding path always imports a shared DMA texture, even when
+`gamescope_vr_use_modifiers=false` makes that import unavailable. Ordinary
+overlays already use Vulkan textures in this mode, but Steam's native VR panels
+therefore remain without a valid texture. The second patch uses the same Vulkan
+transport for forwarded panels, supplies transfer-source image usage, retains
+queued/visible textures through the page flip, and retries a rejected texture
+submission. It preserves the shared-texture path when modifiers are enabled.
+
+The native main panel and toolbar were tested on the Pico with modifiers
+disabled. The modifier-enabled branch compiled but was not hardware-tested in
+this change. No extra CPU readback is introduced by forwarding; Steam's current
+software-browser/shared-memory compatibility path remains. See
+[native VR UI setup and acceptance](../../docs/pico-steamvr-ui.md).
