@@ -297,6 +297,21 @@ int main(int argc,char **argv)
     }
     bool dashboard_visible=!overlay||overlay->IsDashboardVisible();
     if (overlay) {
+        vr::TrackedDevicePose_t head{};
+        system->GetDeviceToAbsoluteTrackingPose(vr::TrackingUniverseStanding,0,&head,1);
+        view_matrix("head_standing",head.mDeviceToAbsoluteTracking,head.bPoseIsValid);
+        vr::ETrackedPropertyError ipd_error=vr::TrackedProp_Success;
+        float ipd=system->GetFloatTrackedDeviceProperty(0,vr::Prop_UserIpdMeters_Float,&ipd_error);
+        uint32_t eye_width=0,eye_height=0;
+        system->GetRecommendedRenderTargetSize(&eye_width,&eye_height);
+        std::printf("PICO_STEAMVR_STEREO ipd_m=%.9g ipd_error=%d render=%ux%u\n",ipd,ipd_error,eye_width,eye_height);
+        for (vr::EVREye eye : {vr::Eye_Left,vr::Eye_Right}) {
+            float left=0,right=0,top=0,bottom=0;
+            system->GetProjectionRaw(eye,&left,&right,&top,&bottom);
+            std::printf("PICO_STEAMVR_PROJECTION eye=%d left=%.9g right=%.9g top=%.9g bottom=%.9g\n",
+                        eye,left,right,top,bottom);
+            view_matrix(eye==vr::Eye_Left?"eye_left":"eye_right",system->GetEyeToHeadTransform(eye),true);
+        }
         std::printf("PICO_STEAMVR_DASHBOARD visible=%d\n",dashboard_visible);
         if (argc>=6) {
             vr::VROverlayHandle_t selected=vr::k_ulOverlayHandleInvalid;
@@ -322,11 +337,31 @@ int main(int argc,char **argv)
             std::printf("PICO_STEAMVR_OVERLAY key=%s find=%d texture=%d size=%ux%u visible=%d\n",
                         key,found,texture,width,height,
                         found==vr::VROverlayError_None&&overlay->IsOverlayVisible(handle));
+            if (found==vr::VROverlayError_None) {
+                float alpha=0,metres=0,aspect=0,curvature=0;
+                auto alpha_error=overlay->GetOverlayAlpha(handle,&alpha);
+                auto width_error=overlay->GetOverlayWidthInMeters(handle,&metres);
+                auto aspect_error=overlay->GetOverlayTexelAspect(handle,&aspect);
+                auto curve_error=overlay->GetOverlayCurvature(handle,&curvature);
+                vr::VROverlayTransformType type=vr::VROverlayTransform_Absolute;
+                auto type_error=overlay->GetOverlayTransformType(handle,&type);
+                vr::HmdMatrix34_t point{};
+                auto point_error=overlay->GetTransformForOverlayCoordinates(handle,vr::TrackingUniverseStanding,{{.5f,.5f}},&point);
+                double relative[3]={};
+                if (head.bPoseIsValid&&point_error==vr::VROverlayError_None)
+                    for (unsigned i=0;i<3;++i) for (unsigned j=0;j<3;++j)
+                        relative[i]+=head.mDeviceToAbsoluteTracking.m[j][i]*
+                            (point.m[j][3]-head.mDeviceToAbsoluteTracking.m[j][3]);
+                std::printf("PICO_STEAMVR_OVERLAY_GEOMETRY key=%s alpha=%.9g alpha_error=%d width_m=%.9g width_error=%d aspect=%.9g aspect_error=%d curvature=%.9g curve_error=%d type=%d type_error=%d point_in_overlay=0.5,0.5 point_error=%d head_valid=%d point_head=%.9g,%.9g,%.9g\n",
+                    key,alpha,alpha_error,metres,width_error,aspect,aspect_error,curvature,curve_error,
+                    type,type_error,point_error,head.bPoseIsValid,relative[0],relative[1],relative[2]);
+                view_matrix(key,point,point_error==vr::VROverlayError_None);
+            }
         }
     }
     shutdown();dlclose(library);
     std::printf("PICO_STEAMVR_LIVE_RESULT valid=%u invalid=%u max_position_delta_m=%.6f physical_motion_acceptance=0\n",valid,invalid,max_distance);
     if (controllers) std::printf("PICO_STEAMVR_CONTROLLER_RESULT samples=%u connected=%u states=%u valid_poses=%u physical_input_acceptance=0\n",
         controller_samples,controller_connected,controller_states,controller_poses);
-    return controllers&&!controller_states?10:valid<100?8:dashboard_visible?0:9;
+    return controllers&&!controller_states?10:valid<100||invalid?8:dashboard_visible?0:9;
 }

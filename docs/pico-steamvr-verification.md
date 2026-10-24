@@ -2270,3 +2270,67 @@ Before stock return, MCU references reach zero and SLPI/CDSP are offline. Full
 BOOT/DTBO readbacks match the backups. `native/stock-return-v2.json` verifies a
 new b1977 boot, Wi-Fi off, no external routes, updater disabled and audio streams
 1/3 at zero. No firmware partition was flashed and the Quest was untouched.
+
+### UI visibility, stereo measurements and tracking-loss rejection
+
+`output/pico-ui-geometry-20261024-v2/` completes the same bounded native stack
+with 32 successful setup recipes. The early capture precedes main/bar overlay
+visibility. Both later stable captures contain the modern sign-in panel and
+native toolbar in both eyes, rather than only successful texture API results.
+The main texture is 1920x1080, toolbar 1800x120 and main alpha 1. This establishes
+stored UI content in that run, not the cause of the preceding skybox-only run.
+
+The extended live probe records eye-to-head matrices, raw projection tangents,
+render dimensions and overlay transforms/errors. Runtime IPD is 63.4 mm, with
+identity eye rotations and X origins at -/+31.7 mm. Each recommended render is
+1832x1920; X projection tangents are -/+1.09130847 and Y -/+1.14372945. These
+match the deployed profile. They do not independently validate stock's active
+SDK geometry or the owner's through-lens IPD/clarity report.
+The recorded transform samples overlay coordinate `(0.5, 0.5)` in the overlay's
+own coordinate space. The diagnostic originally labels it `centre_head`, but
+that coordinate is not established to be the panel centre. The final source
+labels it `point_head` and includes the input coordinate explicitly; that
+output-label correction follows the hardware build recorded below.
+
+The final capture timer guard is exercised on hardware: its resume timer is
+waiting and untriggered, and two full-buffer reads agree before automatic
+resume. Stable and late raw SHA-256 values are respectively
+`76215d250886e9c9ba4fe6df8bf111893a9cc4a2e8c2e2deb83c788db089397e` and
+`4cf1b8bd89b1fb65013172cd5d7e4baee6820b511570092d7951faa9a2b11890`.
+Coherent-frame and physical optical acceptance remain false.
+
+Three stationary late windows record 9,000 valid head queries, zero invalid
+and zero overdue vsync-age queries. Frame histories retain 193 reported drops
+in 8,274 consecutive sampled indices, GPU p99 7.885 ms and interval p99
+21.345 ms at a 90 Hz target. This is not clean frame-pacing or head-motion
+acceptance. The feed completes 4,499 camera sets. A preceding failed v1 run
+instead reaches its unchanged camera freshness limit at 250.547 ms while the
+latest IMU is 1.692 ms old; its full scheduling/producer cause remains open.
+
+The checker previously returned success after any 100 valid head queries,
+even when later queries were invalid. It now rejects any invalid head query
+in the measured window. In the separate v3 hardware regression, three normal
+30-second windows pass the corrected binary with 9,000 valid queries and zero
+invalid. Across the feed's scheduled shutdown, the previous binary returns
+zero with 1,017 valid and 1,983 invalid queries; the corrected binary returns
+status 8 with 1,026 valid and 1,974 invalid. Neither tracking thresholds nor
+runtime pose policy was relaxed. The ARM64 checker SHA-256 is
+`8d6d7b83ee10215418e4d651a33aa6585d87241cd6963dc5303f42132e4a05ab`.
+
+That v3 negative test is **not** a complete successful stack run: the harness
+keeps the IMU producer alive while waiting for the post-shutdown queries, fills
+its unconsumed ring and fails the final producer assertion. The checker
+regression is separately established by its recorded counters/exit statuses.
+The original payload manifest and a supplemental hash record retain the
+relocation of the previous checker outside the root-only staging directory.
+
+The v2 export is 15,572,954 bytes, SHA-256
+`2c6df05baf4c603cbbeed4404dd17bdf5cbf0b2a0fcbe6ea7856b27c119c3223`,
+with all 122 selected members verified. The v3 export is 15,589,072 bytes,
+SHA-256 `b18fc95c786917d47768e986ac371f6943f22eea903b802cceb1aff85514eea5`,
+with all 126 members verified. Both full BOOT/DTBO readbacks match the retained
+backups, DSP owners stop with zero MCU references, and their
+`native/stock-return-v2.json` receipts verify offline, muted stock return.
+No firmware partition was flashed; Quest untouched. See the
+[acceptance record](pico-vr-acceptance.md) for remaining physical and controller
+requirements.
