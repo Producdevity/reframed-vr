@@ -1452,7 +1452,8 @@ and four or five in camera 3. These are SDK detector features, not verified LED
 identities. The scorer checks pixel reprojection and gravity-direction agreement
 with adaptive acceptance limits; no validity flag or threshold is changed.
 Its 35 brute attempts remain rejected, with minimum reported reprojection
-0.535789 pixels and gravity difference 17.606310 degrees for that candidate.
+0.535789 pixels and a logged gravity score of 17.606310 for that candidate.
+That score is a half-angle in degrees, not the full gravity-vector separation.
 
 A diagnostic replay with four times the search budget changes three of the 35
 candidate fits but accepts none. A separate doubled-contrast replay also returns
@@ -1472,9 +1473,57 @@ gravity/reprojection rejection. No SDK threshold, validity gate or library byte
 is changed. The synthetic eight-LED fixture did not initialize and is retained
 as a failed control rather than tracking evidence.
 
+A separate pure-math check on the unchanged physical b1977 SDK verifies the
+gravity score convention. With identity as one quaternion, rotations of 30 and
+90 degrees about X produce zero; rotations about Y or Z produce approximately
+15 and 45. The implementation compares inverse-rotated +X reference vectors
+and returns their half-angle using its degree conversion constant. Thus the
+logged 17.606310 corresponds to about 35.21 degrees of reference-vector
+separation. This corrects the score interpretation, not the controller/head
+coordinate calibration. Evidence is
+`output/pico-controller-geometry-20261024-v1/gravity-audit/`; the isolated process
+never calls SDK initialization, starts a sensor or publishes a pose. Existing
+independent fits that assumed a Z reference cannot validate this SDK score.
+
 An ordinary stock wake/getter comparison produces 300 distinct left timestamps,
 all within 4.53 ms of qtimer, but all have state/confidence zero. This supplies
 fresh invalid results, not a working stock optical baseline. Tracked pointing
 still requires accepted image-dependent poses, loss/reacquisition and physical
 validation before publication to SteamVR. The private replay receipts, native
 export manifest and `rejection-analysis.json` retain the proof boundaries.
+
+### Native verification of the larger image pool
+
+The next bounded native run deploys the rebuilt eight-set library, with its
+SHA-256 checked against the CPU-tested build. It completes 4,445 controller image
+submissions, 35,560 alias adoptions, zero ownership drops and SDK stop zero while
+cameras, head tracking and SteamVR run together. The longest elapsed copy call
+is 7.13 ms, including scheduling. Diagnostic acquisition tracing and raw input
+recording are disabled for this run. This verifies live deployment and ownership
+progress; the synthetic fixture remains the initialization/keyframe-retention
+test because real optical acquisition still fails.
+
+Fresh controller motion reaches the SDK: 13,707 rows are delivered with maximum
+age 16.80 ms. No decoded result has public confidence one, and the motion
+epoch later times out (`-110`). The radio worker exits with status one, while its
+controller/accelerometer RPC stop acknowledgments are zero. The cutoff cause
+remains unverified.
+No controller pose is published to SteamVR.
+
+The head consumer publishes 182,216 results after 2,243 startup waits and reports
+zero rejected results. Steam's 1600×1000 overlay is reported visible during all
+three late probes. Their deduplicated software frame histories measure
+87.07–88.45 frames/s with sampled compositor GPU p99 of 7.88–8.14 ms against the
+90 Hz target. Two of 9,000 late vsync-age queries are overdue; an earlier
+500-query startup probe has eight overdue queries. Compositor logs also retain
+presentation errors. These measurements do not establish clean frame pacing,
+physical scanout rate, lens clarity or motion accuracy, and are not a controlled
+comparison with the earlier instrumented runs.
+
+The compact export verifies all 50 member hashes. Full BOOT/DTBO readbacks match
+before and after; the Pico returns to offline stock with audio muted. Setup
+retains one GPU-policy stop-test timeout, five successful diagnostic stop trials
+and a successful unchanged retry. Its cause remains unverified; the policy helper
+was not changed. Evidence is `output/pico-controller-integration-20261024-v5/`.
+The earlier v4 run's incomplete full export remains a separate failed evidence
+attempt and is not used for these timing claims.
