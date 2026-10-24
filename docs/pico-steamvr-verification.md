@@ -2383,3 +2383,61 @@ metadata describes the baseline. MCU references reach zero, SLPI/CDSP stop,
 BOOT/DTBO match their full backup hashes and offline, muted b1977 return is
 verified. The exact staged test archive is removed after hash verification.
 No firmware partition was flashed; Quest untouched.
+
+### Controller coexistence and rejected CFS promotion (2026-10-24)
+
+`output/pico-optical-acquisition-20261024-v4/` retains a diagnostic CPU trace
+starting before compositor exec, with inherited PID selection for its threads.
+The 256 MiB collector budget stops it after about 69.95 seconds; the retained
+error and truncated scope are part of the evidence. It is not a full-session
+trace or a performance baseline. In its final available 20 seconds, render-thread
+runnable delay reaches 6.088 ms, and the main thread reaches 11.487 ms. GPU
+syncobj waits also occur; observing a blocking wait does not establish a fence
+implementation defect.
+
+A separate untraced same-session ABBA comparison uses nice 0, -10, -10, 0 for
+20-second probe windows after two-second settles. Only ordinary compositor
+threads are promoted; existing positive background nice values remain intact.
+Original priorities are restored and verified, with realtime policy still blocked.
+
+| Ordinary-thread nice | Sampled frames | Reported drops | Drops / 1,000 sampled frames |
+| --- | ---: | ---: | ---: |
+| 0 | 3,485 | 73 | 20.95 |
+| -10 | 3,475 | 90 | 25.90 |
+
+The four frame-interval p99 values remain 20.68–21.39 ms at the 90 Hz target;
+GPU p99 remains 7.79–7.97 ms. Each window has 2,000 valid head queries and zero
+overdue vsync-age queries. This stationary comparison supplies no evidence of
+benefit from promotion, so no persistent priority setting is adopted. It is
+neither a general regression claim nor motion/photon acceptance.
+
+The feed consumes all 4,499 camera sets and publishes 182,254 confident head
+outputs. Controller optical confidence stays zero, and the radio worker exits
+unsuccessfully after its motion reports stop. Controller pointing remains open.
+The 146-member export and full BOOT/DTBO readbacks verify; shutdown and muted,
+offline stock return pass. Evidence is `output/pico-frame-pacing-20261024-v8/`;
+the earlier v6/v7 rejected harnesses are recorded separately.
+
+The trace launcher accepts repeatable `--syscall ID` filters for a dedicated
+idle instance. It applies and reads back the filter on both entry and exit
+events before enabling tracing; scheduler events remain unfiltered. Existing
+syscall filters are refused. This permits focused GPU ioctl diagnostics without
+retaining the unrelated high-volume syscalls that exhausted the previous capture.
+IDs must match the target kernel ABI; see the kernel's
+[event filtering documentation](https://docs.kernel.org/trace/events.html#event-filtering).
+
+The next capture, `output/pico-frame-pacing-20261025-v1/`, verifies this filter
+on the headset. It retains 159,465,364 bytes spanning the full 171.781-second
+compositor interval, with zero collector errors or per-CPU lost events. During
+one recorded timeline wait, the render thread sleeps for 7.224 ms, wakes, then
+remains runnable for another 9.464 ms before running. The 16.724 ms ioctl returns
+success. This identifies scheduler delay within an observed wait; it does not
+prove a fence defect or the cause of every dropped frame. OpenVR frame history
+and kernel trace use different epochs, so they are not aligned frame by frame.
+
+The bounded native feed completes 4,499 camera sets and 182,256 confident head
+outputs with no bad result; controller public optical confidence remains zero.
+All 136 export members and full BOOT/DTBO readbacks verify, and muted offline
+stock return passes. Staging-manifest and continuation-script errors occurred
+before setup and are retained with their verified in-RAM repairs. No priority,
+affinity or rendering policy is adopted from this instrumented result.

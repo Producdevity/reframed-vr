@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 PATH = Path(__file__).resolve().parents[1] / 'tools/pico-compositor-trace.py'
 SPEC = importlib.util.spec_from_file_location('compositor_trace', PATH)
@@ -21,6 +22,8 @@ class PicoCompositorTraceTests(unittest.TestCase):
             p = root / 'events' / event / 'enable'
             p.parent.mkdir(parents=True)
             p.write_text('0')
+        for event in MODULE.EVENTS[2:]:
+            (root / 'events' / event / 'filter').write_text('none\n')
 
     def test_pid_inheritance_and_pre_exec_marker(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -39,7 +42,7 @@ class PicoCompositorTraceTests(unittest.TestCase):
                 self.assertEqual((root / 'events' / event / 'enable').read_text(), '1')
 
     def test_existing_selection_or_missing_inheritance_refuses_launch(self):
-        for fault in ('selected', 'no_inheritance', 'running', 'event_enabled'):
+        for fault in ('selected', 'no_inheritance', 'running', 'event_enabled', 'filtered'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 self.files(root)
@@ -49,8 +52,48 @@ class PicoCompositorTraceTests(unittest.TestCase):
                     (root / 'options/event-fork').unlink()
                 elif fault == 'running':
                     (root / 'tracing_on').write_text('1')
-                else:
+                elif fault == 'event_enabled':
                     (root / 'events' / MODULE.EVENTS[0] / 'enable').write_text('1')
+                else:
+                    (root / 'events' / MODULE.EVENTS[2] / 'filter').write_text('id == 172')
                 with self.assertRaises(ValueError):
                     MODULE.arm(root, 1234)
                 self.assertEqual((root / 'trace_marker').read_text(), '')
+
+    def test_syscall_selection_filters_both_directions_without_filtering_scheduling(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.files(root)
+            MODULE.arm(root, 1234, [98, 29, 29])
+            for event in MODULE.EVENTS[2:]:
+                self.assertEqual((root / 'events' / event / 'filter').read_text(), 'id == 29 || id == 98')
+            for event in MODULE.EVENTS[:2]:
+                self.assertFalse((root / 'events' / event / 'filter').exists())
+
+    def test_invalid_syscall_ids_leave_instance_idle(self):
+        for numbers in ([-1], [2147483648], [True], ['29']):
+            with self.subTest(numbers=numbers), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                self.files(root)
+                with self.assertRaises(ValueError):
+                    MODULE.arm(root, 1234, numbers)
+                self.assertEqual((root / 'tracing_on').read_text(), '0')
+                self.assertEqual((root / 'set_event_pid').read_text(), 'no pid\n')
+
+    def test_kernel_filter_readback_mismatch_never_enables_events(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.files(root)
+            read_text = Path.read_text
+
+            def mismatched(path, *args, **kwargs):
+                value = read_text(path, *args, **kwargs)
+                return 'id == 172' if path.name == 'filter' and value == 'id == 29' else value
+
+            with patch.object(Path, 'read_text', mismatched):
+                with self.assertRaisesRegex(ValueError, 'did not accept the syscall filter'):
+                    MODULE.arm(root, 1234, [29])
+            self.assertEqual((root / 'tracing_on').read_text(), '0')
+            self.assertEqual((root / 'trace_marker').read_text(), '')
+            for event in MODULE.EVENTS:
+                self.assertEqual((root / 'events' / event / 'enable').read_text(), '0')

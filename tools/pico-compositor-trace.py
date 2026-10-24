@@ -10,7 +10,10 @@ EVENTS = ('sched/sched_switch', 'sched/sched_wakeup',
           'raw_syscalls/sys_enter', 'raw_syscalls/sys_exit')
 
 
-def arm(instance, pid):
+def arm(instance, pid, syscalls=()):
+    if any(type(number) is not int or not 0 <= number <= 2147483647 for number in syscalls):
+        raise ValueError('Expected nonnegative syscall IDs')
+    syscalls = sorted(set(syscalls))
     if pid <= 0 or (instance / 'tracing_on').read_text().strip() != '0':
         raise ValueError('Expected an idle dedicated trace instance')
     selection = (instance / 'set_event_pid').read_text().strip()
@@ -21,6 +24,9 @@ def arm(instance, pid):
     for event in EVENTS:
         if (instance / 'events' / event / 'enable').read_text().strip() != '0':
             raise ValueError('Trace event already enabled: ' + event)
+    for event in EVENTS[2:]:
+        if (instance / 'events' / event / 'filter').read_text().strip() not in ('', 'none', '0'):
+            raise ValueError('Trace event already filtered: ' + event)
     clock = instance / 'trace_clock'
     if 'mono' not in clock.read_text().replace('[', '').replace(']', '').split():
         raise ValueError('Monotonic trace clock unavailable')
@@ -32,6 +38,13 @@ def arm(instance, pid):
     (instance / 'set_event_pid').write_text(str(pid))
     if (instance / 'set_event_pid').read_text().split() != [str(pid)]:
         raise ValueError('Kernel did not select the launching PID')
+    if syscalls:
+        expression = ' || '.join('id == ' + str(number) for number in syscalls)
+        for event in EVENTS[2:]:
+            path = instance / 'events' / event / 'filter'
+            path.write_text(expression)
+            if ''.join(path.read_text().split()) != ''.join(expression.split()):
+                raise ValueError('Kernel did not accept the syscall filter: ' + event)
     for event in EVENTS:
         (instance / 'events' / event / 'enable').write_text('1')
     (instance / 'tracing_on').write_text('1')
@@ -43,6 +56,8 @@ def main():
     parser.add_argument('--instance', type=Path, required=True)
     parser.add_argument('--boot', required=True)
     parser.add_argument('--user', default='vr')
+    parser.add_argument('--syscall', type=int, action='append', default=[],
+                        help='Retain only this syscall ID (repeatable; scheduling remains unfiltered)')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
@@ -58,10 +73,11 @@ def main():
     user = pwd.getpwnam(args.user)
     if user.pw_uid == 0:
         parser.error('Compositor must run without root privileges')
-    arm(args.instance, os.getpid())
+    arm(args.instance, os.getpid(), args.syscall)
     print('PICO_COMPOSITOR_TRACE_ARMED ' + json.dumps({
         'pid': os.getpid(), 'uid': user.pw_uid, 'instance': str(args.instance),
-        'events': EVENTS, 'event_fork': True}), flush=True)
+        'events': EVENTS, 'syscall_ids': sorted(set(args.syscall)),
+        'event_fork': True}), flush=True)
     os.initgroups(user.pw_name, user.pw_gid)
     os.setgid(user.pw_gid)
     os.setuid(user.pw_uid)
