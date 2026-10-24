@@ -1364,3 +1364,21 @@ Build with `tools/build-pico-controller-images.py --ndk <pinned-ndk>
 probes with `tools/test-pico-controller-images.py --serial <pico-serial>
 --bundle <build-directory> --output <new-evidence-directory>`. Both scripts retain
 receipts; the builder has no device actions and the test starts no sensors.
+
+The subsequent native Linux/SteamVR run used the rebuilt kernel and Turnip and
+completed 3,885 owned controller image sets with zero dropped submissions,
+completion acknowledged and SDK stop returning zero. It also consumed 4,499 head
+camera sets and published 182,214 head poses without rejection. Decimated image
+copy timings had a 0.34 ms median; the maximum elapsed call across the full run
+was 8.23 ms, including scheduling delay. This establishes continuous image
+ownership under the combined workload, not its isolated performance cost.
+
+Pointing remains unaccepted: controller reception stopped after about 30 seconds,
+the worker exited 1 after safe ordered release, and sustained optical tracking
+was absent. The 25-second diagnostic image-start delay left only a short overlap
+with fresh motion. Earlier images gated by valid head brackets are the next
+isolation check. Steam's 1600×1000 surface at a 90 Hz target averaged 88.01 frames/s
+in the software history, with a 21.56 ms p99 interval and 167 reported drops.
+Lens sharpness remains unverified. Full evidence and rejected harness attempts
+are retained in the same evidence directory; BOOT/DTBO readbacks match and the
+Pico returned to unchanged offline stock with volume zero.
