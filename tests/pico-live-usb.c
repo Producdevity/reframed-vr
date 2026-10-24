@@ -92,7 +92,16 @@ int main(void)
     rewind(screen);
     assert(fread(echoed, 1, sizeof(echoed), screen) == sizeof(echoed));
     assert(!memcmp(paste, echoed, sizeof(paste)) && fgetc(screen) == EOF);
-    fclose(typed); fclose(screen); feedback_mode = 0;
+    fclose(typed); fclose(screen);
+    int pipe_fds[2];assert(!pipe(pipe_fds));
+    assert(write(pipe_fds[1],paste,4096)==4096);close(pipe_fds[1]);
+    screen=tmpfile();assert(screen);
+    feedback_used=feedback_written=elapsed=0;
+    assert(!console_session(NULL,0x81,0x01,pipe_fds[0],screen));
+    assert(feedback_written==4096 && !feedback_used);
+    rewind(screen);assert(fread(echoed,1,4096,screen)==4096);
+    assert(!memcmp(paste,echoed,4096) && fgetc(screen)==EOF);
+    close(pipe_fds[0]);fclose(screen);feedback_mode = 0;
 
     char *invalid_resume[] = {"pico-live-usb", "--serial", "c980c8d4", "--console", "--invalid"};
     assert(live_usb_main(5, invalid_resume) == 2);

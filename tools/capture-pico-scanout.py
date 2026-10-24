@@ -282,7 +282,7 @@ def main():
         raise ValueError('Output must be a new private directory directly under /run')
     signal.alarm(20)
     native, state, metadata = (capture_paused(args.pause_compositor_unit)
-                               if args.pause_compositor_unit else capture())
+                               if args.pause_compositor_unit is not None else capture())
     metadata.update(boot_id=args.boot_id, boot_serial=args.boot_serial)
     width, height = metadata['size']
     preview = bytearray()

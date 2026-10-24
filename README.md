@@ -41,6 +41,8 @@ any device changes.
 Requirements: Python 3.11+, `just`, an ARM64 Linux container engine, and
 `qemu-system-aarch64`. Docker Desktop on Apple Silicon is supported. Device-tree
 tests also need `cc`, `dtc` and `fdtoverlay`.
+Host Python tests require NumPy and Pillow; both are included in the development
+container.
 
 ```sh
 just check

@@ -23,7 +23,10 @@ def analyze(text, refresh):
     for line in text.splitlines():
         if not line.startswith('PICO_STEAMVR_FRAME_HISTORY '):
             continue
-        fields = dict(item.split('=', 1) for item in line.split()[1:])
+        pairs = [item.split('=', 1) for item in line.split()[1:]]
+        fields = dict(pairs)
+        if len(fields) != len(pairs):
+            raise ValueError('Duplicate frame-history field')
         if set(fields) != {'index', 'system_s', 'presents', 'mispresented', 'dropped', 'gpu_ms', 'cpu_ms'}:
             raise ValueError('Unexpected frame-history fields')
         value = {key: float(raw) if key in ('system_s', 'gpu_ms', 'cpu_ms') else int(raw)

@@ -1,6 +1,10 @@
 import importlib.util
+import copy
+import hashlib
+import json
 import math
 from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -11,13 +15,49 @@ spec.loader.exec_module(preview)
 
 
 def view(width, height):
-    return {'viewport': [0, 0, width, height], 'rotation': [1, 0, 0, 1],
+    return {'viewport': [0, 0, width, height], 'display': [width, height], 'rotation': [1, 0, 0, 1],
             'fov': [-math.pi/4, math.pi/4, math.pi/4, -math.pi/4],
-            'analytic_distortion': {'tangent_scale': [2, -2], 'tangent_offset': [-1, 1],
+            'analytic_distortion': {'type': 'pico-radial-2', 'tangent_scale': [2, -2], 'tangent_offset': [-1, 1],
                                     'radial_coefficients': [1]+[0]*10, 'chromatic_coefficients': [0]*6}}
 
 
 class PicoScanoutPreviewTests(unittest.TestCase):
+    def test_output_aspect_follows_per_eye_display(self):
+        self.assertEqual(preview.eye_size(view(1920, 1832), 960), (960, 916))
+        self.assertEqual(preview.eye_size(view(1832, 1920), 916), (916, 960))
+        for invalid in [None, [0, 1920], [True, 1920], [1832], [1, 16384]]:
+            optics = view(1920, 1832)
+            optics['display'] = invalid
+            with self.subTest(display=invalid), self.assertRaises(ValueError):
+                preview.eye_size(optics, 916)
+
+    def test_loads_eight_and_ten_bit_captures_with_both_profile_versions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            optics = view(1920, 1832)
+            profile = {'schema_version': 2, 'device': 'PICOA7H10', 'serial': 'fixture',
+                       'screen': {'width': 1920, 'height': 3664},
+                       'views': [optics, copy.deepcopy(optics)]}
+            profile['views'][1]['viewport'][1] = 1832
+            for name in ['XR24', 'AR24', 'XB24', 'AB24', 'XR30', 'AR30', 'XB30', 'AB30']:
+                bits = 10 if name.endswith('30') else 8
+                maximum = (1 << bits)-1
+                red, blue = (2*bits, 0) if name[1] == 'R' else (0, 2*bits)
+                words = np.zeros((3664, 1924), dtype='<u4')
+                words[0, :4] = [maximum << red, maximum << bits, maximum << blue, 0xffffffff]
+                raw = words.tobytes()
+                (root/'native.bin').write_bytes(raw)
+                metadata = {'boot_serial': 'fixture', 'size': [1920, 3664], 'pitch': 7696,
+                            'modifier': 0, 'offset': 0, 'fourcc': name, 'native_bytes': len(raw),
+                            'native_sha256': hashlib.sha256(raw).hexdigest()}
+                (root/'metadata.json').write_text(json.dumps(metadata))
+                profile['schema_version'] = 2 if name.startswith('X') else 3
+                (root/'optics.json').write_text(json.dumps(profile))
+                with self.subTest(format=name, schema=profile['schema_version']):
+                    pixels, _, _ = preview.load_capture(root, root/'optics.json')
+                    np.testing.assert_array_equal(pixels[0, :4],
+                                                  [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]])
+
     def test_identity_and_quarter_turns_preserve_pixels(self):
         pixels = np.random.default_rng(42).integers(0, 256, size=(24, 32, 3), dtype=np.uint8)
         rotations = [[1, 0, 0, 1], [0, 1, -1, 0], [-1, 0, 0, -1], [0, -1, 1, 0]]

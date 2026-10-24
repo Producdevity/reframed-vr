@@ -2137,7 +2137,9 @@ The manual-application-scale comparison delivered zero controller image sets.
 Its raw camera trace starts with IDs 0 and 3 from frame 1228, then ID 1 from
 1230: enabling the consumer partway through a set triggered the old collector's
 strict incomplete-set failure. The maintained frame-sequence helper now permits
-partial sets only before initial synchronization. Native unit tests cover all
+incomplete startup sets to be discarded before synchronization. Afterward,
+partial current sets remain pending, while duplicates, regressions and advancing
+past an incomplete set are errors. Native unit tests cover all
 24 arrival orders and four entry positions. The rebuilt capture completed its
 final full run with 64 retained controller image sets, controller-image error
 zero, 4499 head-camera sets consumed and 182213 head poses published without a
@@ -2298,6 +2300,12 @@ resume. Stable and late raw SHA-256 values are respectively
 `76215d250886e9c9ba4fe6df8bf111893a9cc4a2e8c2e2deb83c788db089397e` and
 `4cf1b8bd89b1fb65013172cd5d7e4baee6820b511570092d7951faa9a2b11890`.
 Coherent-frame and physical optical acceptance remain false.
+
+The host preview accepts the retained schema-2 and schema-3 optical profiles
+and linear 8-bit or 10-bit XR/AR/XB/AB scanout. It derives its per-eye aspect
+from each profile's `display` dimensions rather than assuming a landscape
+eye image. This is a resampled inverse of the configured pre-correction;
+neither the preview nor a stable buffer read validates physical optics.
 
 Three stationary late windows record 9,000 valid head queries, zero invalid
 and zero overdue vsync-age queries. Frame histories retain 193 reported drops

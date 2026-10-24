@@ -89,16 +89,28 @@ def render_eye(pixels, view, width, height):
     return image, coverage, maximum_residual
 
 
+def eye_size(view, width):
+    display = view.get('display')
+    if (not isinstance(display, list) or len(display) != 2 or
+            any(type(x) is not int or not 1 <= x <= 16384 for x in display)):
+        raise ValueError('Invalid per-eye display dimensions')
+    height = round(width*display[1]/display[0])
+    if not 1 <= height <= 3664:
+        raise ValueError('Unsupported per-eye output aspect')
+    return width, height
+
+
 def load_capture(directory, optics):
     metadata_path, raw_path = directory/'metadata.json', directory/'native.bin'
     if metadata_path.stat().st_size > 65536 or optics.stat().st_size > 262144:
         raise ValueError('Metadata or optical profile exceeds its size limit')
     metadata = json.loads(metadata_path.read_text())
     profile = json.loads(optics.read_text())
-    if (profile.get('schema_version') != 3 or profile.get('device') != 'PICOA7H10' or
+    if (profile.get('schema_version') not in (2, 3) or profile.get('device') != 'PICOA7H10' or
             profile.get('serial') != metadata.get('boot_serial') or
             metadata.get('size') != [1920, 3664] or metadata.get('modifier') != 0 or
-            metadata.get('offset') != 0 or metadata.get('fourcc') not in ('XR24', 'AR24', 'XB24', 'AB24')):
+            metadata.get('offset') != 0 or metadata.get('fourcc') not in
+            ('XR24', 'AR24', 'XB24', 'AB24', 'XR30', 'AR30', 'XB30', 'AB30')):
         raise ValueError('Expected a matching Neo3 profile and linear scanout')
     pitch = metadata['pitch']
     if type(pitch) is not int or not 7680 <= pitch <= 16384 or pitch % 4:
@@ -115,6 +127,7 @@ def load_capture(directory, optics):
     if len(views) != 2 or [v['viewport'] for v in views] != [[0, 0, 1920, 1832], [0, 1832, 1920, 1832]]:
         raise ValueError('Unsupported eye viewports')
     for view in views:
+        eye_size(view, 916)
         model = view['analytic_distortion']
         if model['type'] != 'pico-radial-2' or view['rotation'] not in (
                 [1, 0, 0, 1], [0, 1, -1, 0], [-1, 0, 0, -1], [0, -1, 1, 0]):
@@ -128,9 +141,15 @@ def load_capture(directory, optics):
                 not (-1.57 < view['fov'][0] < -1e-6 and 1e-6 < view['fov'][1] < 1.57 and
                      -1.57 < view['fov'][3] < -1e-6 and 1e-6 < view['fov'][2] < 1.57)):
             raise ValueError('Invalid render frustum')
-    data = np.frombuffer(raw, dtype=np.uint8).reshape(3664, pitch)[:, :7680].reshape(3664, 1920, 4)
+    words = np.frombuffer(raw, dtype='<u4').reshape(3664, pitch//4)[:, :1920]
+    bits = 10 if metadata['fourcc'].endswith('30') else 8
+    maximum = (1 << bits)-1
     order = [2, 1, 0] if metadata['fourcc'][1] == 'R' else [0, 1, 2]
-    return data[:, :, order], profile, metadata
+    pixels = np.empty((3664, 1920, 3), dtype=np.uint8)
+    for channel, component in enumerate(order):
+        values = (words >> (bits*component)) & maximum
+        pixels[:, :, channel] = (values*255+maximum//2)//maximum
+    return pixels, profile, metadata
 
 
 def main():
@@ -143,10 +162,13 @@ def main():
     if args.output.exists() or args.output.is_symlink() or not 64 <= args.eye_width <= 1832:
         parser.error('Use a new output directory and an eye width from 64 to 1832')
     pixels, profile, metadata = load_capture(args.capture, args.optics)
-    height = round(args.eye_width*1920/1832)
+    sizes = [eye_size(view, args.eye_width) for view in profile['views']]
+    if sizes[0] != sizes[1]:
+        raise ValueError('Stereo preview requires matching per-eye dimensions')
+    width, height = sizes[0]
     eyes, reports = [], []
     for view in profile['views']:
-        eye, coverage, residual = render_eye(pixels, view, args.eye_width, height)
+        eye, coverage, residual = render_eye(pixels, view, width, height)
         eyes.append(eye)
         reports.append({'covered_pixels': int(np.count_nonzero(coverage)), 'pixels': int(coverage.size),
                         'maximum_inverse_uv_residual': residual})

@@ -167,7 +167,8 @@ static int console_session(libusb_device_handle *handle, unsigned char input,
                 return 1;
             }
         }
-        if (stdin_poll.revents & (POLLHUP | POLLERR | POLLNVAL)) break;
+        if (!(stdin_poll.revents & POLLIN) &&
+            (stdin_poll.revents & (POLLHUP | POLLERR | POLLNVAL))) break;
     }
     return 0;
 }

@@ -29,6 +29,7 @@ class PicoFramePacingTests(unittest.TestCase):
         self.assertEqual(result['missing_frame_indices'], 2)
         self.assertIsNone(result['consecutive_frame_interval_ms'])
         for text in [frame(1, 1), frame(1, 1) + frame(1, 2),
-                     frame(1, 2) + frame(2, 1), frame(1, 1) + frame(2, 'nan')]:
+                     frame(1, 2) + frame(2, 1), frame(1, 1) + frame(2, 'nan'),
+                     frame(1, 1).rstrip() + ' gpu_ms=0\n' + frame(2, 1.01)]:
             with self.assertRaises(ValueError):
                 PACING.analyze(text, 100)
