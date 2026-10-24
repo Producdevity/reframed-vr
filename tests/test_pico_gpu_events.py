@@ -1,6 +1,9 @@
 import importlib.util
 import os
 from pathlib import Path
+import select
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -98,6 +101,53 @@ class GpuDeviceIdentityTests(unittest.TestCase):
                         policy.validate_device('fixture',boot)
                     else:
                         with self.assertRaises(ValueError):policy.validate_device('fixture',boot)
+
+
+class GpuSignalTests(unittest.TestCase):
+    def test_sigterm_at_wait_boundary_restores_policy(self):
+        wrapper = '''import faulthandler, importlib.util, os, signal, sys, threading
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('policy', sys.argv[1])
+policy=importlib.util.module_from_spec(spec);spec.loader.exec_module(policy)
+policy.QUEUE=Path(sys.argv[2]);policy.LOCK=policy.QUEUE/'lock'
+policy.validate_device=lambda *_: None
+original_fstat=os.fstat
+def root_stat(fd):
+    values=list(original_fstat(fd));values[4]=0;return os.stat_result(values)
+policy.os.fstat=root_stat
+class BoundaryEvent(threading.Event):
+    def wait(self, timeout=None):
+        with self._cond:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return super().wait(timeout)
+threading.Event=BoundaryEvent
+faulthandler.dump_traceback_later(.5)
+sys.argv=['policy','--boot-serial','fixture','--boot-id','fixture','--seconds','60']
+policy.main()
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            queue=Path(temporary)
+            original={'nice':'0','cpumask':'ff','max_active':'256','numa':'1'}
+            for name,value in original.items():
+                (queue/name).write_text(value+'\n')
+            child=subprocess.Popen([sys.executable,'-c',wrapper,
+                                    str(ROOT/'tools/pico-gpu-events.py'),str(queue)],
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                self.assertTrue(select.select([child.stdout],[],[],5)[0])
+                self.assertTrue(child.stdout.readline().startswith('PICO_GPU_EVENTS_READY '))
+                child.terminate()
+                try:
+                    stdout,stderr=child.communicate(timeout=2)
+                except subprocess.TimeoutExpired:
+                    child.kill();stdout,stderr=child.communicate()
+                    self.fail('Stop handler deadlocked: '+stderr)
+                self.assertEqual(child.returncode,0,stderr)
+                self.assertIn('PICO_GPU_EVENTS_RESTORED ',stdout)
+                self.assertEqual({name:(queue/name).read_text().strip() for name in original},original)
+            finally:
+                if child.poll() is None:
+                    child.kill();child.communicate()
 
 
 if __name__ == '__main__':

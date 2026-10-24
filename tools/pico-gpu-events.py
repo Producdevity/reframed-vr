@@ -10,7 +10,7 @@ import platform
 import re
 import signal
 import stat
-import threading
+import time
 import uuid
 
 QUEUE = Path('/sys/bus/workqueue/devices/kgsl-events')
@@ -72,14 +72,23 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.seconds <= 900:
         parser.error('--seconds must be between 1 and 900')
-    stopped = threading.Event()
+    stopped = False
+    def stop(*_):
+        nonlocal stopped
+        stopped = True
     previous = {}
     try:
         for signum in (signal.SIGTERM, signal.SIGINT):
-            previous[signum] = signal.signal(signum, lambda *_: stopped.set())
+            previous[signum] = signal.signal(signum, stop)
         with prioritize_events(args.boot_serial, args.boot_id) as record:
             print('PICO_GPU_EVENTS_READY ' + json.dumps(record), flush=True)
-            stopped.wait(args.seconds)
+            # A signal can interrupt Event.wait while its condition lock is held.
+            deadline = time.monotonic() + args.seconds
+            while not stopped:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(remaining, .05))
         print('PICO_GPU_EVENTS_RESTORED ' + json.dumps(record), flush=True)
     finally:
         for signum, handler in previous.items():
