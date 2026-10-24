@@ -115,6 +115,30 @@ class AudioRouteTests(unittest.TestCase):
         self.assertEqual(mixer.restored, [3, 2, 1])
         self.assertTrue(all(item['restored'] for item in report['rollback']))
 
+    def test_transaction_defers_termination_during_rollback_with_original_snapshot(self):
+        class SignallingMixer(Mixer):
+            def value(self, control, new=None):
+                result = super().value(control, new)
+                if control['numid'] == 3 and new == 30:
+                    os.kill(os.getpid(), signal.SIGTERM)
+                return result
+
+        def interrupted(number, frame):
+            raise KeyboardInterrupt()
+
+        previous = signal.signal(signal.SIGTERM, interrupted)
+        previous_mask = signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
+        mixer, report = SignallingMixer(), {}
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                audio.transaction(mixer, self.controls, lambda _: None, report)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        self.assertEqual(mixer.state, {1: 10, 2: 20, 3: 30})
+        self.assertEqual(mixer.restored, [3, 2, 1])
+        self.assertTrue(all(item['restored'] for item in report['rollback']))
+
     def test_unverified_mixer_xml_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'mixer.xml'
