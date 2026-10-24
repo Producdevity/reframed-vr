@@ -272,6 +272,10 @@ The candidate session configuration is maintained in
 - `pipewire.conf.in` retains the physically verified PCM and graph timing and
   accepts the UCM-selected PCM in `@PLAYBACK_PCM@` as a quoted configuration
   string. It exposes a single static `ReframedPicoSpeaker` sink.
+  Replace the token with `json.dumps(pcm)`, including the generated quotes;
+  for example, `hw:konamtpsndcard,0` must expand to `"hw:konamtpsndcard,0"`.
+  The template deliberately does not add another pair of quotes. A CPU check
+  with PipeWire's SPA JSON parser reads an unquoted value as only `hw`.
 - `client.conf` provides the private PipeWire client configuration.
 - `wireplumber.conf.d/50-reframed-pico.conf` defines a `pico` policy profile for
   default-node selection and stream linking. It does not enumerate audio,

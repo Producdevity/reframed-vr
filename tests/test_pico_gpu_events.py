@@ -105,7 +105,7 @@ class GpuDeviceIdentityTests(unittest.TestCase):
 
 class GpuSignalTests(unittest.TestCase):
     def test_sigterm_at_wait_boundary_restores_policy(self):
-        wrapper = '''import faulthandler, importlib.util, os, signal, sys, threading
+        wrapper = '''import faulthandler, importlib.util, os, signal, sys
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('policy', sys.argv[1])
 policy=importlib.util.module_from_spec(spec);spec.loader.exec_module(policy)
@@ -115,12 +115,12 @@ original_fstat=os.fstat
 def root_stat(fd):
     values=list(original_fstat(fd));values[4]=0;return os.stat_result(values)
 policy.os.fstat=root_stat
-class BoundaryEvent(threading.Event):
-    def wait(self, timeout=None):
-        with self._cond:
-            os.kill(os.getpid(), signal.SIGTERM)
-        return super().wait(timeout)
-threading.Event=BoundaryEvent
+original_sleep=policy.time.sleep
+def boundary_sleep(seconds):
+    print('PICO_TEST_WAIT_BOUNDARY',flush=True)
+    os.kill(os.getpid(),signal.SIGTERM)
+    original_sleep(min(seconds,.01))
+policy.time.sleep=boundary_sleep
 faulthandler.dump_traceback_later(.5)
 sys.argv=['policy','--boot-serial','fixture','--boot-id','fixture','--seconds','60']
 policy.main()
@@ -134,16 +134,15 @@ policy.main()
                                     str(ROOT/'tools/pico-gpu-events.py'),str(queue)],
                                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
             try:
-                self.assertTrue(select.select([child.stdout],[],[],5)[0])
-                self.assertTrue(child.stdout.readline().startswith('PICO_GPU_EVENTS_READY '))
-                child.terminate()
                 try:
                     stdout,stderr=child.communicate(timeout=2)
                 except subprocess.TimeoutExpired:
                     child.kill();stdout,stderr=child.communicate()
                     self.fail('Stop handler deadlocked: '+stderr)
                 self.assertEqual(child.returncode,0,stderr)
+                self.assertIn('PICO_GPU_EVENTS_READY ',stdout)
                 self.assertIn('PICO_GPU_EVENTS_RESTORED ',stdout)
+                self.assertIn('PICO_TEST_WAIT_BOUNDARY',stdout)
                 self.assertEqual({name:(queue/name).read_text().strip() for name in original},original)
             finally:
                 if child.poll() is None:
