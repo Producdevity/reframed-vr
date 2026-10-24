@@ -1366,34 +1366,54 @@ probes with `tools/test-pico-controller-images.py --serial <pico-serial>
 --bundle <build-directory> --output <new-evidence-directory>`. Both scripts retain
 receipts; the builder has no device actions and the test starts no sensors.
 
-The subsequent native Linux/SteamVR run used the rebuilt kernel and Turnip and
-completed 3,885 owned controller image sets with zero dropped submissions,
-completion acknowledged and SDK stop returning zero. It also consumed 4,499 head
-camera sets and published 182,214 head poses without rejection. Decimated image
-copy timings had a 0.34 ms median; the maximum elapsed call across the full run
-was 8.23 ms, including scheduling delay. This establishes continuous image
-ownership under the combined workload, not its isolated performance cost.
+### Native acquisition boundary
 
-Pointing remains unaccepted: controller reception stopped after about 30 seconds,
-the worker exited 1 after safe ordered release, and sustained optical tracking
-was absent. The 25-second diagnostic image-start delay left only a short overlap
-with fresh motion. Earlier images gated by valid head brackets are the next
-isolation check. Steam's 1600×1000 surface at a 90 Hz target averaged 88.01 frames/s
-in the software history, with a 21.56 ms p99 interval and 167 reported drops.
-Lens sharpness remains unverified. Full evidence and rejected harness attempts
-are retained in the same evidence directory; BOOT/DTBO readbacks match and the
-Pico returned to unchanged offline stock with volume zero.
+Four combined native Linux/SteamVR runs on the rebuilt kernel and Turnip verify
+continuous image ownership. Each completes SDK stop with zero, acknowledges
+image completion and drops no controller submissions. The first run delays
+images by 25 seconds; subsequent runs start them when valid head brackets are
+ready. Earlier images do not restore optical acquisition. In the readiness-gated
+ownership run, actual receive recovery resets the estimator in 1.32 ms and
+delivers 21,208 new IMU samples without changing the head/world generation.
 
-A second native run gates image startup on the existing head history's readiness
-result instead of waiting 25 seconds. It completes 4,445 image sets without
-ownership errors and captures real receive recovery: motion generation 105
-resets the estimator in 1.32 ms and delivers 21,208 new IMU samples while head
-world generation remains 104. All 4,366 recorded controller results still have
-state zero; the 136 public-confidence-1 samples have diagnostic `0x52 == 0`.
-Thus earlier images do not solve optical acquisition. Later receive silence
-again produces `-110` and worker exit 1 after safe release. Software history
-averages 86.79 frames/s, with a 21.68 ms p99 interval and 284 reported drops;
-this is not a controlled performance comparison with the preceding run.
-Both complete exports and recoveries are hash-verified. Further acquisition
-work needs SDK data-path instrumentation, not assumed valid flags or camera/
-calibration changes without evidence. Tracked pointing remains disabled.
+| Evidence under `output/` | Owned sets | Head poses published | Software frames/s | p99 interval | Reported drops |
+|---|---:|---:|---:|---:|---:|
+| `pico-controller-ownership-20261024-v2/native/` | 3,885 | 182,214 | 88.01 | 21.56 ms | 167 |
+| `pico-controller-ownership-20261024-v2/native-early/` | 4,445 | 182,215 | 86.79 | 21.68 ms | 284 |
+| `pico-controller-acquisition-20261024-v1/native/` | 4,445 | 182,215 | 87.86 | 21.16 ms | 182 |
+| `pico-controller-acquisition-20261024-v2/native/` | 4,445 | 182,254 | 87.89 | 21.31 ms | 179 |
+
+Head output has no rejected results in these runs. Steam uses a 1600×1000 surface,
+an 1832×1920 system layer and a 90 Hz target. These are software histories under
+different tracking/diagnostic activity, not controlled performance comparisons,
+optical frame rates or photon latency. The acquisition runs still record three
+and four overdue vsync-age samples respectively out of 9,000 queries. Their
+compositor GPU p99 is about 8.01 ms with no sampled GPU time over the 11.11 ms
+budget; this does not resolve presentation waits or prove good frame pacing.
+Maximum elapsed image-copy calls reach 13.78 ms, including scheduling delay.
+Lens sharpness remains unverified.
+
+Read-only observation of the exact b1977 SDK confirms that all four owned images
+reach its legacy Neo3 tracking engine and both LED model loads return 16 points.
+Inside the native jail, the optional online camera YAMLs are absent, but all four
+factory YAMLs are readable and their camera parser readiness flags are one.
+The left controller calibration is accepted and IMU-history readiness becomes
+one while fresh reports arrive. Missing online calibration therefore is not an
+established blocker. The isolated synthetic stock CPU probe lacks the native
+jail's readable calibration environment and cannot establish these readiness
+facts. Opaque head-data padding is not interpreted as pose validity.
+
+Tracked pointing remains disabled. The acquisition runs record 3,596 and 1,718
+controller samples respectively, all with state zero. Reception later stops with
+`-110`; the receiver exits 1 after acknowledged RPC stop, safe buffer release and
+SLPI OFFLINE. Image ownership and successful submission are not optical tracking
+acceptance. Thresholded camera blobs alone do not establish visible controller
+markers, and physical-camera PGM indices differ from calibrated SDK image IDs.
+The subsequent stock capture is asleep and stale, so it supplies no fresh
+optical baseline. Acquisition still needs image-dependent correction, loss and
+reacquisition evidence before grip/aim poses can be published to SteamVR.
+
+The complete exports and recoveries are hash-verified. BOOT/DTBO readbacks match;
+the Pico returns to unchanged offline stock with updater disabled and verified
+AudioManager music/system volume zero. Per-run READMEs retain rejected diagnostic
+fields and harness attempts separately from the accepted observations.
