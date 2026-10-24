@@ -96,6 +96,24 @@ class AcquisitionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     acquisition.analyze(motion, images)
 
+    def test_camera_exposure_and_gain_bounds_apply_to_every_view(self):
+        for camera in range(4):
+            for offset, value in [(20, 0), (20, 4096), (24, 0), (24, 256)]:
+                with self.subTest(camera=camera, offset=offset, value=value), tempfile.TemporaryDirectory() as tmp:
+                    motion, images = self.fixture(Path(tmp))
+                    raw = bytearray(images.read_bytes())
+                    struct.pack_into('<I', raw, 32+760+camera*(64+acquisition.PIXELS)+offset, value)
+                    images.write_bytes(raw)
+                    with self.assertRaisesRegex(ValueError, 'Invalid camera exposure or gain'):
+                        acquisition.analyze(motion, images)
+        with tempfile.TemporaryDirectory() as tmp:
+            motion, images = self.fixture(Path(tmp))
+            raw = bytearray(images.read_bytes())
+            for camera in range(4):
+                struct.pack_into('<II', raw, 32+760+camera*(64+acquisition.PIXELS)+20, 4095, 255)
+            images.write_bytes(raw)
+            self.assertEqual(acquisition.analyze(motion, images)['image_sets'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

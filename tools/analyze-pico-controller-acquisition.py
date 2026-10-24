@@ -70,6 +70,8 @@ def records(path, kind):
                         raise ValueError('Unsupported camera identity, geometry or timestamp')
                     if sof <= 0 or center > sof:
                         raise ValueError('Invalid exposure timing')
+                    if not 1 <= exposure <= 4095 or not 1 <= gain <= 255:
+                        raise ValueError('Invalid camera exposure or gain')
                     numbers.add(number)
                 if len(numbers) != 1:
                     raise ValueError('Mixed camera frame numbers')
