@@ -4,6 +4,10 @@
 SteamVR server and compositor. It is separate from `reframed_virtual` and does
 not use Monado. Nothing enables or installs it automatically.
 
+The [VR acceptance checklist](pico-vr-acceptance.md) tracks the remaining
+physical clarity/IPD, jitter, controller, eye-tracking and foveation requirements
+against the owner's working stock Android baseline.
+
 For Steam's native VR main panel and toolbar, use the separate
 [VR UI session guide](pico-steamvr-ui.md). It describes the required input seat,
 gamescope forwarding patches and opt-in UI profile.
