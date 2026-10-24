@@ -65,6 +65,9 @@ class PicoCompositorTraceTests(unittest.TestCase):
             root = Path(temp)
             self.files(root)
             MODULE.arm(root, 1234, [98, 29, 29])
+            self.assertEqual((root / 'tracing_on').read_text(), '1')
+            for event in MODULE.EVENTS:
+                self.assertEqual((root / 'events' / event / 'enable').read_text(), '1')
             for event in MODULE.EVENTS[2:]:
                 self.assertEqual((root / 'events' / event / 'filter').read_text(), 'id == 29 || id == 98')
             for event in MODULE.EVENTS[:2]:
@@ -109,5 +112,52 @@ class PicoCompositorTraceTests(unittest.TestCase):
                     MODULE.arm(root, 1234, [29])
             self.assertEqual((root / 'tracing_on').read_text(), '0')
             self.assertEqual((root / 'trace_marker').read_text(), '')
+            for event in MODULE.EVENTS:
+                self.assertEqual((root / 'events' / event / 'enable').read_text(), '0')
+            self.assertEqual((root / 'set_event_pid').read_text(), 'no pid\n')
+            self.assertEqual((root / 'options/event-fork').read_text(), '0')
+            for event in MODULE.EVENTS[2:]:
+                self.assertIn((root / 'events' / event / 'filter').read_text().strip(), ('0', 'none'))
+
+    def test_failed_filter_write_allows_clean_retry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.files(root)
+            write_text = Path.write_text
+            failed = []
+
+            def interrupted(path, value, *args, **kwargs):
+                if path == root / 'events' / MODULE.EVENTS[3] / 'filter' and value == 'id == 29' and not failed:
+                    failed.append(True)
+                    raise OSError('fixture filter write failure')
+                return write_text(path, value, *args, **kwargs)
+
+            with patch.object(Path, 'write_text', interrupted):
+                with self.assertRaisesRegex(OSError, 'fixture filter write failure'):
+                    MODULE.arm(root, 1234, [29])
+            self.assertEqual((root / 'set_event_pid').read_text(), 'no pid\n')
+            self.assertEqual((root / 'options/event-fork').read_text(), '0')
+            self.assertEqual((root / 'trace').read_text(), 'old capture')
+            MODULE.arm(root, 1234, [29])
+            self.assertEqual((root / 'tracing_on').read_text(), '1')
+
+    def test_failed_marker_restores_claim_and_event_enables(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.files(root)
+            write_text = Path.write_text
+
+            def interrupted(path, value, *args, **kwargs):
+                if path == root / 'trace_marker':
+                    raise OSError('fixture marker write failure')
+                return write_text(path, value, *args, **kwargs)
+
+            with patch.object(Path, 'write_text', interrupted):
+                with self.assertRaisesRegex(OSError, 'fixture marker write failure'):
+                    MODULE.arm(root, 1234, [29])
+            self.assertEqual((root / 'set_event_pid').read_text(), '')
+            self.assertEqual((root / 'options/event-fork').read_text(), '0')
+            self.assertEqual((root / 'trace_clock').read_text(), 'local')
+            self.assertEqual((root / 'tracing_on').read_text(), '0')
             for event in MODULE.EVENTS:
                 self.assertEqual((root / 'events' / event / 'enable').read_text(), '0')

@@ -28,27 +28,52 @@ def arm(instance, pid, syscalls=()):
         if (instance / 'events' / event / 'filter').read_text().strip() not in ('', 'none', '0'):
             raise ValueError('Trace event already filtered: ' + event)
     clock = instance / 'trace_clock'
-    if 'mono' not in clock.read_text().replace('[', '').replace(']', '').split():
+    clocks = clock.read_text().split()
+    if 'mono' not in [name.strip('[]') for name in clocks]:
         raise ValueError('Monotonic trace clock unavailable')
-    clock.write_text('mono')
-    (instance / 'trace').write_text('')
-    (instance / 'options/event-fork').write_text('1')
-    if (instance / 'options/event-fork').read_text().strip() != '1':
-        raise ValueError('Kernel did not enable PID inheritance')
-    (instance / 'set_event_pid').write_text(str(pid))
-    if (instance / 'set_event_pid').read_text().split() != [str(pid)]:
-        raise ValueError('Kernel did not select the launching PID')
-    if syscalls:
-        expression = ' || '.join('id == ' + str(number) for number in syscalls)
-        for event in EVENTS[2:]:
-            path = instance / 'events' / event / 'filter'
-            path.write_text(expression)
-            if ''.join(path.read_text().split()) != ''.join(expression.split()):
-                raise ValueError('Kernel did not accept the syscall filter: ' + event)
-    for event in EVENTS:
-        (instance / 'events' / event / 'enable').write_text('1')
-    (instance / 'tracing_on').write_text('1')
-    (instance / 'trace_marker').write_text('PICO_COMPOSITOR_PRE_EXEC pid=' + str(pid))
+    selected_clocks = [name[1:-1] for name in clocks if name.startswith('[') and name.endswith(']')]
+    if len(selected_clocks) != 1:
+        raise ValueError('Current trace clock unavailable')
+    fork = instance / 'options/event-fork'
+    original_fork = fork.read_text().strip()
+    if original_fork not in ('0', '1'):
+        raise ValueError('Unexpected PID inheritance state')
+    changes = []
+
+    def write(path, value, previous):
+        changes.append((path, previous))
+        path.write_text(value)
+
+    try:
+        if syscalls:
+            expression = ' || '.join('id == ' + str(number) for number in syscalls)
+            for event in EVENTS[2:]:
+                path = instance / 'events' / event / 'filter'
+                write(path, expression, '0')
+                if ''.join(path.read_text().split()) != ''.join(expression.split()):
+                    raise ValueError('Kernel did not accept the syscall filter: ' + event)
+        write(clock, 'mono', selected_clocks[0])
+        write(fork, '1', original_fork)
+        if fork.read_text().strip() != '1':
+            raise ValueError('Kernel did not enable PID inheritance')
+        write(instance / 'set_event_pid', str(pid), '')
+        if (instance / 'set_event_pid').read_text().split() != [str(pid)]:
+            raise ValueError('Kernel did not select the launching PID')
+        (instance / 'trace').write_text('')
+        for event in EVENTS:
+            write(instance / 'events' / event / 'enable', '1', '0')
+        write(instance / 'tracing_on', '1', '0')
+        (instance / 'trace_marker').write_text('PICO_COMPOSITOR_PRE_EXEC pid=' + str(pid))
+    except BaseException as error:
+        failures = []
+        for path, previous in reversed(changes):
+            try:
+                path.write_text(previous)
+            except OSError as cleanup_error:
+                failures.append(str(path) + ': ' + str(cleanup_error))
+        if failures:
+            raise RuntimeError('Trace setup failed; state restoration incomplete: ' + '; '.join(failures)) from error
+        raise
 
 
 def main():
