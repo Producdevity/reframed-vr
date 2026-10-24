@@ -16,4 +16,4 @@ exec "${REFRAMED_GAMESCOPE_BIN:-gamescope}" \
     --vr-overlay-key valve.steam.gamepadui.fallback \
     --vr-app-overlay-key valve.steam.desktopgame \
     --vr-overlay-show-immediately --vr-overlay-physical-width 1.8 \
-    -- "$launcher_dir/desktop-steam.sh" -gamepadui -vrgamepadui "$@"
+    -- bash "$launcher_dir/desktop-steam.sh" -gamepadui -vrgamepadui "$@"

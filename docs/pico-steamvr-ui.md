@@ -26,6 +26,7 @@ Within that prepared session:
 ```sh
 export VR_OVERRIDE=/opt/reframed-vr/steamvr
 export gamescope_vr_use_modifiers=false
+# For the seatd setup described above; omit when using a logind seat.
 export LIBSEAT_BACKEND=seatd
 export LIBGL_ALWAYS_SOFTWARE=1
 /path/to/reframed-vr/tools/steamvr-gamepadui.sh -cef-disable-gpu
