@@ -367,8 +367,9 @@ pixel pointer in an externally backed `cv::Mat`; its constructor at `0x6342c`
 stores that pointer without allocating an owner or copying the pixels. Returning
 zero from `alg_controller_update_all_image_with_head` therefore does not permit
 reusing or freeing the input pixels. The diagnostic retains every submitted
-set until process exit. A production stream still needs a verified ownership
-or completion contract; increasing the retained-set budget is not that contract.
+set until process exit. At that stage, continuous streaming still required an
+ownership contract. The opt-in b1977 adapter and its subsequent native validation
+are described below; increasing the retained-set budget was not the solution.
 
 The 2026-10-24 comparison verifies that the connected stock b1977 library matches
 the inspected tracker, SHA-256
@@ -1382,3 +1383,17 @@ in the software history, with a 21.56 ms p99 interval and 167 reported drops.
 Lens sharpness remains unverified. Full evidence and rejected harness attempts
 are retained in the same evidence directory; BOOT/DTBO readbacks match and the
 Pico returned to unchanged offline stock with volume zero.
+
+A second native run gates image startup on the existing head history's readiness
+result instead of waiting 25 seconds. It completes 4,445 image sets without
+ownership errors and captures real receive recovery: motion generation 105
+resets the estimator in 1.32 ms and delivers 21,208 new IMU samples while head
+world generation remains 104. All 4,366 recorded controller results still have
+state zero; the 136 public-confidence-1 samples have diagnostic `0x52 == 0`.
+Thus earlier images do not solve optical acquisition. Later receive silence
+again produces `-110` and worker exit 1 after safe release. Software history
+averages 86.79 frames/s, with a 21.68 ms p99 interval and 284 reported drops;
+this is not a controlled performance comparison with the preceding run.
+Both complete exports and recoveries are hash-verified. Further acquisition
+work needs SDK data-path instrumentation, not assumed valid flags or camera/
+calibration changes without evidence. Tracked pointing remains disabled.
