@@ -74,3 +74,7 @@ The current offline sign-in scene does not establish a signed-in library,
 controller interaction, physical text clarity or end-to-end latency. Controller
 optical acquisition remains a separate open issue. A scanout capture is not a
 coherent single-frame or through-lens measurement.
+
+The [rendering and capture guide](pico-rendering.md) explains the Vulkan,
+KGSL and DRM/KMS path, the raw panel's RGB pre-correction, and the host-side
+undistorted preview. Use that preview when inspecting UI content on a monitor.
