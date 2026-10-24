@@ -69,6 +69,36 @@ through-lens sharpness or a new rendering result.
 
 The original capture copied the live framebuffer over 47.85 ms. DMA-buffer CPU
 read synchronization was used, but a coherent single frame was not established.
-Reconstruction cannot remove this uncertainty. Frame pacing, physical clarity
-and the remaining black seams require separate acceptance; see the
+Reconstruction cannot remove this uncertainty.
+
+For a stable diagnostic snapshot in a prepared native Pico session, the
+capture tool accepts an explicit compositor unit:
+
+```sh
+python3 tools/capture-pico-scanout.py \
+  --boot-serial c980c8d4 --boot-id CURRENT_NATIVE_BOOT_UUID \
+  --output /run/pico-stable-scanout \
+  --pause-compositor-unit pico-steamvr-compositor-controller-render-v1
+```
+
+It arms an independent three-second resume timer, pauses the selected compositor
+unit, waits 100 ms, and requires two identical framebuffer readbacks with the
+same active planes. It also checks the unit's identity and that the timer has
+not expired, then resumes the compositor in a `finally` block. Capture failures
+also resume it; a failed resume leaves the watchdog armed. The option briefly
+freezes the view, so exclude it and its frame-history tail from pacing tests.
+
+Successful metadata records `stable_readback_verified=true` separately from
+`coherent_single_frame_verified`, which remains false: no GPU completion-fence
+or through-lens measurement is inferred from matching CPU reads. The default
+capture continues without a compositor pause. Frame pacing and physical clarity
+still require separate acceptance; see the
 [verification record](pico-steamvr-verification.md#native-steam-vr-ui-2026-10-24).
+
+In the native optical-validation v3 comparison, the unpaused read contains
+interior black bands at rows 1285–1311 and 3155–3174. The paused capture has two
+identical complete-buffer reads and neither interior band; the outer viewport
+masking remains. Both early captures contain only the skybox. This validates
+the readback-stability option for that scene, not visible Steam panel content.
+The [VR acceptance checklist](pico-vr-acceptance.md) keeps visibility, physical
+IPD/clarity, jitter, controllers, eye tracking and foveation open.

@@ -1,7 +1,9 @@
 import importlib.util
 from pathlib import Path
 import struct
+import subprocess
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location(
@@ -85,6 +87,74 @@ class AtomicLayout(unittest.TestCase):
                     capture.plane_layout(state().replace(old, new, 1), ACTIVE)
         with self.assertRaises(ValueError):
             capture.plane_layout(state() + state(), ACTIVE)
+
+
+class PausedCapture(unittest.TestCase):
+    def exercise(self, frames, resume_failure=False, watchdog_elapsed=False):
+        calls = []
+
+        def run(arguments, **kwargs):
+            calls.append(arguments)
+            if arguments[:2] == ['systemctl', 'show']:
+                if arguments[2].endswith('.timer'):
+                    checks = sum(c[:2] == ['systemctl', 'show'] and c[2].endswith('.timer') for c in calls)
+                    value = ('ActiveState=active\nSubState=elapsed\nLastTriggerUSecMonotonic=123\n'
+                             if watchdog_elapsed and checks > 1 else
+                             'ActiveState=active\nSubState=waiting\nLastTriggerUSecMonotonic=0\n')
+                    return subprocess.CompletedProcess(arguments, 0, value, '')
+                return subprocess.CompletedProcess(arguments, 0, 'ActiveState=active\nMainPID=42\n', '')
+            code = int(resume_failure and '--signal=CONT' in arguments and arguments[0] == 'systemctl')
+            return subprocess.CompletedProcess(arguments, code, '', '')
+
+        metadata = {'active': ACTIVE, 'copy_started': 1., 'copy_ended': 2.}
+        captures = [data if isinstance(data, Exception) else (data, 'state', dict(metadata)) for data in frames]
+        with patch.object(capture.subprocess, 'run', side_effect=run), \
+                patch.object(capture.time, 'sleep'), \
+                patch.object(capture, 'capture', side_effect=captures):
+            try:
+                result = capture.capture_paused('pico-steamvr-compositor-test')
+                return result, calls
+            except (ValueError, RuntimeError, OSError) as error:
+                return error, calls
+
+    def test_watchdog_precedes_stop_and_matching_reads_resume(self):
+        result, calls = self.exercise([b'abc', b'abc'])
+        self.assertTrue(result[2]['stable_readback_verified'])
+        self.assertEqual(result[2]['compositor_pause']['matching_readbacks'], 2)
+        armed = next(i for i, c in enumerate(calls) if c[0] == 'systemd-run')
+        stopped = next(i for i, c in enumerate(calls) if '--signal=STOP' in c)
+        resumed = next(i for i, c in enumerate(calls) if '--signal=CONT' in c and c[0] == 'systemctl')
+        self.assertLess(armed, stopped)
+        self.assertLess(stopped, resumed)
+        self.assertEqual(calls[-1][:2], ['systemctl', 'stop'])
+
+    def test_changed_pixels_are_rejected_and_compositor_resumes(self):
+        result, calls = self.exercise([b'abc', b'abd'])
+        self.assertIsInstance(result, ValueError)
+        self.assertIn('Framebuffer changed', str(result))
+        self.assertTrue(any('--signal=CONT' in c and c[0] == 'systemctl' for c in calls))
+
+    def test_failed_resume_keeps_watchdog_armed(self):
+        result, calls = self.exercise([b'abc', b'abc'], resume_failure=True)
+        self.assertIsInstance(result, RuntimeError)
+        self.assertFalse(any(c[:2] == ['systemctl', 'stop'] for c in calls))
+
+    def test_readback_exception_still_resumes(self):
+        result, calls = self.exercise([OSError('readback failed')])
+        self.assertIsInstance(result, OSError)
+        self.assertTrue(any('--signal=CONT' in c and c[0] == 'systemctl' for c in calls))
+
+    def test_elapsed_timer_is_rejected_even_when_still_active(self):
+        result, calls = self.exercise([b'abc', b'abc'], watchdog_elapsed=True)
+        self.assertIsInstance(result, ValueError)
+        self.assertIn('already fired', str(result))
+        self.assertTrue(any('--signal=CONT' in c and c[0] == 'systemctl' for c in calls))
+
+    def test_other_services_are_refused_before_any_action(self):
+        with patch.object(capture.subprocess, 'run') as run:
+            with self.assertRaises(ValueError):
+                capture.capture_paused('sshd.service')
+            run.assert_not_called()
 
 
 if __name__ == '__main__':

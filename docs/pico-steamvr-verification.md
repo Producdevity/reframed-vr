@@ -2207,3 +2207,66 @@ Wi-Fi off, no external routes, updater disabled and music/system volume zero;
 the final Bluetooth query also reports OFF. No firmware partition was written
 and the Quest was untouched. Signed-in library operation, controller optical
 acquisition and a new lens clarity check remain unverified.
+
+### Optical reference, readback stability and startup guard
+
+The owner reports that stock Pico Android has clean display and correct head
+and controller tracking. The native Linux physical clarity/IPD, jitter and
+controller failures remain software acceptance gaps, tracked in the
+[VR acceptance checklist](pico-vr-acceptance.md).
+
+A fresh b1977 optical-getter read matches the deployed radial and chromatic
+coefficients in both eyes exactly. Comparing the current SteamVR callback with
+retained stock mesh/GLES results over 17,136 synthetic-geometry points checks
+102,816 RGB coordinate components; the maximum visible coordinate difference
+is 0.00051 pixels at a 1920-pixel reference dimension. This checks the equations,
+not the user's active eye origins, full stock rendering policy or lens clarity.
+The current profile supplies static eye poses approximately 63.4 mm apart; no
+live eye-tracking/IPD update is implemented in this driver.
+
+The first new native attempt aborts gamescope before its main UI becomes ready:
+explicit non-Steam windows override forced composition and reach a subview
+path that asserts with modifiers disabled. Patch `0003` preserves composition
+when those DMA imports are unavailable. The next attempt installs that rebuild,
+but a stale expected binary hash in the diagnostic harness correctly rejects it
+before SteamVR starts. Both attempts are retained as failures, with verified
+stock returns; neither is capture or UI acceptance.
+
+The corrected third attempt is in
+`output/pico-optics-validation-20261024-v3/`. Its 9,889,486-byte export has SHA-256
+`d2bc5ec29c42865195c23d3f807b4452e1fc3bcbe6c72d58eeee852e5b13e3a0`;
+all 112 manifest members were verified. The deployed renderer matches
+`diagnostic_artifacts.nonsteam_composition_sha256` in `profiles/gamescope.json`.
+
+The paired unpaused scanout contains interior black bands at rows 1285–1311 and
+3155–3174. With a guarded compositor pause, two readbacks of all 28,139,520 bytes
+match SHA-256
+`2a5f1aa6748314118033c438babda0488b7d6b82ffe92403390c313684b37881`.
+The same two active planes and framebuffer remain selected, and neither
+interior band is present. Existing viewport-edge
+masking remains. The compositor resumes and continues producing frames.
+`stable_readback_verified` is true while `coherent_single_frame_verified`
+remains false; matching bytes are not a GPU completion-fence measurement.
+The published tool additionally requires a waiting timer with zero last-trigger
+time: an elapsed timer can still be active. That stricter expiry guard has a
+unit regression test; this Pico boot used the earlier active-state check, not
+that final guard revision. Its exact capture source is retained in the payload.
+
+Both early pixel captures contain only the skybox, despite active main-panel
+and visible toolbar API textures. This run therefore establishes stable readback
+and startup/API acceptance, not renewed visible Steam UI acceptance. The
+optics-aware host preview removes the configured colour pre-correction from
+the earlier v7 sign-in capture without changing device pixels; it does not close
+the owner's through-lens clarity or IPD failures.
+
+After a five-second exclusion following the capture pause, three late windows
+deliver 9,000 valid head samples, zero invalid head samples and one overdue
+vsync-age query. The 8,309 consecutive sampled frame indices span 94.40 seconds,
+with compositor GPU p99 7.49 ms, 168 reported drops and interval p99 20.45 ms.
+Jitter/frame pacing remains open; these stationary observations do not prove
+comfortable head-motion prediction.
+
+Before stock return, MCU references reach zero and SLPI/CDSP are offline. Full
+BOOT/DTBO readbacks match the backups. `native/stock-return-v2.json` verifies a
+new b1977 boot, Wi-Fi off, no external routes, updater disabled and audio streams
+1/3 at zero. No firmware partition was flashed and the Quest was untouched.

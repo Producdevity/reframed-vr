@@ -157,6 +157,7 @@ def main():
               'raw_sha256': metadata['native_sha256'], 'optics_sha256': hashlib.sha256(args.optics.read_bytes()).hexdigest(),
               'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'coherent_single_frame_verified': metadata.get('coherent_single_frame_verified', False),
+              'stable_readback_verified': metadata.get('stable_readback_verified', False),
               'device_actions': [], 'eye_size': [args.eye_width, height], 'eyes': reports}
     for path in args.output.glob('*.png'):
         report[path.name] = {'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
