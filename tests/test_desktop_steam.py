@@ -9,7 +9,7 @@ LAUNCHER = Path(__file__).parents[1] / "tools/desktop-steam.sh"
 
 
 class DesktopSteamTests(unittest.TestCase):
-    def launch(self, platforms):
+    def launch(self, platforms, override_platforms=None):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             client = home / ".local/share/Steam"
@@ -21,8 +21,17 @@ class DesktopSteamTests(unittest.TestCase):
                 library = client / "steamapps/common/SteamVR/bin" / platform / "vrclient.so"
                 library.parent.mkdir(parents=True)
                 library.touch()
+            environment = os.environ | {"HOME": str(home)}
+            environment.pop("VR_OVERRIDE", None)
+            if override_platforms is not None:
+                runtime = home / "native-runtime"
+                environment["VR_OVERRIDE"] = str(runtime)
+                for platform in override_platforms:
+                    library = runtime / "bin" / platform / "vrclient.so"
+                    library.parent.mkdir(parents=True)
+                    library.touch()
             subprocess.run(["bash", str(LAUNCHER), "-applaunch", "250820"],
-                           env=os.environ | {"HOME": str(home)}, check=True, capture_output=True)
+                           env=environment, check=True, capture_output=True)
             return (home / ".local/state/reframed-vr/steam.log").read_text().splitlines()
 
     def test_x86_only_runtime_skips_native_client_integration(self):
@@ -35,3 +44,9 @@ class DesktopSteamTests(unittest.TestCase):
 
     def test_no_runtime_does_not_change_client_flags(self):
         self.assertNotIn("-vrdisable", self.launch([]))
+
+    def test_native_override_takes_precedence_over_installed_x86_runtime(self):
+        self.assertNotIn("-vrdisable", self.launch(["linux64"], ["linuxarm64"]))
+
+    def test_x86_override_does_not_use_unselected_native_runtime(self):
+        self.assertIn("-vrdisable", self.launch(["linuxarm64"], ["linux64"]))
