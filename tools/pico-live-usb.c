@@ -191,8 +191,11 @@ int main(int argc, char **argv)
     unsigned char data[1024 * 1024];
     if (!console) {
         snprintf(expected, sizeof(expected), "REFRAMED_LIVE_READY serial=%s bytes=%zu sha256=%s\n", argv[2], bytes, argv[6]);
-        if (line(handle, input, &stream, value, sizeof(value), seconds() + 90) || strcmp(value, expected)) {
-            fputs("Wrong or missing root-transfer handshake; nothing sent.\n", stderr); goto done;
+        int handshake = line(handle, input, &stream, value, sizeof(value), seconds() + 90);
+        if (handshake || strcmp(value, expected)) {
+            fputs("Wrong or missing root-transfer handshake; nothing sent.\n", stderr);
+            if (!handshake) fprintf(stderr, "Received: %.256s\n", value);
+            goto done;
         }
         fputs(value, stdout); fflush(stdout);
         size_t sent = 0;
