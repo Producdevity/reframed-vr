@@ -102,3 +102,9 @@ masking remains. Both early captures contain only the skybox. This validates
 the readback-stability option for that scene, not visible Steam panel content.
 The [VR acceptance checklist](pico-vr-acceptance.md) keeps visibility, physical
 IPD/clarity, jitter, controllers, eye tracking and foveation open.
+
+The subsequent UI-geometry v2 run captures the modern sign-in panel and toolbar
+in both eyes at two later stable readbacks. Its early capture precedes overlay
+visibility. It also exercises the final waiting/untriggered resume-timer guard.
+This establishes stored UI pixels for that run; it does not explain the previous
+run's missing panel or establish through-lens sharpness and stereo comfort.
