@@ -1563,3 +1563,20 @@ stop. Recorded order therefore does not restore acquisition in this recording;
 no tracker threshold or library byte was changed. Four host tests additionally
 reject legacy/truncated inputs, missing or duplicate ordinals, generation
 changes, invalid head brackets and mixed camera sets.
+
+### Stock result-coordinate oracle
+
+The isolated b1977 helper check in
+`output/pico-optical-acquisition-20261024-v4/controller-conversion/` uses seven
+synthetic inputs: identity plus independent 90-degree X/Y/Z rotations of the
+raw controller and supplied origin/reset transform. All 28 output rows return
+success. The raw millimetre position maps as `(-y, x, z)` and quaternion axes
+follow the same Z-axis basis change. Its later outputs apply fixed handed
+translations and compose with the supplied origin/reset transform.
+
+That third argument retains the stock meaning established above; it must not
+be replaced with the current head pose. These pure-math calls neither start a
+tracker nor establish aim/grip calibration, prediction-time handling, optical
+validity or a SteamVR pointer. The real recorded-order replay still produces
+only state-zero callbacks. An inner brute-fit success flag is not final SDK
+initialization or a public tracked result.
