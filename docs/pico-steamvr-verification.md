@@ -2629,3 +2629,41 @@ The 157-member export is 43,210,269 bytes, SHA-256
 Member and complete compressed-stream hashes, full BOOT/DTBO readbacks,
 MCU/DSP shutdown and muted offline stock return verify. The owned USB helper is
 joined after return. No firmware partition or Quest device is modified.
+
+### Render-pass mode comparison at 90 Hz (2026-10-25)
+
+`output/pico-tile-pacing-20261025-v1/` compares automatic rendering with forced
+system-memory rendering in one native boot: automatic, SYS, SYS, automatic.
+Each observation lasts 20 seconds after a two-second settle. Pixels, optics,
+Mesa, tracking feeds and the two-period vsync-age bound remain unchanged.
+The exact retained Mesa source supports the private `TU_DEBUG_FILE` override;
+GPU render-pass records confirm that the requested modes actually run.
+
+| Window | Policy | Sampled frames | Reported drops | GPU median / p99 |
+| --- | --- | ---: | ---: | ---: |
+| 1 | automatic | 1,853 | 82 | 7.271 / 8.020 ms |
+| 2 | forced SYS | 1,868 | 43 | 7.468 / 8.066 ms |
+| 3 | forced SYS | 1,845 | 72 | 7.458 / 8.063 ms |
+| 4 | automatic | 1,864 | 48 | 7.175 / 7.826 ms |
+
+Histories include their initial pre-window snapshot and are not disjoint cohorts.
+Interval p99 remains approximately 22.27 ms in all four windows. All 8,000 late
+head queries are valid, but three vsync-age faults remain. The override increases
+median GPU cost slightly and provides no consistent pacing improvement. It is
+rejected and automatic rendering is restored; no maintained policy is changed.
+
+The trace retains 14,771 complete frame objects and 59,084 render passes. Its
+final enclosing-array bracket is absent at shutdown; parsing complete objects
+requires appending only that bracket in memory, leaving the original intact.
+Five GPU clock regressions around paused captures prevent a global GPU-to-CPU
+time mapping. Four passes occur per frame, two eye-sized and two panel-sized;
+framebuffer dimensions alone do not establish fragment coverage without viewport
+and scissor data. All report one sample. This does not measure photons.
+
+Host previews show the Steam sign-in panel and modern toolbar in both eyes for
+both policies. They do not establish through-lens clarity, IPD or motion quality.
+All 4,499 camera sets complete. The 165-member export is 25,907,543 bytes,
+SHA-256 `ac53dd1bce9772649a9fa0810a96b547147eeb46a376fa0a550e01c2f83b4d01`.
+Member and compressed-stream source hashes, full BOOT/DTBO readbacks, MCU/DSP
+shutdown, muted offline stock return and owned USB helper join verify. No firmware
+partition or Quest device is modified.
