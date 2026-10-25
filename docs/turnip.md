@@ -676,3 +676,15 @@ kernel wake-accounting correction requires separate validation. Pico Linux patch
 0015 passes native blocking-wake and nonblocking enforcement controls; its first
 combined run retains the compositor but stops on a camera sequence gap before
 steady timing windows. It does not establish complete pacing acceptance.
+
+The later post-dashboard comparison keeps ordinary nice −20 through startup,
+then selects RR/2 only after the owning session verifies the Steam dashboard,
+live tracking and scanout. The maintained opt-in helper
+[`pico-steamvr-render-priority.py`](../tools/pico-steamvr-render-priority.py)
+checks that session's recent private readiness receipt, native boot and live
+compositor identity before applying the bounded policy. It preserves the
+100 ms watchdog, resource ceilings, affinity and niceness, then restores the
+original policy. It installs no default policy. Two matched native comparisons
+reduce missed frames substantially in their RR windows; rare misses and optical
+controller acquisition remain open. See the post-dashboard section in
+[`pico-steamvr-verification.md`](pico-steamvr-verification.md).

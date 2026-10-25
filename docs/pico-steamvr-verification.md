@@ -3392,3 +3392,91 @@ The 8,343,706-byte export contains 173 verified data members plus its manifest,
 SHA-256 `7150ba3389162d9037218b88488e4fe5101dcf4221d958910cf55ce9c4ade4e1`.
 Source/member hashes, full BOOT/DTBO readbacks, GPU/workqueue restoration,
 MCU/DSP shutdown, muted offline stock return and owned USB host exit verify.
+
+### Post-dashboard renderer scheduling (2026-10-25/26)
+
+`output/pico-camera-gap-20261025-v1/` completes 180 seconds with 4,499 complete
+camera sets and 182,232 confident head outputs, without a bad SLAM result. A
+private bounded camera journal and camera-task scheduler selection add failure
+coverage. No refusal occurs and no journal is dumped; this does not establish
+that the preceding camera gap is fixed. The deployed diagnostic source closure,
+trace bytes and cleanup verify.
+
+Ordinary caller nice −20 still has 40/26/22/23 reported drops and three age
+queries above the unchanged 22.222 ms bound. Of 111 contained DRM misses, 87
+overlap more than 1 ms of renderer runnable delay between the prior flip and
+next GPU queue; 72 include that delay before the previous wait returns. Four
+fence-late misses also have callback dispatch tails above 1 ms. This supports a
+post-startup scheduling comparison, without assigning all misses to one cause.
+
+`output/pico-render-post-ui-20261025-v1/` changes the renderer policy only after
+the dashboard is visible and scanout/tracking checks pass. Affinity, nice −20,
+event RR/2, API-worker nice −20, GPU configuration, camera journal and observer
+presence remain fixed. The ordinary/RR2/RR2/ordinary windows give:
+
+| Measurement | Ordinary | RR/2 | RR/2 | Ordinary |
+| --- | ---: | ---: | ---: | ---: |
+| Reported history drops | 35 | 3 | 1 | 26 |
+| Contained DRM skips | 35 | 2 | 1 | 27 |
+| Frame interval p99 | 22.252 ms | 11.281 ms | 11.266 ms | 22.230 ms |
+| Renderer runnable interval p99 | 1.274 ms | 0.325 ms | 0.344 ms | 1.044 ms |
+| Overdue age queries | 1 | 0 | 0 | 1 |
+
+History snapshots and fully contained DRM pairs use different observation
+boundaries. GPU medians stay near 7.19–7.27 ms. CFS scheduler traces include
+brief kernel priority boosts; RR windows consistently show priority 97. One
+on-time stub fence has no GPU-command identity and remains explicitly
+unclassified. Its failed original parser result is retained. No missed frame
+is discarded to make the comparison pass.
+
+The startup collector now enables/expands syscall exits before entries. This
+avoids creating an entry-only setup window; initial unmatched exits remain
+explicit boundary observations. Strict selected-renderer and API-worker futex
+parsers pass in this comparison. The earlier capture's failed pairing result
+remains retained.
+
+[`pico-steamvr-render-priority.py`](../tools/pico-steamvr-render-priority.py)
+provides the measured policy as an explicit, bounded context or CLI. It requires
+the selected native Neo3 boot, UID-1000 compositor service and RenderThread,
+matching process/thread start identities, ordinary nice −20, RTPRIO 2 and the
+existing 100,000 µs soft/hard RT limit. A private root-owned readiness JSON must
+match that GPU-submitter identity, the visible `valve.steam.gamepadui.main`
+dashboard and an observation within 120 seconds. This is an assertion by the
+owning validated session; the helper does not independently query SteamVR or
+identify a GPU submitter from its thread name. It adds no default activation.
+
+The helper requests RR/2 with reset-on-fork and accepts the driver's observed
+loss of that bit. It preserves limits, niceness and affinity. Normal exit,
+handled SIGTERM/SIGINT and Python failures restore the original policy; changed
+identity or unexpected live state refuses a restoration write. An exited task
+needs none. These checks are not atomic TID-reuse protection.
+
+```sh
+python3 tools/pico-steamvr-render-priority.py \
+  --boot-serial DEVICE_BOOT_SERIAL --boot-id CURRENT_BOOT_UUID \
+  --pid COMPOSITOR_PID --tid GPU_SUBMITTER_TID \
+  --ready-json /run/pico-controller-owned-test/renderer-ready.json --seconds 300
+```
+
+Seventeen focused host tests pass. `output/pico-render-helper-20261026-v1/`
+then deploys the exact maintained source and repeats the matched workload.
+Both actual helper contexts restore their complete snapshots exactly, including
+affinity and limits; RR/2 readback exercises both reset-bit forms. The repeated
+history drops are 37/3/2/26, contained DRM skips 35/4/2/24 and interval p99
+22.257/11.345/11.299/22.237 ms. Three overdue age queries occur in the first
+ordinary window and none in the RR windows. All 4,499 camera sets complete,
+the four default cross-exec GPU interop cases pass, and no compositor watchdog
+kill occurs. Rare RR misses, broader application/shader workloads, physical
+latency and lens clarity remain separate acceptance work.
+
+Both comparisons verify source/member hashes, full traces without recorded
+loss, original renderer restoration, GPU/workqueue restoration, MCU/DSP
+shutdown, full BOOT/DTBO readbacks and muted offline stock return. Their exports
+are 43,119,665 bytes, SHA-256
+`ffdfafb6d7aaf54b41adddbaf0c1f67d1eaaecf8660b46527fc5fa73ee4835b0`,
+and 43,235,853 bytes, SHA-256
+`eb040a2b71458065df5d8b1da2f7c47baf31e6d78c48912ec61a9eab6deb1598`.
+Optical controller tracking is not accepted: the preceding two complete sampled
+controller files cover only about 27 seconds before motion delivery stops, and
+every recorded left SDK state is zero. A full head/camera run must not be
+presented as 180 seconds of live controller motion or proof of producer health.
