@@ -2852,3 +2852,96 @@ The 168-member export is 22,153,504 bytes, SHA-256
 Member/source hashes, full Pico BOOT/DTBO readbacks, MCU/DSP shutdown, original CPU
 policy/debug-setting restoration, muted offline stock return and USB helper join
 verify. No firmware partition or Quest device is modified.
+
+### Display-event thread delay (2026-10-25)
+
+Exact present IDs, KGSL fence context/timestamps, DRM sequences and scheduler
+events in `output/pico-camera-reorder-20261025-v1/` identify a remaining CPU
+delay before the next render. Before missed sequences, the display-event thread
+has median runnable waits of 1.526/1.728/1.369 ms across the three windows,
+versus 0.006–0.007 ms on ordinary frames. GPU execution is not the only remaining
+boundary: some commands retire before the observed vblank, but their fence wait
+or encoder kickoff finishes afterward. Those trace events do not establish the
+physical panel latch deadline or photon timing.
+
+`output/pico-wsi-event-priority-20261025-v1/` holds the render thread at RR/2 and
+compares only the exact display-event TID in four 20-second probe requests:
+
+| Event policy | History frames / drops | In-window DRM skipped sequences | Interval p99 |
+| --- | ---: | ---: | ---: |
+| OTHER/0 | 1,901 / 18 | 16 | 11.556 ms |
+| RR/2 | 1,911 / 2 | 2 | 11.300 ms |
+| RR/2 | 1,914 / 0 | 0 | 11.285 ms |
+| OTHER/0 | 1,900 / 9 | 9 | 11.306 ms |
+
+History snapshots include frames before each observation window; the DRM column
+counts only consecutive flip pairs fully inside that window. These counts must
+not be treated as identical cohorts. All 8,000 head and unchanged two-period
+vsync-age queries pass. All 4,499 camera sets complete, with 182,214 confident
+head outputs and no bad result. Optical controller publication remains zero.
+
+The two RR-window misses have different recorded boundaries: one has 6.717 ms
+blocked before GPU submission; the other has 1.210 ms between estimated GPU
+retirement and fence-wait completion, crossing the observed vblank. Their deeper
+blocking/callback causes remain unverified. The comparison supports event-thread
+scheduling as a contributor; it does not establish universally clean 90 Hz.
+The trace has one unfinished fence wait at 303.221 seconds, after the final
+window ends at 267.742 seconds; all compared intervals are complete. Both trace
+collectors report no lost events, and source/member hashes verify.
+
+The export contains 172 members, 21,758,662 bytes, SHA-256
+`14e794fbf952c521aa2d3dfd97b3e3fbacef9b274e3e6fe47135c4a5629abda5`.
+Exact event/render scheduling restoration, full Pico BOOT/DTBO readbacks,
+MCU/DSP shutdown and muted offline stock return verify. The owned USB host
+wrapper is joined after the expected reboot disconnect. No Quest is modified.
+
+A first library-startup test in `output/pico-wsi-event-startup-20261025-v1/`
+verifies graceful `EPERM` fallback: the original compositor service explicitly
+disallows realtime scheduling and its event thread remains OTHER/0. Its assertion
+stops before UI acceptance; its recovery and firmware readbacks still verify.
+
+The `v2` startup test verifies event RR/2 with a native `User=vr` service, priority
+ceiling 2, no capabilities and realtime requests permitted. It then fails before
+UI acceptance with a confirmed kernel `CPU Watchdog Timeout (hard)` for the
+render thread. This establishes the SIGKILL cause for this run, not for earlier
+unattributed kills. The pinned KGSL fast-submission path temporarily promotes the
+caller to FIFO/40; the RT watchdog counter resets on RT wakeup. Counter
+accumulation across temporary boosts while restoring OTHER is a source-backed
+explanation to investigate, not a directly recorded counter trace.
+
+`output/pico-wsi-event-startup-20261025-v3/` changes only the timing of the existing
+exact-render RR/2 selection, applying it before Steam UI startup. It keeps the
+same library, event policy, affinity and 100 ms watchdog. Actual startup readbacks
+verify both selected threads. The full run completes without a watchdog timeout:
+
+| Window | History frames / drops | Interval p99 | GPU median | Overdue age queries |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 2,859 / 5 | 11.281 ms | 7.243 ms | 0 / 3,000 |
+| 2 | 2,843 / 3 | 11.276 ms | 7.173 ms | 0 / 3,000 |
+| 3 | 2,845 / 3 | 11.272 ms | 7.179 ms | 0 / 3,000 |
+
+All 9,000 head queries are valid, all 4,499 camera sets complete, and head output
+has 182,217 confident callbacks with no bad result. All four 4 MiB cross-exec
+interop cases pass. The host inverse preview shows Steam sign-in and its toolbar
+in both eyes; physical sharpness, IPD and moving-head acceptance for this build
+are pending.
+All 13,748 controller callbacks still lack public optical pose confidence.
+The camera reorder counters remain zero, so this run does not exercise live
+cross-frame recovery. One completed startup does not establish a general
+watchdog fix or eliminate the 5/3/3 remaining dropped frames.
+
+The opt-in library SHA-256 is
+`d8413b8c5802ce85977bbd6a630ae9d9fbae7059222141e9fc39ab8792ad473b`.
+Its retained-source incremental build and actual-helper sanitizer tests pass;
+this is not a fresh full-bundle build. All 18 patches apply with zero fuzz to the
+checksum-pinned Mesa archive, and all 13 patched targets match the compiled
+source byte for byte. Full CPU/GPU and DRM/SDE streams are 34,782,471 and
+31,335,475 bytes with no collector errors or lost events; the one unfinished
+fence wait is outside the compared windows.
+
+The 172-member export is 21,927,883 bytes, SHA-256
+`801c7c07288e6c2541f0c15a0df7b5883891188e027375814855a1b4488e6829`.
+Source/member hashes, full Pico BOOT/DTBO readbacks, MCU/DSP shutdown, original
+render-policy/debug-setting restoration, muted offline stock return and owned
+USB host join verify. The event policy ends with its owned compositor process.
+No firmware partition or Quest device is modified.

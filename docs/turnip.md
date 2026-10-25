@@ -608,3 +608,32 @@ The subsequent guarded-library test in
 `output/pico-camera-reorder-20261025-v1/` verifies the actual compositor opt-in
 and priority separation on the pinned Pico kernel, with all four default interop
 cases passing. The verification notes retain its exact library hash and limits.
+
+## Display-event thread scheduling
+
+Patch 0018 adds the Linux opt-in `MESA_VK_WSI_DISPLAY_EVENT_RT=1`. It requests
+RR/2 with reset-on-fork for Mesa's display-event thread before dispatch starts.
+The default path makes no scheduling request. A denied request logs its error
+and continues with the existing policy; it does not fail presentation. No
+affinity, render-thread policy or resource limit is changed by the library.
+
+The event thread handles page-flip completion, which releases the next frame.
+An exact-TID Pico comparison with render RR/2 fixed reduces recorded frame drops
+from 18/9 in the normal-policy windows to 2/0 in the RR/2 windows. These are
+overlapping OpenVR history snapshots, not disjoint display cohorts or a photon
+latency measurement. See the [verification notes](pico-steamvr-verification.md#display-event-thread-delay-2026-10-25)
+for the corresponding DRM sequence gaps and remaining misses.
+
+The compositor service must permit this request. The original diagnostic's
+`RestrictRealtime=yes` and zero `LimitRTPRIO` deny it, as a native test confirms.
+The library does not bypass those settings. Sanitizer tests exercise the actual
+helper with modeled scheduling calls, including absent/invalid opt-ins and
+permission failures. Build and artifact checks bind that helper to its evidence.
+
+The verified startup profile uses systemd `User=vr`, `LimitRTPRIO=2`,
+`RestrictRealtime=no` and the existing `LimitRTTIME=100ms`. It grants no
+capabilities. The owned session selects render RR/2 before starting the Steam UI;
+that render-thread choice is separate from this library option. The full native
+test in `output/pico-wsi-event-startup-20261025-v3/` verifies event RR/2 at startup,
+all four default interop cases, Steam rendering and camera/head tracking. Rare
+missed frames remain; no launch setting is made a default by this patch.

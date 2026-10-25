@@ -219,6 +219,18 @@ def build(profile, driver="lavapipe"):
                 "executable_sha256": digest(output / "mesa-display-counter-tests"),
             }
 
+            run([sys.executable, str(ROOT / "tests/mesa-display-event-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-event-tests.log", timeout=120)
+            report["display_event_tests"] = {
+                "status": "passed",
+                "scope": "actual opt-in event-thread request; modeled scheduler, no host policy changes",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-event-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-event-tests.c"),
+                "helpers_sha256": digest(output / "display-event-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-event-tests"),
+            }
+
             run([sys.executable, str(ROOT / "tests/mesa-display-master-tests.py"),
                  str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
                 "mesa-display-master-tests.log", timeout=120)
@@ -308,11 +320,13 @@ def build(profile, driver="lavapipe"):
             if ("libdrm.so.2" not in dynamic or b"TU_KGSL_DRM_SYNC" not in library or
                     b"TU_KGSL_DISPLAY" not in library or b"MESA_VK_WSI_PICO_SPLIT_DMA" not in library):
                 raise ValueError("Turnip library is missing the DRM bridge or dependency")
+            if b"MESA_VK_WSI_DISPLAY_EVENT_RT" not in library:
+                raise ValueError("Turnip library is missing the display-event priority option")
             (output / "kgsl-compile-command.txt").write_text(kgsl[0] + "\n")
             (output / "dynamic-dependencies.txt").write_text(dynamic)
             report["kgsl_drm_bridge_compiled"] = True
             report["kgsl_display_compiled"] = True
-        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "display-counter-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
+        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "display-counter-under-test.h", "display-event-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
         for name in (*names, "vulkan-external-sync", "vulkan-interop", *evidence):
             path = output / name
             report["artifacts"].append({"path": name, "bytes": path.stat().st_size, "sha256": digest(path)})
