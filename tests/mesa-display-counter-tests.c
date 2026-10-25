@@ -29,6 +29,7 @@ static void *wsi_swapchain_from_handle(void *p) { return p; }
 static struct wsi_display_mode *wsi_display_mode_from_handle(struct wsi_display_mode *p) { return p; }
 static unsigned queries;
 static unsigned traces;
+static const void *expected_trace_chain;
 static int query_result;
 static uint64_t query_timestamp=1000000000;
 static int drmCrtcGetSequence(int fd, uint32_t crtc, uint64_t *value, uint64_t *timestamp)
@@ -47,10 +48,10 @@ static void wsi_present_trace(const char *event, const void *chain, const void *
     if (!strcmp(event,"counter_query")) {
         const char *enabled=getenv("MESA_VK_WSI_FRAME_COUNTER_TIMING");
         bool timing=sequence==0x7ffffffd && enabled && !strcmp(enabled,"1");
-        assert(!chain && !image && !result && timestamp==(uint64_t)timing);
+        assert(chain==expected_trace_chain && !image && !result && timestamp==(uint64_t)timing);
         return;
     }
-    assert(!strcmp(event,"counter") && chain && !image && !result);
+    assert(!strcmp(event,"counter") && chain==expected_trace_chain && !image && !result);
     assert(sequence==123 && timestamp==query_timestamp);
     ++traces;
 }
@@ -66,6 +67,7 @@ int main(void)
     struct wsi_display_mode mode={&connector};
     struct surface surface={&mode};
     struct wsi_display_swapchain chain={&surface};
+    expected_trace_chain=&chain;
     assert(!unsetenv("MESA_VK_WSI_FRAME_COUNTER_TIMING"));
     uint64_t values[3]={456,789,987};
     uint32_t unsupported[]={0,2,3,0x7ffffffd,0xffffffff};
@@ -105,5 +107,14 @@ int main(void)
     assert(!setenv("MESA_VK_WSI_FRAME_COUNTER_TIMING","0",1));
     assert(wsi_GetSwapchainCounterEXT(&device,&chain,0x7ffffffd,values)==VK_ERROR_UNKNOWN && queries==6);
     assert(traces==1);
+    struct wsi_display_swapchain second_chain={&surface};
+    expected_trace_chain=&second_chain;
+    assert(!setenv("MESA_VK_WSI_FRAME_COUNTER_TIMING","1",1));
+    query_timestamp=1000000000;
+    assert(wsi_GetSwapchainCounterEXT(&device,&second_chain,0x7ffffffd,values)==VK_SUCCESS);
+    assert(values[0]==123 && values[1]==1000000000 && queries==7 && traces==2);
+    query_result=-1;values[0]=456;values[1]=789;
+    assert(wsi_GetSwapchainCounterEXT(&device,&second_chain,0x7ffffffd,values)==VK_ERROR_UNKNOWN);
+    assert(values[0]==456 && values[1]==789 && values[2]==987 && queries==8 && traces==2);
     puts("MESA_DISPLAY_COUNTER_PASS opt-in paired DRM time; failure bounds; standard queries preserved");
 }

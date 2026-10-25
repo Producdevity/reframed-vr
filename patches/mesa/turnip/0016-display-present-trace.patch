@@ -96,7 +96,7 @@ errno and ignore diagnostic write failures.
     /* Frame's private query returns sequence, then CLOCK_MONOTONIC nanoseconds. */
     bool timing = counter == (VkSurfaceCounterFlagBitsEXT)0x7ffffffd &&
                   option && !strcmp(option, "1");
-+   wsi_present_trace("counter_query", NULL, NULL, counter, timing, 0);
++   wsi_present_trace("counter_query", wsi_swapchain_from_handle(_swapchain), NULL, counter, timing, 0);
     if (counter != VK_SURFACE_COUNTER_VBLANK_BIT_EXT && !timing)
        return VK_ERROR_UNKNOWN;
  
