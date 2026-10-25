@@ -143,6 +143,15 @@ It does not open the dashboard or start sensors. Correlate its timestamps with
 the separate compositor trace to establish concurrent presentation; this probe
 alone does not prove rendering, button interaction or wake-from-idle.
 
+Boolean components are initialized once after activation, then updated only when
+their requested value differs from the last successful publication. This follows
+Valve's [component update contract](https://github.com/ValveSoftware/openvr/blob/master/docs/Driver_API_Documentation.md#updating-components).
+Failed writes remain eligible for retry; disconnect and deactivation still
+release active controls. Pose updates continue independently. The driver debug
+response includes `input_calls` to distinguish input API calls from `updates` of
+the controller as a whole. Fewer API calls alone do not establish a frame-pacing
+or latency improvement.
+
 ### Digital default bindings
 
 The profile supplies a Neo3-specific legacy binding and a driver default for

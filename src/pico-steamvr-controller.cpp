@@ -57,6 +57,7 @@ vr::EVRInitError PicoSteamvrController::Activate(uint32_t id)
         ok = (vr::VRDriverInput()->CreateBooleanComponent(container, paths[i], &inputs[i])
               == vr::VRInputError_None) && ok;
     if (!ok) return vr::VRInitError_Driver_Failed;
+    for (auto &ready : initialized) ready = false;
     index = id;
     vr::VRDriverLog()->Log("Reframed Neo3 controller: live digital inputs; pose requires a bound fresh tracking channel");
     return vr::VRInitError_None;
@@ -68,12 +69,15 @@ void PicoSteamvrController::publish(const pico_controller_sample &sample, bool a
     bool failed = false;
     for (unsigned i = 0; i < 12; i++) {
         bool next = active && ((i < 7 ? sample.buttons : sample.touches) & masks[i]);
+        if (initialized[i] && values[i] == next) continue;
+        input_calls++;
         if (vr::VRDriverInput()->UpdateBooleanComponent(inputs[i], next, 0) != vr::VRInputError_None) {
             failures++;
             failed = true;
         } else {
             changes += next != values[i];
             values[i] = next;
+            initialized[i] = true;
         }
     }
     connected = active && !failed;
@@ -131,7 +135,8 @@ void PicoSteamvrController::DebugRequest(const char *, char *response, uint32_t 
     if (!size) return;
     std::lock_guard<std::mutex> lock(mutex);
     auto pose = read_pose();
-    std::snprintf(response, size, "PICO_CONTROLLER_INPUT hand=%u connected=%d updates=%llu changes=%llu failures=%llu pose_valid=%d",
+    std::snprintf(response, size, "PICO_CONTROLLER_INPUT hand=%u connected=%d updates=%llu changes=%llu failures=%llu pose_valid=%d input_calls=%llu",
         hand, connected, static_cast<unsigned long long>(updates),
-        static_cast<unsigned long long>(changes), static_cast<unsigned long long>(failures), pose.poseIsValid);
+        static_cast<unsigned long long>(changes), static_cast<unsigned long long>(failures), pose.poseIsValid,
+        static_cast<unsigned long long>(input_calls));
 }

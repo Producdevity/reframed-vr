@@ -39,6 +39,7 @@ struct MockIVRProperties final : IVRProperties {
 struct MockIVRDriverInput final : IVRDriverInput {
     std::map<uint64_t, std::string> names;
     std::map<std::string, bool> values;
+    unsigned updates = 0;
     bool fail_create = false, fail_update = false;
     pico_controller_channel *invalidate = nullptr;
     EVRInputError CreateBooleanComponent(PropertyContainerHandle_t ulContainer, const char *pchName,
@@ -55,6 +56,7 @@ struct MockIVRDriverInput final : IVRDriverInput {
                                          double fTimeOffset) override
     {
         assert(fTimeOffset == 0 && names.count(ulComponent));
+        updates++;
         if (invalidate) {assert(pico_controller_channel_disconnect(invalidate,1));invalidate=nullptr;}
         if (fail_update) {
             fail_update = false;
@@ -249,6 +251,8 @@ int main()
         assert(context.input.names.size() == 12);
         driver.Update();
         assert(!driver.GetPose().deviceIsConnected);
+        unsigned initialized = context.input.updates;
+        assert(initialized == 12);
         pico_controller_sample sample{};
         sample.hand = 1;
         sample.buttons = 4 | 128;
@@ -257,6 +261,7 @@ int main()
         driver.Update();
         assert(!driver.GetPose().deviceIsConnected);
         assert(!context.input.values.at("/input/x/click"));
+        assert(context.input.updates == initialized);
         assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
         driver.Update();
         assert(driver.GetPose().deviceIsConnected);
@@ -266,10 +271,24 @@ int main()
         assert(!context.input.values.at("/input/y/click"));
         assert(!context.host.pose.poseIsValid &&
                context.host.pose.result == TrackingResult_Uninitialized);
+        assert(context.input.updates == initialized + 4);
+        unsigned unchanged = context.input.updates;
+        unsigned poses_before = context.host.calls;
+        for (unsigned i = 0; i < 100; i++) driver.Update();
+        assert(context.input.updates == unchanged && context.host.calls == poses_before + 100);
+        sample.buttons |= 2;
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update();
+        assert(context.input.updates == unchanged + 1);
+        assert(context.input.values.at("/input/application_menu/click"));
+        sample.touches |= 2;
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
         context.input.invalidate=&channel;
         driver.Update();
         assert(context.host.pose.deviceIsConnected && context.input.values.at("/input/x/click"));
         assert(!driver.GetPose().deviceIsConnected);
+        driver.Update();
+        for (auto &entry : context.input.values) assert(!entry.second);
         assert(pico_controller_channel_publish(&channel,&sample,now_ns()));
         context.input.fail_update = true;
         driver.Update();
@@ -293,6 +312,28 @@ int main()
         char debug[256];
         driver.DebugRequest("", debug, sizeof debug);
         assert(std::strstr(debug, "failures=1") && std::strstr(debug, "pose_valid=0"));
+        unsigned before_reactivation = context.input.updates;
+        assert(driver.Activate(3) == VRInitError_None);
+        assert(pico_controller_channel_disconnect(&channel, 1));
+        driver.Update();
+        assert(context.input.updates == before_reactivation + 12);
+        driver.Deactivate();
+    }
+    {
+        context.input.names.clear();
+        context.input.values.clear();
+        assert(pico_controller_channel_disconnect(&channel, 1));
+        PicoSteamvrController retry(&channel, 123, 1);
+        assert(retry.Activate(3) == VRInitError_None);
+        unsigned before = context.input.updates;
+        context.input.fail_update = true;
+        retry.Update();
+        assert(context.input.updates == before + 12);
+        retry.Update();
+        assert(context.input.updates == before + 13);
+        retry.Update();
+        assert(context.input.updates == before + 13);
+        assert(!retry.GetPose().deviceIsConnected);
     }
     {
         context.input.names.clear();

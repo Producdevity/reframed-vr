@@ -20,8 +20,8 @@ class PicoSteamvrController final : public vr::ITrackedDeviceServerDriver {
     std::mutex mutex;
     vr::TrackedDeviceIndex_t index = vr::k_unTrackedDeviceIndexInvalid;
     vr::VRInputComponentHandle_t inputs[12]{};
-    bool connected = false, values[12]{};
-    uint64_t updates = 0, changes = 0, failures = 0;
+    bool connected = false, values[12]{}, initialized[12]{};
+    uint64_t updates = 0, changes = 0, failures = 0, input_calls = 0;
     void publish(const pico_controller_sample &sample, bool active);
     vr::DriverPose_t read_pose();
     vr::DriverPose_t read_pose(bool active);

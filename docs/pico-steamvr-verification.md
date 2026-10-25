@@ -3043,3 +3043,35 @@ The 186-member export is 32,223,377 bytes, SHA-256
 `5aacc836c10ee5fd64fc03ba4184588b533de6671e22da5174dd2ee010b3f14e`.
 Member/source hashes, full BOOT/DTBO readbacks, workqueue restoration, MCU/DSP
 shutdown, muted offline stock return and the owned USB wrapper's exit verify.
+
+### Controller input publication cost (2026-10-25)
+
+`output/pico-controller-input-updates-20261025-v1/` tests the driver that caches
+successful boolean publications. Every component is initialized after each
+activation; later unchanged values make no input API call. Failed publications
+remain retryable, active controls are released on disconnect/deactivation, and
+pose updates continue on every controller update. Sanitizer fixtures cover
+100 unchanged updates with continued pose publication, a single-control change,
+failed initialization, failed active publication, recovery and reactivation.
+
+The native ARM64 driver SHA-256 is
+`2b2bfd7ecf724a2f71d8e5d1fae6e4b920f2a18145d336f422bc1bf1bbcbc528`.
+Only that driver and its composition receipt change in the staged payload;
+the preceding probe, settings, models, Mesa and capture stack are retained.
+The native controller/head coexistence probe passes, as do all four 4 MiB
+cross-exec GPU interop cases. The compact export omitted the controller counter
+log, so the API-call reduction is established by the host fixture, rather than
+quantified on hardware. No frame-pacing improvement is claimed.
+
+All 9,000 late head and vsync-age queries pass the unchanged checks. The head
+capture completes 4,499 camera sets and 182,218 confident outputs without bad
+results. History frames/drops are 2,849/7, 2,844/5 and 2,846/4; fully contained
+DRM flip pairs skip 8/5/4 vblanks. Missed refreshes therefore remain despite the
+passing age samples. Controller image ownership reports 4,441 complete sets
+and three drops; all 13,786 decoded controller callbacks lack public confidence.
+Optical pose publication stays off and tracked pointing remains unverified.
+
+The 180-member export is 31,978,743 bytes, SHA-256
+`e715d4e095d41f349d85216ea5a2ef485315b73018966e239e011f0bd6e0b7e0`.
+Member/source hashes, full BOOT/DTBO readbacks, workqueue/GPU restoration,
+MCU/DSP shutdown, muted offline stock return and owned USB-wrapper exit verify.
