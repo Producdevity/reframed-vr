@@ -242,3 +242,41 @@ its same-boot correction before graphics starts. Cleanup restores the original
 interface address/flags, platform rfkill, firmware search path and fallback
 sysctl, then unloads all three radio modules. MCU references reach zero,
 SLPI/CDSP stop, full BOOT/DTBO hashes match and muted offline stock return passes.
+
+## Wi-Fi unit identity and startup
+
+[`pico-wifi-identity.py`](../tools/pico-wifi-identity.py) makes the verified stock
+WLAN address available before network startup. It consumes the private stock
+identity receipt, binds the native board, boot serial and UUID, and requires a
+managed QCA6390 interface under the `cnss_pci` driver with `wlan` loaded.
+NetworkManager and wpa_supplicant must be stopped. The interface must be down
+and unassociated; the helper never brings it up or supplies network credentials.
+
+The helper checks address readback, interface index, device/driver paths and
+unchanged flags. A matching unit address needs no write. A failed write or
+verification attempts restoration of the previous address, provided the same
+boot/interface remains down and unassociated. A changed boot, interface, driver
+or flags prevents further writes and reports incomplete restoration. The private
+lock and receipts prevent overlapping provisioners and accidental evidence
+replacement. Interrupted writes enter the same restoration path; repeated
+termination is deferred during that cleanup.
+
+Within an already prepared native Pico session:
+
+```sh
+python3 tools/pico-wifi-identity.py \
+  --boot-serial DEVICE_BOOT_SERIAL --boot-id "$(cat /proc/sys/kernel/random/boot_id)" \
+  --identity /path/to/private/stock-radio-identities.json \
+  --interface wlan0 --output /run/NEW_WIFI_IDENTITY.json
+```
+
+Eight host tests cover matching identities, failed writes/readback, restoration
+failure, interrupted writes, changed boot/interface/driver/flags, private receipt
+validation, actual ioctl packing and device-state refusals. A native test in
+`output/pico-wifi-identity-20261025-v1/` verifies address change and readback with
+unchanged down flags, then a repeated call without an address write. Its passive
+scan returns 161 BSS observations while remaining unassociated. Bluetooth
+initialization and its unit-address checks also pass with the adapter unpowered.
+Original interface state, rfkill, firmware path and fallback policy are restored,
+all three radio modules unload, full BOOT/DTBO readbacks match and muted offline
+stock returns. Host rollback tests do not establish physical rollback acceptance.
