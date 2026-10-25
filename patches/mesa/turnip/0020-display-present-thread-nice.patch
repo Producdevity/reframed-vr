@@ -1,0 +1,56 @@
+From: Producdevity
+Subject: [PATCH] wsi/display: offer ordinary present-caller niceness
+
+Allow an explicit CFS nice -20 alternative after completed presentation.
+Shader creation may still execute on this caller, so real-time promotion can
+exhaust its existing CPU watchdog even after the first completed frame.
+Keep both modes disabled by default and reject simultaneous requests.
+Presentation results, other policies, affinity and resource limits stay intact.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -58,6 +58,7 @@
+ #ifdef __linux__
+ #include <sys/syscall.h>
+ #include <sched.h>
++#include <sys/resource.h>
+ #endif
+ #include <errno.h>
+ #include <string.h>
+@@ -3467,16 +3468,28 @@
+    if (attempted)
+       return;
+    attempted = true;
+-   const char *option = getenv("MESA_VK_WSI_PRESENT_THREAD_RT");
+-   if (!option || strcmp(option, "1"))
++   const char *rt_option = getenv("MESA_VK_WSI_PRESENT_THREAD_RT");
++   const char *nice_option = getenv("MESA_VK_WSI_PRESENT_THREAD_NICE");
++   bool want_rt = rt_option && !strcmp(rt_option, "1");
++   bool want_nice = nice_option && !strcmp(nice_option, "1");
++   if (!want_rt && !want_nice)
+       return;
+    int saved_errno = errno;
+-   int policy = sched_getscheduler(0);
+-   int error = policy < 0 ? errno : 0;
+-   if (policy == SCHED_OTHER) {
+-      struct sched_param param = { .sched_priority = 2 };
+-      if (sched_setscheduler(0, SCHED_RR | SCHED_RESET_ON_FORK, &param))
+-         error = errno;
++   int error = 0;
++   if (want_rt && want_nice) {
++      error = EINVAL;
++   } else {
++      int policy = sched_getscheduler(0);
++      error = policy < 0 ? errno : 0;
++      if (policy == SCHED_OTHER) {
++         if (want_rt) {
++            struct sched_param param = { .sched_priority = 2 };
++            if (sched_setscheduler(0, SCHED_RR | SCHED_RESET_ON_FORK, &param))
++               error = errno;
++         } else if (setpriority(PRIO_PROCESS, 0, -20)) {
++            error = errno;
++         }
++      }
+    }
+    if (error)
+       fprintf(stderr, "WSI present-thread priority unavailable: %s\n", strerror(error));

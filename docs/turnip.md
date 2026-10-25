@@ -654,3 +654,22 @@ reset-on-fork bit, despite requesting that bit; continued preservation of the bi
 is not established. The service ceiling remains 2 and no capabilities are added.
 The instrumented run still has one overdue age query, so this is not a complete
 frame-pacing acceptance result.
+
+A later cold run still exhausts the 100 ms real-time CPU watchdog while creating
+a dashboard shader, after presentation has begun. Completing the first present
+does not ensure that startup compilation is over. Patch 0020 therefore adds
+`MESA_VK_WSI_PRESENT_THREAD_NICE=1` as an ordinary SCHED_OTHER nice −20 alternative.
+It activates at the same completed-present boundary, once per thread and outside
+the wait mutex. Setting both priority options to `1` rejects the request without
+changing policy or niceness. Other scheduling policies, affinity, resource limits
+and presentation results are preserved; both modes remain disabled by default.
+The caller needs permission to request nice −20, such as the diagnostic service's
+existing `LimitNICE=-20`. This option does not disable or increase its watchdog.
+
+Ordinary mode alone is not a watchdog fix on this vendor kernel. The version-2
+pool capture verifies SCHED_OTHER/nice −20 at startup and scheduler boundaries,
+but the kernel still reports a hard RT-time watchdog kill during GPU submission.
+KGSL can temporarily promote the caller to FIFO internally. Its restored CFS
+sleepers miss the RT-class-only timeout reset, allowing accounting to survive
+blocking sleeps. The option remains an explicit scheduling comparison; the
+kernel wake-accounting correction requires separate validation.

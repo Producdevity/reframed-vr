@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/resource.h>
 
 typedef int VkResult;
 enum { VK_SUCCESS = 0, VK_TIMEOUT = 2, VK_ERROR_DEVICE_LOST = -4 };
@@ -20,21 +21,22 @@ struct wsi_display_swapchain {
     VkResult present_id_error;
     int present_id_mutex, present_id_cond;
 };
-struct Case { const char *option; int policy, query_error, request_error; enum Mode mode; };
+struct Case { const char *option, *nice_option; int policy, query_error, request_error, niceness; enum Mode mode; };
 struct State {
     struct Case input;
     struct wsi_display_swapchain chain;
-    unsigned lookups, queries, requests;
+    unsigned lookups, queries, requests, nice_requests;
     bool locked, wait_end;
 };
 static _Thread_local struct State state;
 
 static char *modeled_getenv(const char *name)
 {
-    assert(!strcmp(name, "MESA_VK_WSI_PRESENT_THREAD_RT"));
     assert(!state.locked && state.wait_end);
     ++state.lookups;
-    return (char *)state.input.option;
+    if (!strcmp(name, "MESA_VK_WSI_PRESENT_THREAD_RT")) return (char *)state.input.option;
+    assert(!strcmp(name, "MESA_VK_WSI_PRESENT_THREAD_NICE"));
+    return (char *)state.input.nice_option;
 }
 static int modeled_getscheduler(pid_t pid)
 {
@@ -51,6 +53,15 @@ static int modeled_setscheduler(pid_t pid, int policy, const struct sched_param 
     ++state.requests;
     if (state.input.request_error) { errno = state.input.request_error; return -1; }
     state.input.policy = policy;
+    return 0;
+}
+static int modeled_setpriority(int which, id_t who, int priority)
+{
+    assert(which == PRIO_PROCESS && who == 0 && priority == -20);
+    assert(!state.locked && state.wait_end && state.input.policy == SCHED_OTHER);
+    ++state.nice_requests;
+    if (state.input.request_error) { errno = state.input.request_error; return -1; }
+    state.input.niceness = priority;
     return 0;
 }
 static uint64_t os_time_get_absolute_timeout(uint64_t timeout) { return timeout + 1000000000; }
@@ -88,10 +99,12 @@ static int u_cnd_monotonic_timedwait(int *cond, int *mutex, const struct timespe
 #define getenv modeled_getenv
 #define sched_getscheduler modeled_getscheduler
 #define sched_setscheduler modeled_setscheduler
+#define setpriority modeled_setpriority
 #include "display-present-priority-under-test.h"
 #undef getenv
 #undef sched_getscheduler
 #undef sched_setscheduler
+#undef setpriority
 
 static void *exercise(void *opaque)
 {
@@ -100,7 +113,9 @@ static void *exercise(void *opaque)
     VkResult expected = initial.mode == SEM_TIMEOUT || initial.mode == COND_TIMEOUT ? VK_TIMEOUT :
                         initial.mode == COND_ERROR || initial.mode == PRESENT_ERROR ? VK_ERROR_DEVICE_LOST : VK_SUCCESS;
     bool completed = initial.mode == COMPLETE || initial.mode == COND_COMPLETE;
-    bool enabled = initial.option && !strcmp(initial.option, "1");
+    bool want_rt = initial.option && !strcmp(initial.option, "1");
+    bool want_nice = initial.nice_option && !strcmp(initial.nice_option, "1");
+    bool enabled = want_rt != want_nice;
     for (unsigned i = 0; i < 4; ++i) {
         state.chain.present_id = initial.mode == COMPLETE || initial.mode == PRESENT_ERROR || initial.mode == SEM_TIMEOUT ? 1 : 0;
         state.chain.present_id_error = initial.mode == PRESENT_ERROR ? VK_ERROR_DEVICE_LOST : VK_SUCCESS;
@@ -110,7 +125,7 @@ static void *exercise(void *opaque)
         assert(!state.locked && errno == E2BIG);
     }
     if (!completed) {
-        assert(!state.lookups && !state.queries && !state.requests);
+        assert(!state.lookups && !state.queries && !state.requests && !state.nice_requests);
         state.input.mode = COMPLETE;
         state.chain.present_id = 1;
         state.chain.present_id_error = VK_SUCCESS;
@@ -118,10 +133,12 @@ static void *exercise(void *opaque)
         assert(wsi_display_wait_for_present(&state.chain.base, 1, 1000) == VK_SUCCESS);
         assert(errno == E2BIG);
     }
-    assert(state.lookups == 1 && state.queries == (unsigned)enabled);
+    assert(state.lookups == 2 && state.queries == (unsigned)enabled);
     bool requested = enabled && !initial.query_error && initial.policy == SCHED_OTHER;
-    assert(state.requests == (unsigned)requested);
-    assert(state.input.policy == (requested && !initial.request_error ? (SCHED_RR | SCHED_RESET_ON_FORK) : initial.policy));
+    assert(state.requests == (unsigned)(requested && want_rt));
+    assert(state.nice_requests == (unsigned)(requested && want_nice));
+    assert(state.input.policy == (requested && want_rt && !initial.request_error ? (SCHED_RR | SCHED_RESET_ON_FORK) : initial.policy));
+    assert(state.input.niceness == (requested && want_nice && !initial.request_error ? -20 : initial.niceness));
     return NULL;
 }
 static void check(struct Case value)
@@ -143,5 +160,18 @@ int main(void)
     int policies[] = {SCHED_FIFO, SCHED_RR, SCHED_RR | SCHED_RESET_ON_FORK, SCHED_BATCH, SCHED_IDLE, SCHED_DEADLINE};
     for (unsigned i = 0; i < sizeof(policies)/sizeof(*policies); ++i) check((struct Case){ .option = "1", .policy = policies[i] });
     for (enum Mode mode = SEM_TIMEOUT; mode <= COND_COMPLETE; ++mode) check((struct Case){ .option = "1", .mode = mode });
+    check((struct Case){ .nice_option = "1" });
+    check((struct Case){ .nice_option = "1", .niceness = -20 });
+    check((struct Case){ .nice_option = "1", .query_error = ESRCH });
+    check((struct Case){ .nice_option = "1", .request_error = EPERM });
+    check((struct Case){ .option = "1", .nice_option = "1" });
+    for (unsigned i = 0; i < sizeof(invalid)/sizeof(*invalid); ++i) {
+        check((struct Case){ .nice_option = invalid[i] });
+        check((struct Case){ .option = "1", .nice_option = invalid[i] });
+    }
+    for (unsigned i = 0; i < sizeof(policies)/sizeof(*policies); ++i)
+        check((struct Case){ .nice_option = "1", .policy = policies[i], .niceness = 5 });
+    for (enum Mode mode = SEM_TIMEOUT; mode <= COND_COMPLETE; ++mode)
+        check((struct Case){ .nice_option = "1", .mode = mode });
     puts("WSI present priority: completed nonzero frames only, outside mutex, once per thread; failures preserve presentation");
 }

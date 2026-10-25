@@ -55,6 +55,8 @@ def validate(directory):
         raise ValueError('Turnip library is missing the display-event priority option')
     if b'MESA_VK_WSI_PRESENT_THREAD_RT' not in library:
         raise ValueError('Turnip library is missing the present-thread priority option')
+    if b'MESA_VK_WSI_PRESENT_THREAD_NICE' not in library:
+        raise ValueError('Turnip library is missing the ordinary present-thread priority option')
     command = (directory / 'kgsl-compile-command.txt').read_text()
     if '-DHAVE_LIBDRM ' not in command or '-DMESA_SYSTEM_HAS_KMS_DRM=1 ' not in command:
         raise ValueError('Turnip KGSL compile omitted DRM support')

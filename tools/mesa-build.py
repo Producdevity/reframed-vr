@@ -336,6 +336,8 @@ def build(profile, driver="lavapipe"):
                 raise ValueError("Turnip library is missing the display-event priority option")
             if b"MESA_VK_WSI_PRESENT_THREAD_RT" not in library:
                 raise ValueError("Turnip library is missing the present-thread priority option")
+            if b"MESA_VK_WSI_PRESENT_THREAD_NICE" not in library:
+                raise ValueError("Turnip library is missing the ordinary present-thread priority option")
             (output / "kgsl-compile-command.txt").write_text(kgsl[0] + "\n")
             (output / "dynamic-dependencies.txt").write_text(dynamic)
             report["kgsl_drm_bridge_compiled"] = True

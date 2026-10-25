@@ -3295,3 +3295,40 @@ SHA-256
 Member/source hashes, full BOOT/DTBO readbacks, GPU/workqueue restoration,
 MCU/DSP shutdown and muted offline stock return verify despite the failed test.
 No steady pacing or optical controller acceptance is claimed.
+
+### Ordinary caller scheduling exposes watchdog accounting across classes
+
+`output/pico-callback-pool-20261025-v2/` tests patch 0020's ordinary scheduling
+alternative with the API worker still nice −20, display-event thread RR/2 and
+the existing 100 ms RT watchdog. The deployed library SHA-256 is
+`f6a6b87a9bd862f05a17aa3203b37ae7aa2d28deb93f27cbd8ccd6fbb63c1553`.
+Actual-function ASan/UBSan tests pass, including mutual exclusion with the RT
+option and unchanged presentation results. All 20 patches apply with zero fuzz
+to the pinned archive and all 13 patched targets match the incremental build's
+source. This is not a fresh full-bundle build.
+
+Startup confirms caller policy OTHER/priority 0 and nice −20. All 6,014 observed
+caller scheduling boundaries have priority 100. Nevertheless, the exact kernel
+message identifies an RLIMIT_RTTIME hard-limit kill of that caller during GPU
+submission, after only 1.215 ms scheduled since its latest blocking wake. This
+does not implicate the display-event thread, which woke 38 µs before the signal.
+No fatal stack frames were captured despite an accepted stack-trigger setting.
+
+Source inspection finds that KGSL temporarily promotes its current submitter to
+FIFO/40 and restores its prior class. The RT timeout counter survives policy
+restoration, while the blocking-wake reset lives only in RT-class enqueue. A
+restored CFS sleeper therefore misses the reset on waking. The timer check can
+act on that retained counter. This is consistent with the recorded kill; the
+trace does not directly observe the counter or every temporary policy change.
+The narrow correction under evaluation moves the existing reset to common
+blocked-task activation, preserving limits and accumulation without blocking.
+
+The failed run captures no steady timing windows or optical tracking acceptance.
+Its 20,943,114-byte CPU trace verifies against source SHA-256
+`3024edd8aea477b17c747c360b8330f97def50ad135c3a864d07de277eab6fc4`,
+with no recorded trace loss. The 2,270,747-byte export contains 162 verified data
+members plus its manifest, SHA-256
+`c5ad1ea00b1cde5a986070fbaec3439c8203421f3f332634f8aca0a08bbe7e53`.
+Full BOOT/DTBO readbacks, resource shutdown, muted offline stock return and the
+owned USB host's termination verify. The detailed audit is retained in
+`output/pico-callback-pool-analysis-20261025-v2/`.
