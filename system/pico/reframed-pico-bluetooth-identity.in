@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+[ "$#" -eq 2 ] || exit 64
+serial=$(cat "$2")
+boot=$(cat /proc/sys/kernel/random/boot_id)
+exec /usr/bin/python3 "@CMAKE_INSTALL_PREFIX@/libexec/reframed-vr/pico-bluetooth-identity.py" \
+    --boot-serial "$serial" --boot-id "$boot" \
+    --identity /etc/reframed-vr/pico-radio-identities.json --index 0 --output "$1"

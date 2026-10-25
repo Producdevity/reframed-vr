@@ -61,6 +61,23 @@ if(REFRAMED_PICO_WIFI_IDENTITY)
             DESTINATION lib/systemd/network COMPONENT PicoWifiIdentity)
 endif()
 
+option(REFRAMED_PICO_BLUETOOTH_IDENTITY "Install native Pico Bluetooth identity startup" OFF)
+if(REFRAMED_PICO_BLUETOOTH_IDENTITY)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "Pico Bluetooth identity startup requires Linux")
+    endif()
+    install(PROGRAMS tools/pico-bluetooth-identity.py DESTINATION libexec/reframed-vr
+            COMPONENT PicoBluetoothIdentity)
+    configure_file(system/pico/reframed-pico-bluetooth-identity.in
+                   reframed-pico-bluetooth-identity @ONLY)
+    install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-bluetooth-identity"
+            DESTINATION libexec/reframed-vr COMPONENT PicoBluetoothIdentity)
+    configure_file(system/pico/reframed-pico-bluetooth-identity.service.in
+                   reframed-pico-bluetooth-identity.service @ONLY)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-bluetooth-identity.service"
+            DESTINATION lib/systemd/system COMPONENT PicoBluetoothIdentity)
+endif()
+
 option(REFRAMED_PICO_DESKTOP_TEST "Build the opt-in physical Pico desktop-layer test" OFF)
 if(REFRAMED_PICO_DESKTOP_TEST)
     find_package(X11 REQUIRED)

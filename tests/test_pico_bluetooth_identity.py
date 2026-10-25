@@ -1,11 +1,14 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,6 +35,75 @@ def info(address='00:03:7f:12:2b:b0', settings='br/edr'):
 
 
 class PicoBluetoothIdentityTests(unittest.TestCase):
+    def test_adapter_must_belong_to_the_selected_uart(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            uart = root / 'devices/platform/soc/uart/tty/ttyHS0'
+            (uart / 'hci0').mkdir(parents=True)
+            for name in ('bluetooth', 'tty'):
+                (root / 'class' / name).mkdir(parents=True)
+            (root / 'class/tty/ttyHS0').symlink_to(uart)
+            adapter = root / 'class/bluetooth/hci0'
+            adapter.symlink_to(uart / 'hci0')
+            bt.validate_transport(0, root)
+            adapter.unlink()
+            other = root / 'devices/usb/hci0'
+            other.mkdir(parents=True)
+            adapter.symlink_to(other)
+            with self.assertRaisesRegex(ValueError, 'ttyHS0 transport'):
+                bt.validate_transport(0, root)
+            adapter.unlink()
+            with self.assertRaises(FileNotFoundError):
+                bt.validate_transport(0, root)
+
+    def test_service_termination_restores_address_and_signal_handlers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'result.json'
+            original = '00:03:7f:12:2b:b0'
+            current = original
+            writes = []
+            previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+            real_open, real_fstat = os.open, os.fstat
+
+            def opened(path, *args, **kwargs):
+                if str(path) == '/run/reframed-pico-bluetooth-identity.lock':
+                    path = root / 'lock'
+                return real_open(path, *args, **kwargs)
+
+            def root_lock(fd):
+                value = real_fstat(fd)
+                return SimpleNamespace(st_mode=value.st_mode, st_uid=0, st_nlink=value.st_nlink)
+
+            def run(command, **_kwargs):
+                nonlocal current
+                if command[:2] == ['systemctl', 'is-active']:
+                    return subprocess.CompletedProcess(command, 3)
+                if command[-2] == 'public-addr':
+                    current = command[-1]
+                    writes.append(current)
+                    signal.raise_signal(signal.SIGTERM)
+                    return subprocess.CompletedProcess(command, 0, '', '')
+                return subprocess.CompletedProcess(command, 0, info(current), '')
+
+            arguments = ['pico-bluetooth-identity.py', '--boot-serial', 'fixture', '--boot-id', BOOT,
+                         '--identity', str(root / 'identity.json'), '--output', str(output)]
+            with patch.object(sys, 'argv', arguments), patch.object(bt, 'validate_device'), \
+                    patch.object(bt, 'validate_transport'), \
+                    patch.object(bt, 'load_identity', return_value=(UNIT, 'fixture-sha')), \
+                    patch.object(bt.os, 'open', opened), patch.object(bt.os, 'fstat', root_lock), \
+                    patch.object(bt.subprocess, 'run', run):
+                with self.assertRaisesRegex(InterruptedError, 'interrupted by signal'):
+                    bt.main()
+            receipt = json.loads(output.read_text())
+            self.assertEqual(receipt['status'], 'failed')
+            self.assertEqual(receipt['rollback']['status'], 'restored')
+            self.assertEqual(current, original)
+            self.assertEqual(writes, [UNIT, original])
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            for sig, handler in previous.items():
+                self.assertEqual(signal.getsignal(sig), handler)
+
     def test_provisioning_requires_unpowered_adapter_and_verifies_readback(self):
         calls, checks, report = [], [], {}
 

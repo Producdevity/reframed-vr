@@ -125,7 +125,7 @@ The initial adapter reports the firmware's default Bluetooth address. The later
 unit-identity test below verifies provisioning before normal use. One initial frame
 reassembly error (`-84`) occurs before the successful version exchange; sustained
 UART reliability remains unverified. Pairing, audio, power management,
-Wi-Fi/tracking coexistence and installed startup remain open. Bluetooth is
+Wi-Fi/tracking coexistence and automatic UART transport startup remain open. Bluetooth is
 separate from the Pico controllers' MCU/DSP receive path and does not resolve
 optical controller tracking.
 
@@ -337,3 +337,57 @@ Member/source hashes, interface/rfkill/firmware-path/fallback restoration, radio
 module unloading, full BOOT/DTBO readbacks, muted offline stock return and the
 owned USB helper's exit all verify. Bluetooth remains unpowered, and pairing,
 association and active-traffic acceptance remain open.
+
+## Bluetooth identity startup component
+
+`-DREFRAMED_PICO_BLUETOOTH_IDENTITY=ON` installs the `PicoBluetoothIdentity`
+CMake component: the identity helper, launcher and
+`reframed-pico-bluetooth-identity.service`. The default is OFF; installation does
+not enable the service. It uses the same private mode-0600
+`/etc/reframed-vr/pico-radio-identities.json` and `pico-boot-serial` as Wi-Fi.
+No unit address or firmware binary is installed from this repository.
+
+This component assumes the verified QCA6390 modules and UART firmware setup
+have already produced an unpowered `hci0`, with BlueZ stopped. The helper now
+checks that the selected HCI sysfs device is a direct child of the actual
+`ttyHS0` device before writing an address and after successful information reads.
+Having an unrelated Bluetooth adapter alongside the loaded UART module is
+insufficient. SIGTERM/SIGINT enter the existing verified rollback path; repeated
+termination signals are ignored during that recovery. Host fault injection
+verifies restoration and subsequent signal-handler restoration. Physical
+interrupted-write recovery remains untested.
+
+Within that prepared native session, `systemctl start
+reframed-pico-bluetooth-identity.service` verifies identity without powering the
+adapter. The unit runs with `CAP_NET_ADMIN`, `NoNewPrivileges=yes`, a private
+runtime directory and only AF_UNIX/AF_BLUETOOTH sockets. Enabling it creates a
+`bluetooth.service.requires` dependency; ordering places identity before BlueZ.
+A normal image must first integrate the transport owner and its startup/teardown
+ordering. Do not enable this dependency in an image whose transport startup is
+still missing. This oneshot is not a UART lifecycle or adapter reconnect manager.
+
+The physical test runs the actual installed component. Its first call verifies
+the unit address, a restart performs no address write, and stopping it removes
+the runtime receipt directory. After transport teardown, starting BlueZ with
+the enabled identity dependency fails; BlueZ remains inactive with no main PID.
+The adapter remains unpowered throughout. The accompanying Wi-Fi identity
+receipts pass again; the passive-scan result from this run was not retained and
+is not accepted retrospectively.
+
+Evidence is `output/pico-bluetooth-startup-20261025-v2/`. The initial version
+returned to stock before the console appeared; its cause remains unproven.
+Version 2 reached the console, but a long heredoc was truncated during USB
+delivery, interrupting the final report after service execution and transport
+cleanup. The console was resumed, and a separate bounded recovery script
+verified the retained service receipts, installed asset hashes, missing-transport
+dependency behaviour, firmware path, rfkill state and module unloading. The
+original delivery failure remains in the evidence. No third boot was needed.
+
+The recovered 12-member archive is 6,910 bytes, SHA-256
+`53c45f31a084e539ebee63fb43b0562f8a3956f763af1b6826d5320bbee87159`.
+All member hashes, full BOOT/DTBO readbacks, muted offline stock return and the
+owned console helper's exit verify. Twenty Wi-Fi/Bluetooth helper tests and the
+component-only CMake installation pass; the installed wrapper refuses a
+non-Pico Linux environment and invalid argument counts. This does not establish
+pairing, Bluetooth audio, active radio throughput, suspend/resume or complete
+installed-image acceptance.

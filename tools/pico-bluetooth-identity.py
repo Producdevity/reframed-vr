@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import signal
 import stat
 import subprocess
 import time
@@ -19,6 +20,13 @@ HAL_SHA256 = '59f013ff41adbf8e1f2ca350f62938f4602a833d0f97809838bc2c417541af52'
 
 class AdapterUnavailable(RuntimeError):
     pass
+
+
+def validate_transport(index, sysfs=Path('/sys')):
+    adapter = (sysfs / 'class/bluetooth' / ('hci' + str(index))).resolve(strict=True)
+    uart = (sysfs / 'class/tty/ttyHS0').resolve(strict=True)
+    if adapter.parent != uart:
+        raise ValueError('Bluetooth adapter is not attached to the Pico ttyHS0 transport')
 
 
 def load_identity(path, boot_serial):
@@ -130,13 +138,17 @@ def main():
     parser.add_argument('--index', type=int, default=0)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if not 0 <= args.index <= 255:
+        parser.error('Invalid HCI adapter index')
     validate_device(args.boot_serial, args.boot_id)
+    validate_transport(args.index)
     address, source_sha = load_identity(args.identity, args.boot_serial)
     report = {'status': 'started', 'boot_id': args.boot_id, 'boot_serial': args.boot_serial,
               'identity_sha256': source_sha, 'scope': 'Native volatile public-address configuration; no discovery, pairing or firmware partition writes',
               'commands': []}
     with os.fdopen(os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600), 'w') as output:
         lock = None
+        handlers = {}
         try:
             lock = os.open('/run/reframed-pico-bluetooth-identity.lock', os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
             info = os.fstat(lock)
@@ -148,6 +160,8 @@ def main():
                 raise ValueError('BlueZ must be stopped before provisioning')
 
             def run(command):
+                if command[-2] == 'public-addr':
+                    validate_transport(args.index)
                 result = subprocess.run(command, capture_output=True, text=True, timeout=20,
                                         env=os.environ | {'LC_ALL': 'C'})
                 report['commands'].append({'args': command, 'rc': result.returncode,
@@ -156,14 +170,25 @@ def main():
                     if command[-1] == 'info':
                         raise AdapterUnavailable('Bluetooth adapter info unavailable; see receipt')
                     raise RuntimeError('Bluetooth management command failed; see receipt')
+                if command[-1] == 'info':
+                    validate_transport(args.index)
                 return result.stdout
 
+            def interrupted(signum, _frame):
+                for sig in handlers:
+                    signal.signal(sig, signal.SIG_IGN)
+                raise InterruptedError('Bluetooth provisioning interrupted by signal ' + str(signum))
+
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                handlers[sig] = signal.signal(sig, interrupted)
             provision(args.index, address, run, report, lambda: validate_device(args.boot_serial, args.boot_id))
             report['status'] = 'unit-address-verified-unpowered'
         except BaseException as error:
             report.update(status='failed', error=str(error))
             raise
         finally:
+            for sig, handler in handlers.items():
+                signal.signal(sig, handler)
             if lock is not None:
                 os.close(lock)
             json.dump(report, output, indent=2)
