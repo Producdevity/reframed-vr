@@ -2770,3 +2770,32 @@ The 163-member export is 20,951,034 bytes, SHA-256
 `94ca15036ce8c54c3d8bbfb853e357719457ee840092f7f1183f98ac4a2695d9`.
 Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original CPU
 policy restoration, muted offline stock return and USB helper join verify.
+
+### Combined-layer control on the rebuilt stack (2026-10-25)
+
+`output/pico-facet-combined-20261025-v1/` selects
+`renderSystemLayerInDistortPass=true` before compositor startup, retaining the
+new Mesa priority path, pixels, optics and 90 Hz mode. The render thread uses
+RR/2 throughout three 30-second late windows. This separate-boot control checks
+whether the older camera failure reproduces on the current ownership/feed stack.
+
+It does not reproduce: all 4,499 camera sets complete, with 182,218 confident
+head outputs, no bad result and all 9,000 late head queries valid. However, GPU
+median time rises to 13.163, 13.124 and 13.156 ms. Frame histories report
+1,475/1,475, 1,481/1,481 and 1,476/1,476 frames/drops respectively, with interval
+p99 around 22.38–22.40 ms. There are 211 vsync-age faults. Histories include the
+initial pre-window snapshot and are not disjoint cohorts.
+
+The stable late scanout's host inverse-optics preview contains large fragmented
+triangles in both eyes instead of the Steam panel. Dashboard visibility reported
+through OpenVR does not establish correct rendering. This control is rejected
+for both output corruption and performance; it does not establish the cause of
+the shader/geometry failure. The maintained setting remains false. No optical
+controller pose is accepted in any of the 13,756 decoded callbacks.
+
+The complete 20,182,116-byte CPU/GPU trace has no collector error, overrun or
+dropped events. The 161-member export is 4,797,679 bytes, SHA-256
+`57e8ca95576bff4df6d2f36c8c10ec2898c01b7f3c693a0e0e315e84b5abb201`.
+Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original render
+policy restoration, muted offline stock return and owned USB helper join verify.
+No firmware partition or Quest device is modified.
