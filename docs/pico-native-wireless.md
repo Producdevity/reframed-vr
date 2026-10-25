@@ -172,6 +172,14 @@ verifies the resulting address and leaves discovery, pairing and advertising
 disabled. A matching address requires no write. Receipts are private mode 0600;
 no unit address or calibration is embedded in source.
 
+If a write or its verification fails, the helper attempts to restore and verify
+the pre-write address. Restoration rechecks the same boot, adapter identity and
+unpowered state; it refuses to write across a boot change or to a powered adapter.
+The receipt distinguishes verified restoration from incomplete recovery, and
+the original provisioning attempt still fails. Host fault-injection tests cover
+timeouts, wrong readback, failed restoration and unchanged-address failures.
+This recovery path has not been exercised against the physical adapter.
+
 The first physical test exposes an endian bug in the backported QCA helper:
 the management command succeeds, but all 73 later readable adapter snapshots
 contain the byte-reversed unit address. The unchanged checker rejects this result.

@@ -65,7 +65,7 @@ def adapter_info(text, index):
     options = re.findall(r'^[ \t]*supported options:[ \t]*([^\r\n]*)', text, re.M)
     if not headers and not addresses:
         raise AdapterUnavailable('Adapter is temporarily unavailable')
-    if (any(int(value) != index for value in headers) or len(addresses) != 1 or
+    if (not headers or any(int(value) != index for value in headers) or len(addresses) != 1 or
             len(settings) != 1 or len(options) != 1 or 'public-address' not in options[0].split() or
             addresses[0][1:] != ('11', '29')):
         raise ValueError('Expected one QCA6390 adapter with public-address configuration')
@@ -81,24 +81,45 @@ def provision(index, address, run, report, check_boot, seconds=15):
     check_boot()
     report['before'] = adapter_info(run(['btmgmt', '--index', str(index), 'info']), index)
     report['address_write_attempted'] = report['before']['address'] != address
-    if report['address_write_attempted']:
-        check_boot()
-        run(['btmgmt', '--index', str(index), 'public-addr', address])
-    deadline = time.monotonic()+seconds
-    while True:
-        check_boot()
-        try:
-            after = adapter_info(run(['btmgmt', '--index', str(index), 'info']), index)
-        except AdapterUnavailable:
+
+    def readback(expected=None):
+        deadline = time.monotonic()+seconds
+        while True:
+            check_boot()
+            try:
+                after = adapter_info(run(['btmgmt', '--index', str(index), 'info']), index)
+            except AdapterUnavailable:
+                if time.monotonic() >= deadline:
+                    raise
+            else:
+                if expected is None or after['address'] == expected:
+                    return after
             if time.monotonic() >= deadline:
-                raise
-        else:
-            if after['address'] == address:
-                report['after'] = after
-                return
-        if time.monotonic() >= deadline:
-            raise RuntimeError('Bluetooth unit address readback did not complete')
-        time.sleep(.2)
+                raise RuntimeError('Bluetooth unit address readback did not complete')
+            time.sleep(.2)
+
+    write_started = False
+    try:
+        if report['address_write_attempted']:
+            check_boot()
+            write_started = True
+            run(['btmgmt', '--index', str(index), 'public-addr', address])
+        report['after'] = readback(address)
+    except BaseException as error:
+        if write_started:
+            rollback = report['rollback'] = {'status': 'started'}
+            try:
+                current = readback()
+                original = report['before']['address']
+                if current['address'] != original:
+                    check_boot()
+                    run(['btmgmt', '--index', str(index), 'public-addr', original])
+                rollback.update(status='restored', after=readback(original))
+            except BaseException as restore_error:
+                rollback.update(status='failed', error=str(restore_error))
+                raise RuntimeError('Bluetooth address update failed; restoration incomplete: ' +
+                                   str(restore_error)) from error
+        raise
 
 
 def main():

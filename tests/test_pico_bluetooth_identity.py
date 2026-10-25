@@ -60,7 +60,9 @@ class PicoBluetoothIdentityTests(unittest.TestCase):
     def test_unsafe_or_wrong_adapter_is_refused_before_address_write(self):
         for raw in [info(settings='powered br/edr'), info(settings='advertising'),
                     info().replace('manufacturer 29', 'manufacturer 15'), info().replace('hci0:', 'hci1:'),
-                    info().replace('public-address', 'static-address')]:
+                    info().replace('public-address', 'static-address'),
+                    '\n'.join(line for line in info().splitlines() if not line.startswith('hci0:')),
+                    '\n'.join(line for line in info().splitlines() if 'addr ' not in line)]:
             with self.subTest(info=raw):
                 calls = []
                 def run(command):
@@ -80,9 +82,115 @@ class PicoBluetoothIdentityTests(unittest.TestCase):
         self.assertEqual(report['after']['address'], UNIT)
         with self.assertRaisesRegex(RuntimeError, 'readback'):
             bt.provision(0, UNIT, lambda _: info(), {}, lambda: None, seconds=0)
-        with self.assertRaisesRegex(ValueError, 'unpowered'):
-            calls = iter([info(), '', info(UNIT, 'powered')])
-            bt.provision(0, UNIT, lambda _: next(calls), {}, lambda: None)
+        calls, report = [], {}
+        def powered(command):
+            calls.append(command)
+            return info(UNIT, 'powered') if len(calls) > 2 else info()
+        with self.assertRaisesRegex(RuntimeError, 'restoration incomplete.*unpowered'):
+            bt.provision(0, UNIT, powered, report, lambda: None)
+        self.assertEqual(report['rollback']['status'], 'failed')
+        self.assertEqual([c for c in calls if c[-2] == 'public-addr'],
+                         [['btmgmt', '--index', '0', 'public-addr', UNIT]])
+
+    def test_failed_address_update_restores_and_verifies_previous_address(self):
+        original = '00:03:7f:12:2b:b0'
+        for fault in ('wrong_readback', 'read_timeout', 'write_timeout'):
+            with self.subTest(fault=fault):
+                calls, report = [], {}
+                current, injected = original, False
+
+                def run(command):
+                    nonlocal current, injected
+                    calls.append(command)
+                    if command[-2] == 'public-addr':
+                        current = command[-1]
+                        if current == UNIT and fault == 'write_timeout':
+                            raise subprocess.TimeoutExpired(command, 20)
+                        return ''
+                    if current == UNIT and not injected:
+                        injected = True
+                        if fault == 'read_timeout':
+                            raise subprocess.TimeoutExpired(command, 20)
+                        if fault == 'wrong_readback':
+                            return info(original)
+                    return info(current)
+
+                expected = RuntimeError if fault == 'wrong_readback' else subprocess.TimeoutExpired
+                with self.assertRaises(expected):
+                    bt.provision(0, UNIT, run, report, lambda: None, seconds=0)
+                self.assertEqual(current, original)
+                self.assertEqual([c[-1] for c in calls if c[-2] == 'public-addr'], [UNIT, original])
+                self.assertEqual(report['rollback']['status'], 'restored')
+                self.assertEqual(report['rollback']['after']['address'], original)
+                self.assertNotIn('after', report)
+
+    def test_failed_restoration_is_reported_and_never_crosses_boots(self):
+        for fault in ('restore_write', 'restore_readback', 'boot_changed'):
+            with self.subTest(fault=fault):
+                calls, report, checks = [], {}, []
+                current, restore_started = '00:03:7f:12:2b:b0', False
+
+                def run(command):
+                    nonlocal current, restore_started
+                    calls.append(command)
+                    if command[-2] == 'public-addr':
+                        if command[-1] == UNIT:
+                            current = UNIT
+                            raise subprocess.TimeoutExpired(command, 20)
+                        restore_started = True
+                        if fault == 'restore_write':
+                            raise RuntimeError('fixture restore write failed')
+                        current = command[-1]
+                        return ''
+                    return info(UNIT if restore_started and fault == 'restore_readback' else current)
+
+                def check_boot():
+                    checks.append(True)
+                    if fault == 'boot_changed' and len(checks) >= 3:
+                        raise ValueError('fixture boot changed')
+
+                with self.assertRaisesRegex(RuntimeError, 'restoration incomplete') as failure:
+                    bt.provision(0, UNIT, run, report, check_boot, seconds=0)
+                self.assertIsInstance(failure.exception.__cause__, subprocess.TimeoutExpired)
+                self.assertEqual(report['rollback']['status'], 'failed')
+                if fault == 'boot_changed':
+                    self.assertEqual([c[-1] for c in calls if c[-2] == 'public-addr'], [UNIT])
+
+    def test_restoration_waits_for_adapter_reconfiguration_gap(self):
+        original = '00:03:7f:12:2b:b0'
+        calls, report = [], {}
+        current, gap = original, False
+        def run(command):
+            nonlocal current, gap
+            calls.append(command)
+            if command[-2] == 'public-addr':
+                current = command[-1]
+                if current == UNIT:
+                    raise subprocess.TimeoutExpired(command, 20)
+                return ''
+            if current == UNIT and not gap:
+                gap = True
+                raise bt.AdapterUnavailable('fixture reconfiguration gap')
+            return info(current)
+        with patch.object(bt.time, 'sleep') as sleep:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                bt.provision(0, UNIT, run, report, lambda: None)
+        sleep.assert_called_once_with(.2)
+        self.assertEqual(current, original)
+        self.assertEqual(report['rollback']['status'], 'restored')
+
+    def test_unchanged_address_failure_does_not_attempt_restoration(self):
+        calls, report = [], {}
+        def run(command):
+            calls.append(command)
+            if len(calls) > 1:
+                raise subprocess.TimeoutExpired(command, 20)
+            return info(UNIT)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            bt.provision(0, UNIT, run, report, lambda: None)
+        self.assertFalse(report['address_write_attempted'])
+        self.assertNotIn('rollback', report)
+        self.assertTrue(all(c[-1] == 'info' for c in calls))
 
     def test_identity_receipt_rejects_other_units_placeholders_and_public_files(self):
         with tempfile.TemporaryDirectory() as temporary:
