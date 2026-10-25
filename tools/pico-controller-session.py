@@ -268,7 +268,7 @@ class ControllerSession:
         finally:
             os.close(fd)
 
-    def _motion_available(self):
+    def _motion_available(self, *, received_after=None):
         if not self.motion:
             raise RuntimeError('Motion was not enabled for this worker')
         if self.motion_restart is not None and self.motion_restart['rc'] is None:
@@ -282,15 +282,22 @@ class ControllerSession:
             raise RuntimeError('Motion worker is stopped or failed')
         sequence, active, left, right, received = self._motion_header()
         if active != 1:
+            if received_after is not None:
+                return False
             raise RuntimeError('Motion channel is stopped')
         if not sequence or any(not stamp for hand, stamp in [('left', left), ('right', right)]
                                    if hand in self.motion):
             return False
         now = time.monotonic_ns()
-        if not received or received > now or any(not 0 <= now - stamp <= 100000000
+        if not received or received > now or any(stamp > now
                 for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
             raise RuntimeError('Motion channel has no fresh capture times')
-        return True
+        if any(now - stamp > 100000000
+                for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
+            if received_after is not None:
+                return False
+            raise RuntimeError('Motion channel has no fresh capture times')
+        return received_after is None or received > received_after
 
     def wait_motion_ready(self, timeout):
         self._wait(self._motion_available, timeout)
@@ -342,32 +349,53 @@ class ControllerSession:
         if self.motion_ready:
             raise RuntimeError('Restarted motion generation did not initialize')
 
-    def recover_motion(self, timeout):
+    def recover_motion(self, timeout, *, consumer_timeout=None):
         """Poll for fresh post-timeout IMU data and return a new, ready endpoint.
 
         The caller atomically publishes it to a consumer that resets its
         estimator before rebinding, retaining the head/world generation.
         None means no eligible data. A timeout leaves the operation pending;
         another call completes it without resending or releasing DSP ownership.
+
+        A trusted owning consumer may report its latched timeout as a dict containing
+        generation and observed_ns (monotonic). Keep that first observation
+        unchanged while polling. Only fresh input received after it permits a
+        healthy producer to restart; the consumer must still bind a new epoch.
         """
         if not math.isfinite(timeout) or timeout < 0 or not self.motion:
             raise ValueError('Motion recovery requires enabled motion and a nonnegative timeout')
+        if consumer_timeout is not None:
+            if (not isinstance(consumer_timeout, dict) or
+                    set(consumer_timeout) != {'generation', 'observed_ns'} or
+                    not isinstance(consumer_timeout['generation'], str) or
+                    not re.fullmatch('[0-9a-f]{16}', consumer_timeout['generation']) or
+                    type(consumer_timeout['observed_ns']) is not int or
+                    not 0 < consumer_timeout['observed_ns'] <= time.monotonic_ns()):
+                raise ValueError('Consumer timeout requires a canonical generation and past observation')
         self._read_status()
         if not self.motion_recovery_pending:
             if self.process is not None and self.process.poll() is not None and not self.released:
                 raise RuntimeError(f'Worker exited before motion recovery: {self.process.returncode}')
             if (self.ready != 0 or self.waiting or self.process is None or self.process.poll() is not None or
-                    self.motion_stop_result is None or self.motion_stop_result['rc'] != MOTION_RECEIVE_TIMEOUT or
-                    self.motion_resumed is None or self.motion_resume_error is not None or
+                    self.motion_resume_error is not None or
                     (self.motion_restart is not None and self.motion_restart['rc'] not in (None, 0))):
                 return None
-            now = time.monotonic_ns()
-            if now < self.motion_resumed['received_ns']:
-                raise RuntimeError('Motion resumption clock is in the future')
-            if now > self.motion_resumed['deadline_ns']:
-                return None
-            if self._motion_header()[1] != 0:
-                raise RuntimeError('Timed-out motion channel is not stopped')
+            if self.motion_stop_result is None:
+                if (consumer_timeout is None or consumer_timeout['generation'] != self.motion['generation'] or
+                        self.motion_resumed is not None or
+                        not self._motion_available(received_after=consumer_timeout['observed_ns'])):
+                    return None
+            else:
+                if (self.motion_stop_result['rc'] != MOTION_RECEIVE_TIMEOUT or
+                        self.motion_resumed is None):
+                    return None
+                now = time.monotonic_ns()
+                if now < self.motion_resumed['received_ns']:
+                    raise RuntimeError('Motion resumption clock is in the future')
+                if now > self.motion_resumed['deadline_ns']:
+                    return None
+                if self._motion_header()[1] != 0:
+                    raise RuntimeError('Timed-out motion channel is not stopped')
             if self.motion_restart is not None and self.motion_restart['rc'] is None:
                 raise RuntimeError('Another motion restart is pending')
             generation = max(int(self.motion['generation'], 16),

@@ -3480,3 +3480,52 @@ Optical controller tracking is not accepted: the preceding two complete sampled
 controller files cover only about 27 seconds before motion delivery stops, and
 every recorded left SDK state is zero. A full head/camera run must not be
 presented as 180 seconds of live controller motion or proof of producer health.
+
+## Consumer-only motion timeout recovery (2026-10-26)
+
+The receiver's receipt-age watchdog and the consumer's capture-age guard can
+expire at different times. A consumer can latch `-ETIMEDOUT` while the receiver
+remains active; later fresh input then produces no receiver STOP/RESUMED event.
+The previous owner only recovered that event sequence, leaving the consumer
+stopped. A deterministic host fixture reproduces this gap with capture/receipt
+times separated by 20 ms. The maintained session helper now accepts the owning
+consumer's generation and first monotonic failure observation, requiring fresh
+post-failure receipt before requesting a new epoch. All 32 focused session tests
+pass, including stale reports, protocol errors and pending restart retries.
+
+Native boot `7e001eab-eea1-4cfe-b112-43c6889f5ab3` tests the exact maintained
+helper with a private Bionic frontend that deliberately latches one timeout
+after 1,500 successful IMU deliveries. This injects an owner-side error; it does
+not pause the receiver, alter capture timestamps or establish the cause of the
+earlier natural cutoff.
+
+- The failure snapshot and fresh-input snapshot both show active generation 104,
+  with no receiver STOP or RESUMED event. New receipt occurs after the failure.
+  The healthy receiver retires generation 104 with `-ESHUTDOWN`, acknowledges
+  generation 105 and retains the same worker process and shared DSP ownership.
+- The new endpoint is published 34.253 ms after injection. Estimator reset and
+  calibration succeed in 1.266 ms; a status with seven new deliveries is visible
+  by 42.870 ms. The new epoch delivers all 12,272 published IMU samples before a
+  later receive timeout. Head/world generation remains 104.
+- All 2,999 camera sets complete over the 120-second capture. Head processing
+  reports 123,082 callbacks, 120,779 confident results and no rejected result.
+  Steam's dashboard and scanout checks pass. The single post-dashboard RR/2
+  context and API-worker priority context restore their complete snapshots.
+
+The later cutoff remains unresolved: the consumer again expires, the receiver
+then records `-ETIMEDOUT` with 12,272 samples, and the final channel is inactive
+without a fresh-resumption event. No restart is attempted without fresh data.
+Worker exit 1 records that timeout; RPC close results are zero, SLPI goes offline
+before buffer release, and MCU references return to zero. This proves a separate
+source stoppage in this run, not its cause or controller sleep. The complete
+sampled controller file covers only 27.204 seconds; all 1,721 left SDK states are
+zero. Optical pointing and physical controller tracking remain unaccepted.
+
+Evidence is `output/pico-consumer-recovery-20261026-v1/`. Its export contains
+226 verified members, 33,618,187 bytes, SHA-256
+`aa24eae75178e4ba82b6538e0ce9ccbc43f98e8753d04b5ed6ac442dec4704b5`,
+including worker status logs, before/after process and channel snapshots, the
+actual session helper and the consumer's complete 110-file compiled source
+closure. Full traces have no recorded loss; scheduler enforcement controls,
+full BOOT/DTBO readbacks and muted offline stock return pass. No firmware was
+flashed and no lens or physical-motion acceptance is inferred.

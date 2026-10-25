@@ -1135,6 +1135,23 @@ Other error classes, an invalid/replaced channel, or a rejected restart cannot
 silently trigger a retry loop. RPC and shared DSP buffers retain their normal
 two-phase shutdown ownership throughout.
 
+`recover_motion(timeout, consumer_timeout=report)` also handles a timeout latched
+only by the owning consumer. Its report contains the current canonical
+16-character hexadecimal `generation` and the first `observed_ns` from the
+monotonic clock. The owner retains that observation unchanged while polling.
+The consumer checks capture age, while the receiver checks time since receipt;
+transport delay can therefore expire the consumer before the receiver stops.
+Fresh input alone cannot clear that consumer's permanent error.
+
+This recovery path requires a healthy, active receiver, matching generation,
+fresh captures for every selected hand and receipt strictly after the reported
+failure. Missing or stale input returns `None`; identity, protocol and future-clock
+errors remain errors. The existing restart handshake retires the old mapping,
+and the owner still resets the estimator before rebinding. A stale consumer
+report does not suppress independent receiver STOP/RESUMED recovery. An injected
+consumer failure exercises this path separately from physical optical acquisition
+and from diagnosing a recorded radio cutoff.
+
 The [shared-sensor hardware test](pico-steamvr.md#maintained-receiver-and-shared-sensors)
 verifies this worker with native SteamVR, head IMU and four-camera capture,
 including ordinary shutdown. Fault-injected RPC lifecycle tests remain separate

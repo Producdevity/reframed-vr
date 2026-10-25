@@ -8,6 +8,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('pico_controller_session', ROOT / 'tools/pico-controller-session.py')
@@ -419,6 +420,147 @@ class PicoControllerSessionTests(unittest.TestCase):
         replacement.replace(worker.motion_channel)
         with self.assertRaises(RuntimeError):worker.recover_motion(2)
         self.assertIsNone(worker.motion_restart)
+
+    def consumer_fixture(self, *, capture=1090000000, received=1110000000):
+        worker = self.make(motion=self.motion())
+        worker.directory.mkdir()
+        worker.ready = worker.motion_ready = 0
+        worker.process = Mock()
+        worker.process.poll.return_value = None
+        worker._read_status = Mock()
+        header = [0x525650434d430001, int(worker.instance, 16),
+                  int(worker.motion['generation'], 16), 2, 1, capture, 0, received]
+        worker.motion_channel.write_bytes(struct.pack('<8Q', *header) + bytes(32832 - 64))
+        worker.motion_channel.chmod(0o644)
+        report = {'generation': worker.motion['generation'], 'observed_ns': 1101000000}
+        return worker, report, header
+
+    def test_consumer_timeout_waits_for_fresh_input_received_after_failure(self):
+        worker, report, header = self.consumer_fixture(capture=1000000000, received=1020000000)
+        worker.restart_motion = Mock(side_effect=TimeoutError)
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1101000000):
+            self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
+            with self.assertRaisesRegex(RuntimeError, 'fresh capture'):worker.motion_binding()
+        worker.restart_motion.assert_not_called()
+        header[5], header[7] = 1090000000, 1110000000
+        with worker.motion_channel.open('r+b') as output:
+            output.write(struct.pack('<8Q', *header))
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+            with self.assertRaises(TimeoutError):
+                worker.recover_motion(0, consumer_timeout=report)
+        worker.restart_motion.assert_called_once_with('0123456789abcdf0', 0)
+        self.assertTrue(worker.motion_recovery_pending)
+        self.assertEqual(report['observed_ns'], 1101000000)
+
+    def test_consumer_report_validation_and_stale_generation_never_restart(self):
+        worker, report, _ = self.consumer_fixture()
+        worker.restart_motion = Mock()
+        invalid = [False, [], {}, report | {'extra': 1}, report | {'generation': 4},
+                   report | {'generation': '0123456789ABCDEF'}, report | {'generation': '1'}]
+        invalid += [report | {'observed_ns': value}
+                    for value in (True, None, '1101000000', 1.0, 0, -1, 1110000001)]
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+            for value in invalid:
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    worker.recover_motion(0, consumer_timeout=value)
+            for generation in ('0123456789abcdee', '0123456789abcdf0'):
+                self.assertIsNone(worker.recover_motion(0, consumer_timeout=report | {'generation': generation}))
+        worker.restart_motion.assert_not_called()
+
+    def test_consumer_recovery_requires_active_fresh_post_failure_header(self):
+        cases = [(3, 0, None), (5, 0, None), (7, 1101000000, None),
+                 (7, 1100000000, None), (7, 1110000001, RuntimeError),
+                 (5, 1000000000, None), (4, 0, None), (5, 1110000001, RuntimeError),
+                 (2, 1, RuntimeError)]
+        for field, value, error in cases:
+            with self.subTest(field=field, value=value):
+                worker, report, header = self.consumer_fixture()
+                header[field] = value
+                with worker.motion_channel.open('r+b') as output:
+                    output.write(struct.pack('<8Q', *header))
+                worker.restart_motion = Mock()
+                with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+                    if error:
+                        with self.assertRaises(error):worker.recover_motion(0, consumer_timeout=report)
+                    else:
+                        self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
+                worker.restart_motion.assert_not_called()
+
+    def test_consumer_report_cannot_bypass_producer_errors_or_other_restart(self):
+        cases = [('motion_stop_result', {'rc': -71}), ('motion_stop_result', {'rc': -110}),
+                 ('motion_resume_error', -71), ('motion_resumed', {'received_ns': 1110000000}),
+                 ('motion_restart', {'rc': -1}), ('motion_restart', {'rc': None}),
+                 ('waiting', True), ('ready', -5)]
+        for attribute, value in cases:
+            with self.subTest(attribute=attribute, value=value):
+                worker, report, _ = self.consumer_fixture()
+                setattr(worker, attribute, value)
+                worker.restart_motion = Mock()
+                with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+                    self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
+                worker.restart_motion.assert_not_called()
+
+    def test_consumer_recovery_refuses_generation_exhaustion(self):
+        worker, report, header = self.consumer_fixture()
+        worker.motion['generation'] = report['generation'] = 'ffffffffffffffff'
+        header[2] = (1 << 64) - 1
+        with worker.motion_channel.open('r+b') as output:
+            output.write(struct.pack('<8Q', *header))
+        worker.restart_motion = Mock()
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+            with self.assertRaisesRegex(RuntimeError, 'exhausted'):
+                worker.recover_motion(0, consumer_timeout=report)
+        worker.restart_motion.assert_not_called()
+
+    def test_stale_consumer_report_does_not_suppress_producer_resumption(self):
+        worker = self.make('auto-resume', motion=self.motion());worker.start();worker.wait_ready(2)
+        worker._wait(lambda: worker.motion_resumed is not None, 2)
+        report = {'generation': '0000000000000001', 'observed_ns': 1}
+        self.assertEqual(worker.recover_motion(2, consumer_timeout=report)['generation'], '0123456789abcdf0')
+        self.stop(worker)
+
+    def test_rejected_consumer_restart_is_not_retried(self):
+        worker = self.make('restart-failure', motion=self.motion());worker.start();worker.wait_motion_ready(2)
+        report = {'generation': worker.motion['generation'], 'observed_ns': 1}
+        with self.assertRaises(RuntimeError):worker.recover_motion(2, consumer_timeout=report)
+        request = dict(worker.motion_restart)
+        self.assertFalse(worker.motion_recovery_pending)
+        self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
+        self.assertEqual(worker.motion_restart, request)
+        self.assertIsNone(worker.process.poll())
+
+    def test_consumer_recovery_pending_completes_after_generation_changes(self):
+        worker, report, _ = self.consumer_fixture()
+        worker.restart_motion = Mock(side_effect=TimeoutError)
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+            with self.assertRaises(TimeoutError):worker.recover_motion(0, consumer_timeout=report)
+            worker.motion['generation'] = '0123456789abcdf0'
+            worker.wait_motion_restart = Mock()
+            worker.wait_motion_ready = Mock()
+            worker.motion_binding = Mock(return_value=worker.motion_endpoint())
+            self.assertEqual(worker.recover_motion(0, consumer_timeout=report)['generation'], '0123456789abcdf0')
+            self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
+        worker.restart_motion.assert_called_once()
+        worker.wait_motion_restart.assert_called_once_with(0)
+        self.assertFalse(worker.motion_recovery_pending)
+
+    def test_consumer_recovery_retires_healthy_mapping_without_restarting_rpc(self):
+        worker = self.make('restart-delay', motion=self.motion());worker.start();worker.wait_motion_ready(2)
+        old = worker.motion_binding();pid = worker.process.pid
+        digital = worker.steamvr_environment()
+        report = {'generation': old['generation'], 'observed_ns': session_module.time.monotonic_ns()}
+        worker._wait(lambda: worker._motion_header()[4] > report['observed_ns'], 2)
+        with self.assertRaises(TimeoutError):worker.recover_motion(.01, consumer_timeout=report)
+        self.assertTrue(worker.motion_recovery_pending)
+        endpoint = worker.recover_motion(2, consumer_timeout=report)
+        self.assertEqual(endpoint['generation'], '0123456789abcdf0')
+        self.assertNotEqual(endpoint['path'], old['path'])
+        self.assertEqual(worker.process.pid, pid)
+        self.assertEqual(worker.steamvr_environment(), digital)
+        self.assertEqual(struct.unpack('<Q', Path(old['path']).read_bytes()[32:40]), (0,))
+        self.assertEqual(worker.motion_history, [{'generation': old['generation'], 'rc': -108, 'samples': 2}])
+        self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
+        self.stop(worker)
 
 
 if __name__ == '__main__':
