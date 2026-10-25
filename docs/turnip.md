@@ -637,3 +637,20 @@ that render-thread choice is separate from this library option. The full native
 test in `output/pico-wsi-event-startup-20261025-v3/` verifies event RR/2 at startup,
 all four default interop cases, Steam rendering and camera/head tracking. Rare
 missed frames remain; no launch setting is made a default by this patch.
+
+Patch 0019 adds `MESA_VK_WSI_PRESENT_THREAD_RT=1` for the presentation-wait caller.
+After its first successful, nonzero present, and outside the wait mutex, an
+ordinary SCHED_OTHER caller requests RR/2 once. Other scheduling policies are
+retained. Timeout, semaphore/condition errors and zero completed IDs do not
+activate it; a denied scheduling request preserves the presentation result.
+Configuration is read once per thread after that first completion.
+
+This replaces the diagnostic's external render-TID priority setter. Applying the
+same policy at the first GPU submission was rejected after hardware exposed a
+startup CPU-watchdog timeout; that implementation is retained only as ignored
+evidence. The completed-present version finishes a full native SteamVR/camera
+run with the existing 100 ms watchdog. Its render readback is RR/2 without the
+reset-on-fork bit, despite requesting that bit; continued preservation of the bit
+is not established. The service ceiling remains 2 and no capabilities are added.
+The instrumented run still has one overdue age query, so this is not a complete
+frame-pacing acceptance result.

@@ -42,7 +42,8 @@ def validate(directory):
         artifacts[name] = item
     required = {LIBRARY, ICD, 'kgsl-compile-command.txt', 'dynamic-dependencies.txt',
                 'kgsl-display', 'tu_kgsl_display.h', 'display-format-under-test.h', 'display-image-under-test.h',
-                'display-refresh-under-test.h', 'display-counter-under-test.h', 'display-event-under-test.h', 'wsi_display_pico.h'}
+                'display-refresh-under-test.h', 'display-counter-under-test.h', 'display-event-under-test.h',
+                'display-present-priority-under-test.h', 'wsi_display_pico.h'}
     if not required <= artifacts.keys():
         raise ValueError('Turnip build omits library or compile/link evidence')
     library = (directory / LIBRARY).read_bytes()
@@ -52,6 +53,8 @@ def validate(directory):
         raise ValueError('Turnip is not an ARM64 library with the DRM bridge')
     if b'MESA_VK_WSI_DISPLAY_EVENT_RT' not in library:
         raise ValueError('Turnip library is missing the display-event priority option')
+    if b'MESA_VK_WSI_PRESENT_THREAD_RT' not in library:
+        raise ValueError('Turnip library is missing the present-thread priority option')
     command = (directory / 'kgsl-compile-command.txt').read_text()
     if '-DHAVE_LIBDRM ' not in command or '-DMESA_SYSTEM_HAS_KMS_DRM=1 ' not in command:
         raise ValueError('Turnip KGSL compile omitted DRM support')
@@ -95,6 +98,12 @@ def validate(directory):
             events['model_sha256'] != digest(ROOT / 'tests/mesa-display-event-tests.c') or
             events['helpers_sha256'] != artifacts['display-event-under-test.h']['sha256']):
         raise ValueError('Turnip display event test sources changed or tests failed')
+    present_priority = report['display_present_priority_tests']
+    if (present_priority.get('status') != 'passed' or
+            present_priority['runner_sha256'] != digest(ROOT / 'tests/mesa-present-priority-tests.py') or
+            present_priority['model_sha256'] != digest(ROOT / 'tests/mesa-present-priority-tests.c') or
+            present_priority['helpers_sha256'] != artifacts['display-present-priority-under-test.h']['sha256']):
+        raise ValueError('Turnip present-thread priority test sources changed or tests failed')
     pico = report['display_pico_split_tests']
     if (pico.get('status') != 'passed' or
             pico['runner_sha256'] != digest(ROOT / 'tests/mesa-pico-split-tests.py') or

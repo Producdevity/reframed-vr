@@ -2806,6 +2806,7 @@ Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original rende
 policy restoration, muted offline stock return and owned USB helper join verify.
 No firmware partition or Quest device is modified.
 
+
 ### Guarded priorities and bounded camera grouping (2026-10-25)
 
 `output/pico-camera-reorder-20261025-v1/` validates the opt-in guarded Mesa library,
@@ -2945,3 +2946,60 @@ Source/member hashes, full Pico BOOT/DTBO readbacks, MCU/DSP shutdown, original
 render-policy/debug-setting restoration, muted offline stock return and owned
 USB host join verify. The event policy ends with its owned compositor process.
 No firmware partition or Quest device is modified.
+
+### Completed-present scheduling and callback boundaries (2026-10-25)
+
+`output/pico-callback-latency-20261025-v2/` validates Mesa's opt-in presentation
+caller scheduling without an external render/event thread priority setter. The
+event thread reports RR/2 with reset-on-fork, and the presentation caller reports
+RR/2 without that bit. The process remains UID 1000 with no effective
+capabilities, priority ceiling 2 and the unchanged 100 ms CPU watchdog. The same
+kernel, optics, pixels, camera grouping and GPU context priorities are retained.
+
+An earlier first-GPU-submit policy request in the version-1 experiment fails
+during initialization with a confirmed hard CPU-watchdog timeout. Its source is
+excluded from the maintained patch set. Patch 0019 instead waits for a completed
+nonzero presentation; actual-function sanitizer tests cover that condition,
+mutex release, per-thread activation, preserved policies and permission failures.
+
+The completed-present run finishes all 4,499 camera sets with 182,208 confident
+head outputs and no bad result. All 9,000 head queries are valid. One vsync-age
+query is overdue at 22.284 ms against the unchanged 22.222 ms bound; the three
+age windows therefore fail/pass/pass. Four default 4 MiB cross-exec GPU interop
+cases pass, and no CPU-watchdog timeout occurs. Controller decoding yields
+13,770 callbacks and zero public optical confidence; tracked pointing is open.
+
+| Window | History frames / drops | Fully in-window DRM skips | Interval p99 |
+| --- | ---: | ---: | ---: |
+| 1 | 2,853 / 8 | 9 | 11.342 ms |
+| 2 | 2,854 / 1 | 1 | 11.301 ms |
+| 3 | 2,850 / 0 | 0 | 11.274 ms |
+
+History snapshots and fully contained DRM flip pairs have different observation
+boundaries. This run adds substantial diagnostic traffic and is not a matched
+performance comparison with the preceding uninstrumented run.
+
+The existing KGSL queue/start/fire tracepoints match all 34,270 callback jobs;
+692,372 selected syscall pairs are recorded. There are no collector errors or
+lost events. One missed frame has an exact matching fence callback queued for
+3.746 ms before execution, while the GPU had retired 2.313 ms before the
+observed vblank. Callback dispatch accounts for most of its 3.954 ms GPU-to-fence
+interval; the trace does not split pool availability from CPU scheduling.
+Other misses overlap 5.762 ms and 2.506 ms futex waits in mappings of
+`/dev/shm/u1000-ValveIPCSharedObj-SteamVR`. Their internal mutex owners and lock
+reasons are not yet established. Overlap alone does not identify the code that
+holds those locks.
+
+The tested library SHA-256 is
+`d6617841175064bce7759f0833247ac8bee3e81e6ee519af4311c52f8b47b6cf`.
+Its incremental build passes actual-function sanitizer tests; all 19 patches
+apply to the checksum-pinned archive with zero fuzz and all 13 patched targets
+match the compiled source. This is not a fresh full-bundle build. Complete
+CPU/GPU/syscall and DRM/SDE streams are 173,308,875 and 31,325,234 bytes.
+
+The 180-member export is 31,872,666 bytes, SHA-256
+`de18c9fb68a522c8ed1340e04264c6bd03351eabb6f7d7f1ef616f0cba80c08e`.
+Member/source hashes, full Pico BOOT/DTBO readbacks, MCU/DSP shutdown, diagnostic
+restoration and muted offline stock return verify. Both thread policies end with
+the owned compositor, and the owned USB host wrapper is joined. No firmware
+partition or Quest device is modified.
