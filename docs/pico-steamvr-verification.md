@@ -3003,3 +3003,43 @@ Member/source hashes, full Pico BOOT/DTBO readbacks, MCU/DSP shutdown, diagnosti
 restoration and muted offline stock return verify. Both thread policies end with
 the owned compositor, and the owned USB host wrapper is joined. No firmware
 partition or Quest device is modified.
+
+### Callback CPU eligibility comparison (2026-10-25)
+
+`output/pico-callback-affinity-20261025-v1/` keeps the preceding tested library,
+kernel, GPU priorities and render/event scheduling. Only the `kgsl-events`
+workqueue CPU mask changes, in order `ff/f0/f0/ff`; nice stays -20,
+`max_active` 256 and `numa` 1. All eight CPUs are online. Readback confirms that
+CPUs 4–7 have higher capacity than CPUs 0–3; trace events confirm that the `f0`
+windows execute callbacks only on CPUs 4–6. Renderer affinity is unchanged.
+
+| Window / mask | History frames / drops | Fully in-window DRM skips | Callback queue-to-start p50 / p99 / max |
+| --- | ---: | ---: | ---: |
+| 1 / `ff` | 1,917 / 4 | 3 | 0.060 / 0.498 / 1.240 ms |
+| 2 / `f0` | 1,911 / 3 | 3 | 0.157 / 0.551 / 2.417 ms |
+| 3 / `f0` | 1,915 / 6 | 5 | 0.161 / 0.543 / 3.312 ms |
+| 4 / `ff` | 1,908 / 0 | 0 | 0.059 / 0.455 / 1.029 ms |
+
+Restricting eligibility does not improve overall pacing and increases callback
+dispatch latency in both middle windows. The original `ff` mask is restored;
+this experiment does not change the maintained policy. History snapshots and
+fully contained DRM flip pairs still have different observation boundaries.
+The 34,354 callback jobs all match queue/start/fire records, and the streamed
+traces have no collector errors or dropped events. This instrumented comparison
+does not establish a general scheduler optimum or physical latency.
+
+All 8,000 head and vsync-age queries pass the unchanged checks. The capture
+finishes 4,499 head camera sets with 182,214 confident outputs and no bad result.
+Thread snapshots include diagnostic clients as well as SteamVR; they do not
+establish the internal owners of its shared-memory locks.
+
+The controller SDK decodes 38,679 callbacks, including 1,163 public-confidence-1
+reports. In the retained every-eighth-callback sample, all 4,834 results still
+have state zero; all 146 confidence-1 results have diagnostic `0x52 == 0`.
+This is consistent with the getter's documented synthesized confidence and
+does not establish optical acquisition. Controller pose publication stays off.
+
+The 186-member export is 32,223,377 bytes, SHA-256
+`5aacc836c10ee5fd64fc03ba4184588b533de6671e22da5174dd2ee010b3f14e`.
+Member/source hashes, full BOOT/DTBO readbacks, workqueue restoration, MCU/DSP
+shutdown, muted offline stock return and the owned USB wrapper's exit verify.
