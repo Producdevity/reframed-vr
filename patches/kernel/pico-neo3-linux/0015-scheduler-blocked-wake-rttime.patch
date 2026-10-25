@@ -1,0 +1,36 @@
+From: Producdevity
+Subject: [PATCH] sched: reset RT watchdog on blocked wake across class changes
+
+KGSL temporarily promotes its submitting caller to FIFO and restores its prior
+class before returning. A caller restored to CFS can then block and wake without
+passing through enqueue_task_rt, retaining watchdog ticks across real sleeps.
+
+Move the existing ENQUEUE_WAKEUP timeout reset to common blocked-task activation.
+Keep policy changes, light wakes, runnable migration, preemption and yield from
+resetting the budget. Leave watchdog limits, stamp and tick accounting intact.
+
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1707,6 +1707,10 @@
+ 
+ static inline void ttwu_activate(struct rq *rq, struct task_struct *p, int en_flags)
+ {
++	/* A driver can restore a boosted caller to CFS before it blocks. */
++	if (en_flags & ENQUEUE_WAKEUP)
++		p->rt.timeout = 0;
++
+ 	activate_task(rq, p, en_flags);
+ 	p->on_rq = TASK_ON_RQ_QUEUED;
+ 
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -1405,9 +1405,6 @@
+ 
+ 	schedtune_enqueue_task(p, cpu_of(rq));
+ 
+-	if (flags & ENQUEUE_WAKEUP)
+-		rt_se->timeout = 0;
+-
+ 	enqueue_rt_entity(rt_se, flags);
+ 	walt_inc_cumulative_runnable_avg(rq, p);
+ 

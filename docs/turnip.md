@@ -672,4 +672,7 @@ but the kernel still reports a hard RT-time watchdog kill during GPU submission.
 KGSL can temporarily promote the caller to FIFO internally. Its restored CFS
 sleepers miss the RT-class-only timeout reset, allowing accounting to survive
 blocking sleeps. The option remains an explicit scheduling comparison; the
-kernel wake-accounting correction requires separate validation.
+kernel wake-accounting correction requires separate validation. Pico Linux patch
+0015 passes native blocking-wake and nonblocking enforcement controls; its first
+combined run retains the compositor but stops on a camera sequence gap before
+steady timing windows. It does not establish complete pacing acceptance.

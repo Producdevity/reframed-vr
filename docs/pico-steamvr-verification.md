@@ -3332,3 +3332,63 @@ members plus its manifest, SHA-256
 Full BOOT/DTBO readbacks, resource shutdown, muted offline stock return and the
 owned USB host's termination verify. The detailed audit is retained in
 `output/pico-callback-pool-analysis-20261025-v2/`.
+
+### Reset the RT budget on actual blocking wake across scheduling classes
+
+Pico Linux patch 0015 moves the existing `rt.timeout` reset from RT-class
+enqueue to `ttwu_activate`, guarded by `ENQUEUE_WAKEUP`. A restored CFS sleeper
+now receives the same reset as an RT sleeper. Failed/light wakes, runnable
+migration, policy changes, preemption and yield do not gain a reset. The
+watchdog stamp, tick accounting and configured limits are preserved.
+
+`tests/pico-rttime-regression.c` runs four bounded child-process controls with an
+80 ms RT limit, 30 ms CPU bursts and eight rounds. The blocking case changes to
+CFS before each 20 ms sleep. `wait4` records child CPU use; nonblocking controls
+must receive SIGKILL within a tick-accounting tolerance of 60–120 ms. Children
+also have a two-second CPU limit and a five-second parent deadline. The test
+requires root and ordinary initial scheduling; use `--expect-legacy` on the
+baseline and `--expect-fixed` on the corrected kernel.
+
+| Case | Original kernel | Corrected kernel |
+| --- | --- | --- |
+| Ordinary scheduling | Eight rounds, 240.099 ms CPU | Eight rounds, 240.088 ms CPU |
+| Short RT bursts, then blocking CFS sleep | Killed after two rounds, 80.176 ms CPU | Eight rounds, 240.374 ms CPU |
+| RT/CFS changes without blocking | Killed at 83.733 ms CPU | Killed at 87.016 ms CPU |
+| Continuous RT execution | Killed at 84.392 ms CPU | Killed at 99.722 ms CPU |
+
+These physical Pico results reproduce the class-change bug and verify its
+blocking-wake correction while retaining nonblocking enforcement. They do not
+claim precise wall-clock enforcement from the kernel's sampled tick accounting.
+The baseline's collection-wrapper errors and recovered results are preserved in
+`output/pico-rttime-kernel-20261025-v1/baseline/`; hashes, firmware readbacks and
+muted offline stock recovery are checked independently.
+
+The corrected kernel retains the baseline configuration and exported module
+CRCs. Its Image SHA-256 is
+`b435df8b9fc5456a8726fcbfaa6202fc3636ff41781ce83f828d19626585b71a`;
+the diagnostic RAM-boot container SHA-256 is
+`586ffa72338bd6ced2d4ac799880fbdeebce268086418f2b2cf7746f2ef8dcb2`.
+Initramfs, DTB and command line match the prior working container. The build
+uses the retained native baseline plus this correction, regenerates reclaimed
+build artifacts, validates the linked Image extent and restores the original
+source tree. It is not a fresh build of every current profile patch.
+
+`output/pico-callback-pool-20261025-v3/` runs those controls before the graphics
+setup, retaining ordinary caller nice −20, event RR/2 and the 100 ms compositor
+watchdog. An initial private launch guard expected 32 setup steps; the added
+regression makes 33. That guard is corrected before graphics starts in the same
+boot. The compositor survives until normal cleanup; 30/30 scanout samples are
+valid and include 13 sampled framebuffer changes. No compositor watchdog kill
+is recorded.
+
+The combined run nevertheless fails before steady timing windows. The camera
+sequence guard receives camera 1 frame 1901 while older frame 1899 still lacks
+that camera, then invalidates capture. Feed timeout and tracking shutdown follow.
+The guard correctly refuses a missing per-camera frame; increasing reorder
+capacity alone does not address this condition. The source of that gap remains
+under investigation. No new pacing or tracked-controller acceptance is claimed.
+
+The 8,343,706-byte export contains 173 verified data members plus its manifest,
+SHA-256 `7150ba3389162d9037218b88488e4fe5101dcf4221d958910cf55ce9c4ade4e1`.
+Source/member hashes, full BOOT/DTBO readbacks, GPU/workqueue restoration,
+MCU/DSP shutdown, muted offline stock return and owned USB host exit verify.
