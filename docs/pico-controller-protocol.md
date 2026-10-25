@@ -1629,3 +1629,21 @@ Real optical acquisition, stable loss/reacquisition and a SteamVR pointer remain
 open. Saved input hashes, calibrated and uncalibrated attempts, loaded-module
 identity, breakpoint observations and the synthetic-control boundary are retained
 in the private evidence directory.
+
+A fresh 90 Hz recording in `output/pico-gpu-dispatch-20261025-v1/` retains
+150 image sets and 3,306 motion rows with their observed dispatch order. The
+calibrated isolated replay in `output/pico-optical-fresh-20261025-v1/` consumes
+all of them, stops cleanly and returns 3,306 state-zero callbacks. All four
+cameras report ready. Its 44 observed position candidates have Z from −1.080 to
+−1.052 m; each fails the unchanged magnitude-below-0.8 gate, and none reaches
+post-fit/brightness. Breakpoints are capped at 64 observations each; the position
+and later gates remain below that cap.
+
+An independent stereo/model fit to the earlier recording's SDK-detected blobs
+also produces hypotheses outside that component bound. These are geometric
+hypotheses with unverified correspondences and frame interpretation, not measured
+physical placement or accepted tracking. A useful next physical check is an
+awake controller at headset height, 30–50 cm in front with its ring visible.
+Do not replace that check by relaxing the SDK gate. The fresh replay starts no
+sensors and publishes no poses; its hash-verified private device copies are
+removed while host inputs, calibration and firmware evidence remain intact.

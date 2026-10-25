@@ -2591,3 +2591,41 @@ confidence. The 153-member export is 17,436,265 bytes, SHA-256
 `80ec3ad81c8332719024f6def3f7146c0ae55d652ff865545d7ee8bdb3a717ee`.
 Member hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown and muted offline stock
 return verify. No firmware partition was flashed; Quest remains untouched.
+
+### GPU command timing at 90 Hz (2026-10-25)
+
+`output/pico-gpu-dispatch-20261025-v1/` retains 91,102 KGSL queue, submit, clock
+sync and retirement events, together with paired counters, display-worker fences
+and vblank notifications. The exact kernel already inserts command start/retire
+profiling reads on this GPU; enabling these tracepoints does not add a new
+profiling policy. The trace collector reports no errors, overruns or dropped
+events. Sync-pair measurements agree with a 19.2 MHz always-on GPU counter.
+
+All six late vsync-age faults map from the display fence's KGSL timeline name
+and timestamp to a unique queued/submitted/retired compositor command. Their CPU
+dispatch intervals are 0.022–0.132 ms; GPU submission-to-start intervals are
+0.014–0.063 ms. GPU start-to-retire intervals are 7.389–7.835 ms. This is elapsed
+command time, including any preemption or interleaving, rather than shader-active
+time. Estimated GPU retirement to display-fence completion takes 0.195–0.458 ms.
+These six samples do not show a long GPU queue stall or establish a fence defect.
+
+Across the late 175–265-second interval, the compositor's median/p99 command
+intervals are 7.214/7.910 ms; its GPU submission-to-start p99 is 1.443 ms. Gamescope
+has separate commands with median/p99 intervals of 0.657/2.902 ms. These are
+instrumented stationary observations, not a general scheduling diagnosis.
+GPU completion versus the nearby kernel vblank notification suggests limited
+presentation margin, but does not measure the panel latch deadline or photons.
+No priority, completion or timing-acceptance rule is changed from this result.
+
+All 9,000 late head queries pass; the six overdue ages remain failures of the
+unchanged two-period bound. All 4,499 camera sets complete with 182,215 confident
+head outputs and no bad result. All 13,795 decoded controller callbacks still
+lack public optical confidence. The fresh ordered image/IMU subset and its
+separate calibrated CPU rejection replay are recorded in the
+[controller protocol notes](pico-controller-protocol.md#observed-position-gate-rejection-2026-10-25).
+
+The 157-member export is 43,210,269 bytes, SHA-256
+`4729adfde06979c09d198063697926866d0877ff88f13b0d825f42b2d0972fda`.
+Member and complete compressed-stream hashes, full BOOT/DTBO readbacks,
+MCU/DSP shutdown and muted offline stock return verify. The owned USB helper is
+joined after return. No firmware partition or Quest device is modified.
