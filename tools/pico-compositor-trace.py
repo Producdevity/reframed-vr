@@ -5,9 +5,54 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 
 EVENTS = ('sched/sched_switch', 'sched/sched_wakeup',
           'raw_syscalls/sys_enter', 'raw_syscalls/sys_exit')
+
+
+def workqueue_pool_ids(value):
+    tokens = value.split()
+    if not 1 <= len(tokens) <= 64:
+        raise ValueError('Expected bounded node:pool workqueue identities')
+    nodes, pools = set(), set()
+    for token in tokens:
+        match = re.fullmatch(r'(-?\d+):(\d+)', token)
+        if not match:
+            raise ValueError('Invalid workqueue pool identity')
+        node, pool = map(int, match.groups())
+        if not -1 <= node <= 4095 or not 0 <= pool <= 2147483647 or node in nodes:
+            raise ValueError('Invalid or duplicate workqueue node')
+        nodes.add(node)
+        pools.add(pool)
+    return sorted(pools)
+
+
+def callback_pool_filters(pools, function):
+    if (not pools or len(pools) > 64 or
+            any(type(pool) is not int or not 0 <= pool <= 2147483647 for pool in pools) or
+            type(function) is not int or not 0 < function < 1 << 64):
+        raise ValueError('Expected bounded pool IDs and a resolved callback-worker function')
+
+    def names(field):
+        return '('+' || '.join([*(field+' ~ "kworker/u'+str(pool)+':*"'
+                                 for pool in sorted(set(pools))),
+                                field+' == "kgsl-events"'])+')'
+
+    current = names('COMM')
+    target = names('comm')+' || comm == "kgsl_worker_thr"'
+    return {
+        'workqueue/workqueue_queue_work': 'function == '+hex(function),
+        # Activation/end events contain only a work pointer in this vendor kernel.
+        'workqueue/workqueue_activate_work': None,
+        'workqueue/workqueue_execute_start': '(function == '+hex(function)+') || '+current,
+        'workqueue/workqueue_execute_end': current,
+        'sched/sched_switch': (names('prev_comm')+' || '+names('next_comm')+
+                             ' || prev_comm == "kgsl_worker_thr" || next_comm == "kgsl_worker_thr"'),
+        'sched/sched_waking': target,
+        'sched/sched_wakeup': target,
+        'sched/sched_wakeup_new': target,
+    }
 
 
 def arm(instance, pid, syscalls=()):

@@ -11,6 +11,35 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PicoCompositorTraceTests(unittest.TestCase):
+    def test_pool_identity_format_and_shared_nodes(self):
+        self.assertEqual(MODULE.workqueue_pool_ids('0:17\n'), [17])
+        self.assertEqual(MODULE.workqueue_pool_ids('0:17 1:17 2:19\n'), [17, 19])
+        for value in ('', '17', 'x:17', '0:17 0:19', '0:-1', '0:2147483648'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                MODULE.workqueue_pool_ids(value)
+
+    def test_callback_trace_selects_shared_pool_work_and_rescuer(self):
+        filters = MODULE.callback_pool_filters([17, 19], 0xffff1234)
+        self.assertEqual(filters['workqueue/workqueue_queue_work'], 'function == 0xffff1234')
+        self.assertIsNone(filters['workqueue/workqueue_activate_work'])
+        for event in ('workqueue/workqueue_execute_start', 'workqueue/workqueue_execute_end'):
+            self.assertIn('COMM ~ "kworker/u17:*"', filters[event])
+            self.assertIn('COMM ~ "kworker/u19:*"', filters[event])
+            self.assertIn('COMM == "kgsl-events"', filters[event])
+        self.assertNotIn('function', filters['workqueue/workqueue_execute_end'])
+        self.assertIn('prev_comm ~ "kworker/u17:*"', filters['sched/sched_switch'])
+        self.assertIn('next_comm == "kgsl-events"', filters['sched/sched_switch'])
+        self.assertIn('next_comm == "kgsl_worker_thr"', filters['sched/sched_switch'])
+        for event in ('sched/sched_waking', 'sched/sched_wakeup', 'sched/sched_wakeup_new'):
+            self.assertIn('comm ~ "kworker/u17:*"', filters[event])
+            self.assertIn('comm == "kgsl_worker_thr"', filters[event])
+            self.assertNotIn('COMM', filters[event])
+
+    def test_bad_pool_and_function_selections_are_refused(self):
+        for pools, function in (([], 1), ([True], 1), ([-1], 1), ([17], 0), ([17], True), ([17], 1 << 64)):
+            with self.subTest(pools=pools, function=function), self.assertRaises(ValueError):
+                MODULE.callback_pool_filters(pools, function)
+
     def files(self, root):
         for name, content in [('tracing_on', '0'), ('set_event_pid', 'no pid\n'),
                               ('options/event-fork', '0'), ('trace_marker', ''),

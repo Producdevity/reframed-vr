@@ -3247,3 +3247,51 @@ The 192-member export is 33,207,987 bytes, SHA-256
 Full BOOT/DTBO readbacks, GPU/workqueue restoration, MCU/DSP shutdown, muted
 offline stock return and the owned USB helper's exit verify. No controller
 confidence gate, pose conversion or calibrated display setting changes.
+
+### Shared callback-pool tracing and the remaining startup watchdog (2026-10-25)
+
+`tools/pico-compositor-trace.py` now supplies filters based on the running
+`kgsl-events/pool_ids`, rather than assuming that the queue owns private workers.
+The pinned kernel shares unbound pools by niceness and CPU mask. The filters
+include all executions on those workers, the queue's rescuer and the separate
+KGSL dispatcher. This kernel's activation/end events expose only a work pointer;
+activation is retained unfiltered within the bounded recording. Generic current
+task filters use `COMM`, scheduler target filters use `comm`, and worker names
+use the kernel's glob operator. Eleven focused host tests pass, and native filter
+readback verifies acceptance.
+
+The cold run in `output/pico-callback-pool-20261025-v1/` captures 5,901 complete
+KGSL queue/activate/start/fire/end generations and 32,256 matched pool execution
+spans. Queue-to-activation has a 13 µs maximum; queue-to-start has a 2.087 ms
+maximum. The observed shared work includes camera request-manager and USB work.
+The longest callback wait overlaps neither. For 1.917 ms of that 2.087 ms wait,
+at least one observed worker is runnable and none is scheduled on CPU. This
+supports scheduling/dispatch delay rather than complete pool occupancy for this
+case. The eventual worker alone must not be assigned the whole queue delay.
+Another callback for the same GPU context/timestamp wakes the renderer earlier,
+so the longest callback is not independently identified as a critical compositor
+fence or a missed-frame cause.
+
+The first 1,201 callbacks precede scheduler coverage. Worker state before its
+first observation remains unknown; filtered tracing does not prove a complete
+worker inventory. The verified 37,634,507-byte CPU trace reports no collector
+error or lost events. Detailed generation accounting, raw numbered excerpts and
+coverage limits are retained in
+`output/pico-callback-pool-analysis-20261025-v1/`.
+
+This run fails during dashboard shader creation, before the four steady timing
+windows. RenderThread runs continuously for 103.625 ms after its last blocking
+wake, then receives a kernel SIGKILL. Its recorded RT CPU limit is 100,000 µs,
+CPU time is otherwise unlimited and there is no recorded OOM. The pinned
+kernel's RT watchdog checks the hard limit on a 250 Hz tick. Together these
+observations support watchdog exhaustion; its internal counter is not directly
+traced. Patch 0019's completed-present boundary therefore does not establish a
+general startup-watchdog fix. The unchanged watchdog is retained while testing
+patch 0020's ordinary-scheduling alternative.
+
+The export contains 172 verified data members plus its manifest, 8,658,784 bytes,
+SHA-256
+`de1eef77c6cf9401a69531f0c4beda0c873a992f8a5e37dc43600749df0ece9c`.
+Member/source hashes, full BOOT/DTBO readbacks, GPU/workqueue restoration,
+MCU/DSP shutdown and muted offline stock return verify despite the failed test.
+No steady pacing or optical controller acceptance is claimed.
