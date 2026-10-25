@@ -2667,3 +2667,51 @@ SHA-256 `ac53dd1bce9772649a9fa0810a96b547147eeb46a376fa0a550e01c2f83b4d01`.
 Member and compressed-stream source hashes, full BOOT/DTBO readbacks, MCU/DSP
 shutdown, muted offline stock return and owned USB helper join verify. No firmware
 partition or Quest device is modified.
+
+### Render-thread scheduling control at 90 Hz (2026-10-25)
+
+`output/pico-render-priority-20261025-v3/` compares the exact KGSL-submitting
+render thread at OTHER/0, RR/2, RR/2 and OTHER/0 in one native boot. Each window
+lasts 20 seconds after a two-second settle. The external owner checks executable,
+service membership, thread start identity and unchanged affinity before each
+change. RR uses reset-on-fork; the application retains its realtime syscall
+restriction and zero realtime-priority limit. A 100 ms continuous realtime CPU
+limit remains armed. The original policy is read back after restoration.
+
+| Window | Base policy | Runnable-delay p99 | Sampled frames / drops | GPU median |
+| --- | --- | ---: | ---: | ---: |
+| 1 | OTHER/0 | 1.503 ms | 1,841 / 84 | 7.341 ms |
+| 2 | RR/2 | 0.340 ms | 1,874 / 40 | 7.258 ms |
+| 3 | RR/2 | 0.336 ms | 1,878 / 36 | 7.268 ms |
+| 4 | OTHER/0 | 0.833 ms | 1,873 / 44 | 7.263 ms |
+
+Scheduler distributions contain complete runnable-to-switch-in intervals within
+each observation. Frame histories include their initial pre-window snapshot and
+are not disjoint cohorts. Trace priorities predominantly match each requested
+base policy; short effective-priority changes also occur, whose source is not
+captured. A trace priority alone does not establish a different base policy.
+
+All 8,000 late head queries pass, but five vsync-age faults remain: three in the
+first normal window, one in the second realtime window and one in the final
+normal window. Frame-interval p99 remains about 22.25–22.28 ms. The realtime
+control reduces runnable delays without establishing a complete pacing fix;
+no maintained launch policy is changed. The remaining realtime-window fault
+includes a measured 2.697 ms GPU submission-to-start interval followed by
+7.174 ms elapsed command execution. This establishes a GPU queue delay in that
+sample, not the cause of every missed deadline or the physical panel latch time.
+
+The first attempt stops before any priority change after the compositor receives
+SIGKILL; the sender/cause is not established. Its sensor shutdown and stock return
+verify. The next attempt completes the comparison but its syscall-heavy CPU trace
+reaches the 64 MiB cap at 209.95 seconds. Those results retain explicit partial
+coverage. Version 3 omits raw syscall tracing and raises the bounded cap to
+128 MiB; its 37,710,672-byte stream covers all four windows with no collector
+error, overrun or dropped events. These earlier attempts are retained, not
+reclassified as complete trace captures.
+
+All 4,499 camera sets complete, with 182,255 confident head outputs and no bad
+result. All 13,770 decoded controller callbacks still lack public optical
+confidence. The 163-member export is 21,009,475 bytes, SHA-256
+`5554a71bb308a6afbc36153f707c5b814d27ccf938ef2b0fbf194cf56d04a4ec`.
+Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original render
+policy restoration, muted offline stock return and USB helper join verify.

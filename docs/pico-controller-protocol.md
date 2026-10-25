@@ -1647,3 +1647,15 @@ awake controller at headset height, 30–50 cm in front with its ring visible.
 Do not replace that check by relaxing the SDK gate. The fresh replay starts no
 sensors and publishes no poses; its hash-verified private device copies are
 removed while host inputs, calibration and firmware evidence remain intact.
+
+The later stock check in `output/pico-controller-awake-reference-20261025-v1/`
+briefly keeps the headset awake through ordinary wake events before reading the
+existing stock getters. Power-state samples include 25 awake observations and
+one sleep observation followed by a wake event; this is sampled wakefulness,
+not proof of uninterrupted wakefulness. All 300 left reads still contain one
+unchanging timestamp, 9.09–12.10 seconds old against monotonic time, with zero
+state/confidence. Right timestamps remain zero. This supplies no fresh stock
+tracking baseline and does not establish a hardware fault, controller sleep or
+physical placement. The private getter files are removed; offline state and
+muted audio are rechecked. The earlier asleep stock capture is likewise not a
+valid reference for native-versus-stock acquisition performance.
