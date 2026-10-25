@@ -2503,3 +2503,51 @@ is retained, and an unchanged verification retry confirms muted offline stock.
 No firmware partition was flashed. Eleven exact duplicate staging archives are
 removed only after matching their remote/retained-host hashes; recovery,
 calibration and host evidence remain intact.
+
+### Paired counter and display-fence correlation (2026-10-25)
+
+`output/pico-vsync-correlation-20261025-v1/` completes all three diagnostic
+windows and retains two overdue queries. The WSI/present log and kernel vblank
+trace verify, but the requested external Vulkan layer produces no CSV. That
+missing stream is not used to infer API wait durations. In one retained event,
+kernel delivery of sequence 4,763 precedes its Mesa callback by about 16 ms;
+this is a userspace delivery interval, not a stopped panel clock.
+
+The next rebuild adds counter observations to the existing optional Mesa trace.
+Its v2 run passes GPU interop, all four cross-exec binary/timeline buffer-sharing
+cases and the complete camera/head feed. It retains two overdue queries. The
+recorded metadata says paired timing is enabled, but no successful paired-counter
+trace is emitted. That metadata alone does not verify the selected counter path.
+
+The v3 harness explicitly supplies the production
+`MESA_VK_WSI_FRAME_COUNTER_TIMING=1` setting and verifies it in the actual
+`vrcompositor` child's environment. The systemd main process is `runuser` and
+must not be mistaken for that compositor when collecting its environment/maps.
+The rebuilt library's hash is verified before deployment; its private-query
+arguments and 14,862 successful paired queries are observed directly. The
+extracted-function sanitizer test passes, and native GPU sharing passes again.
+No GPU fence, presentation-completion or timing-acceptance semantics change.
+
+The v3 diagnostic windows pass all 9,000 head queries and retain six overdue
+vsync ages, ranging from 22.252 to 23.022 ms. Their pending presents wait on
+the display worker's KGSL buffer fences for 7.498–9.257 ms before completion.
+The corresponding commit-to-Mesa-flip intervals are 14.164–20.358 ms; kernel
+event delivery to the Mesa callback takes 0.032–0.516 ms for these six events.
+This distinguishes the buffer dependency, flip and notification intervals. It
+does not split GPU queue delay from execution, establish a defective fence or
+justify changing completion semantics. The kernel scanout clock keeps advancing.
+Measured cadence over the retained trace is approximately 89.784 Hz for the
+nominal 90 Hz mode.
+
+Within each late window, deduplicated software frame histories report
+2,774/76, 2,780/63 and 2,788/53 frames/drops respectively, with GPU medians
+7.2567, 7.1762 and 7.1919 ms. Interval p99 remains about 22.26 ms. The histories
+include the initial pre-window snapshot and are not disjoint frame cohorts.
+These instrumented observations do not establish clean pacing or photon latency.
+
+All 4,499 camera sets are consumed and 182,212 confident head outputs are
+published with no bad result. All 13,746 decoded controller callbacks still lack
+public optical confidence. The 153-member export verifies; full BOOT/DTBO
+readbacks, MCU/DSP shutdown and muted offline stock return pass. The restored
+build toolchain and its initial missing-dependency failures are retained in the
+private build evidence. No firmware partition or Quest device is modified.

@@ -226,6 +226,12 @@ See the [full verification](pico-steamvr-verification.md#frame-counter-abi-and-p
 
 Patch 0016 adds opt-in `MESA_VK_WSI_PRESENT_TRACE=1` diagnostics for display
 queueing, atomic commits, page-flip completion and both phases of present waits.
+It also records counter-query arguments and whether the private paired path is
+enabled. A successful paired query records its sequence and DRM timestamp,
+allowing the compositor's last clock update to be correlated with those waits.
+Present IDs and counter sequences are separate namespaces even when their
+numeric values coincide. The extracted-function regression checks these trace
+arguments while retaining standard-query and failure-output assertions.
 Each line records monotonic time, thread, swapchain, image and present ID, plus
 the relevant flags, completed ID or result. It preserves `errno` and ignores
 write errors; wait and completion semantics are unchanged. Leave it disabled

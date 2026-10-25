@@ -28,6 +28,7 @@ struct wsi_display_swapchain { struct surface *surface; };
 static void *wsi_swapchain_from_handle(void *p) { return p; }
 static struct wsi_display_mode *wsi_display_mode_from_handle(struct wsi_display_mode *p) { return p; }
 static unsigned queries;
+static unsigned traces;
 static int query_result;
 static uint64_t query_timestamp=1000000000;
 static int drmCrtcGetSequence(int fd, uint32_t crtc, uint64_t *value, uint64_t *timestamp)
@@ -39,6 +40,19 @@ static int drmCrtcGetSequence(int fd, uint32_t crtc, uint64_t *value, uint64_t *
         if (timestamp) *timestamp=query_timestamp;
     }
     return query_result;
+}
+static void wsi_present_trace(const char *event, const void *chain, const void *image,
+                             uint64_t sequence, uint64_t timestamp, int result)
+{
+    if (!strcmp(event,"counter_query")) {
+        const char *enabled=getenv("MESA_VK_WSI_FRAME_COUNTER_TIMING");
+        bool timing=sequence==0x7ffffffd && enabled && !strcmp(enabled,"1");
+        assert(!chain && !image && !result && timestamp==(uint64_t)timing);
+        return;
+    }
+    assert(!strcmp(event,"counter") && chain && !image && !result);
+    assert(sequence==123 && timestamp==query_timestamp);
+    ++traces;
 }
 #include "display-counter-under-test.h"
 
@@ -73,6 +87,7 @@ int main(void)
     assert(!setenv("MESA_VK_WSI_FRAME_COUNTER_TIMING","1",1));
     assert(wsi_GetSwapchainCounterEXT(&device,&chain,0x7ffffffd,values)==VK_SUCCESS);
     assert(values[0]==123 && values[1]==1000000000 && values[2]==987 && queries==3);
+    assert(traces==1);
     values[1]=789;
     assert(wsi_GetSwapchainCounterEXT(&device,&chain,1,values)==VK_SUCCESS);
     assert(values[0]==123 && values[1]==789 && values[2]==987 && queries==4);
@@ -89,5 +104,6 @@ int main(void)
     assert(wsi_GetSwapchainCounterEXT(&device,&chain,2,values)==VK_ERROR_UNKNOWN && queries==6);
     assert(!setenv("MESA_VK_WSI_FRAME_COUNTER_TIMING","0",1));
     assert(wsi_GetSwapchainCounterEXT(&device,&chain,0x7ffffffd,values)==VK_ERROR_UNKNOWN && queries==6);
+    assert(traces==1);
     puts("MESA_DISPLAY_COUNTER_PASS opt-in paired DRM time; failure bounds; standard queries preserved");
 }

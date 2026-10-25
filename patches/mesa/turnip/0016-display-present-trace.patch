@@ -1,7 +1,7 @@
 From: Producdevity
 Subject: [PATCH] wsi/display: opt in to present ID completion diagnostics
 
-Correlate queue, atomic commit, flip and presentation waits without changing
+Correlate counter queries, atomic commits, flips and presentation waits without changing
 completion semantics. Disabled unless MESA_VK_WSI_PRESENT_TRACE=1; preserve
 errno and ignore diagnostic write failures.
 
@@ -91,4 +91,20 @@ errno and ignore diagnostic write failures.
 +   wsi_present_trace("wait_end", chain, NULL, waitValue, completed, result);
     return result;
  }
+ 
+@@ -4638,6 +4670,7 @@
+    /* Frame's private query returns sequence, then CLOCK_MONOTONIC nanoseconds. */
+    bool timing = counter == (VkSurfaceCounterFlagBitsEXT)0x7ffffffd &&
+                  option && !strcmp(option, "1");
++   wsi_present_trace("counter_query", NULL, NULL, counter, timing, 0);
+    if (counter != VK_SURFACE_COUNTER_VBLANK_BIT_EXT && !timing)
+       return VK_ERROR_UNKNOWN;
+ 
+@@ -4666,6 +4699,7 @@
+           !values[1])
+          return VK_ERROR_UNKNOWN;
+       memcpy(pCounterValue, values, sizeof(values));
++      wsi_present_trace("counter", swapchain, NULL, values[0], values[1], 0);
+       return VK_SUCCESS;
+    }
  
