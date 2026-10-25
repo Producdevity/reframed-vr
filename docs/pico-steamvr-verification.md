@@ -2805,3 +2805,50 @@ dropped events. The 161-member export is 4,797,679 bytes, SHA-256
 Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original render
 policy restoration, muted offline stock return and owned USB helper join verify.
 No firmware partition or Quest device is modified.
+
+### Guarded priorities and bounded camera grouping (2026-10-25)
+
+`output/pico-camera-reorder-20261025-v1/` validates the opt-in guarded Mesa library,
+SHA-256 `7a37eeeb925c429b46c0ac233be47990692da27c8308459654df0e1e9367ef01`,
+on the same pinned Pico RAM kernel. Actual compositor environment includes
+`TU_KGSL_CONTEXT_PRIORITIES=1`; trace priorities remain 1 for the compositor and
+8 for gamescope. Default interop passes all four cross-exec cases. The ordinary
+rendering path remains selected, with identical pixels/optics, nominal 90 Hz and
+render RR/2 in all three 30-second late windows.
+
+| Window | Sampled frames / drops | Frame-interval p99 | GPU median | Overdue age queries |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 2,815 / 42 | 22.225 ms | 7.270 ms | 0 / 3,000 |
+| 2 | 2,833 / 22 | 11.499 ms | 7.205 ms | 0 / 3,000 |
+| 3 | 2,831 / 16 | 11.363 ms | 7.202 ms | 0 / 3,000 |
+
+All 9,000 head queries are valid and all three age windows pass the unchanged
+two-period bound. Frame histories include their initial pre-window snapshot.
+Reported drops remain, and one bounded stationary run does not establish clean
+pacing, physical tracking/lens quality or the cause of the improved age results.
+Host previews show the Steam sign-in panel and toolbar in both eyes.
+
+All 4,499 camera sets complete, with 182,215 confident head outputs and no bad
+result. The two-slot collector is wired into the owned native diagnostic, but
+its live interleave counters are zero; its boundary change is tested by exhaustive
+host replay, not attributed as the cause of this run's timing results. All
+13,770 decoded controller callbacks still lack public optical confidence.
+
+The selected SDE trace contains 180,082 balanced markers and 90,041 begin/end
+spans, with no unmatched boundary. These selected spans exclude the separately
+traced MSM commit worker's GPU-fence wait. Coarse frequency samples report the
+performance governor and maximum current frequency for all three CPU policies;
+they are not per-frame clock measurements. Complete CPU/GPU and DRM/SDE streams
+are 37,395,548 and 30,983,222 bytes, with no collector errors, overruns or drops.
+
+Two earlier attempts remain failures: one compositor startup ends with a
+kernel-originated SIGKILL of unverified cause; the fatal-attribution retry instead
+stops on the 949-set camera interleave described in the controller notes. No
+watchdog limit is relaxed. The successful follow-up retains those diagnostics
+and restores `print-fatal-signals` to its original value afterward.
+
+The 168-member export is 22,153,504 bytes, SHA-256
+`56adac7cbbd0df339067406bb1d3a6375f63cded57826022fa3c8ccb23db514c`.
+Member/source hashes, full Pico BOOT/DTBO readbacks, MCU/DSP shutdown, original CPU
+policy/debug-setting restoration, muted offline stock return and USB helper join
+verify. No firmware partition or Quest device is modified.

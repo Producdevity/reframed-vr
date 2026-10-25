@@ -603,3 +603,8 @@ DRM/MSM preemption support on another headset or kernel.
 The instrumented comparison and remaining failures are recorded in the
 [SteamVR verification notes](pico-steamvr-verification.md#kgsl-gpu-priority-path-2026-10-25).
 No realtime CPU launch policy or compositor priority override is made a default.
+
+The subsequent guarded-library test in
+`output/pico-camera-reorder-20261025-v1/` verifies the actual compositor opt-in
+and priority separation on the pinned Pico kernel, with all four default interop
+cases passing. The verification notes retain its exact library hash and limits.

@@ -1659,3 +1659,30 @@ tracking baseline and does not establish a hardware fault, controller sleep or
 physical placement. The private getter files are removed; offline state and
 muted audio are rechecked. The earlier asleep stock capture is likewise not a
 valid reference for native-versus-stock acquisition performance.
+
+### Bounded cross-rig frame grouping (2026-10-25)
+
+The diagnostic in `output/pico-priority-gate-native-20261025-v2/` stops after
+949 head sets when physical camera 1 delivers frame 1903 while frame 1901 still
+has only calibration IDs 2/3, corresponding to physical cameras 0/1. The collector
+rejects that first interleave before it can observe the other rig's pending
+frames. This establishes an overly strict global delivery-order assumption;
+it does not establish whether those remaining images would eventually arrive.
+
+`pico_camera_frame_window_push/take()` adds a two-slot, single-owner metadata
+window for independently drained rigs. Callers reserve a slot, copy that camera's
+pixels into its owned set, and release complete sets in frame order. The helper
+rejects a camera advancing past a pending set that lacks its image, duplicate or
+regressing input, and window exhaustion. It never releases a partial set. The
+existing strict sequence helper is unchanged and still handles controller
+startup joining in the diagnostic. Timestamp skew, generation, pixel ownership,
+ring capacity and downstream freshness checks remain separate and unchanged.
+
+Sanitizer tests cover all 2,520 per-camera-ordered deliveries across two frames,
+the exact recorded refusal order, slot reuse across 128 frames, genuine missing
+camera inputs, duplicates, regressions and overflow. The owned native diagnostic
+uses two owned sets for each head/controller stream, with no callback allocation.
+Its full follow-up completes all 4,499 head sets and preserves head tracking.
+Both live cross-frame counters are zero in that run: live interleaving recovery
+was not exercised, and the changed boundary's proof is the exhaustive host replay.
+Optical controller confidence remains zero; this is not a pointing fix.
