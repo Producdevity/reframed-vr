@@ -2626,9 +2626,10 @@ separate calibrated CPU rejection replay are recorded in the
 
 The 157-member export is 43,210,269 bytes, SHA-256
 `4729adfde06979c09d198063697926866d0877ff88f13b0d825f42b2d0972fda`.
-Member and complete compressed-stream hashes, full BOOT/DTBO readbacks,
-MCU/DSP shutdown and muted offline stock return verify. The owned USB helper is
-joined after return. No firmware partition or Quest device is modified.
+Member and complete compressed-stream hashes, full Pico BOOT/DTBO readbacks,
+MCU/DSP shutdown and the Pico's muted offline stock return verify. The owned USB
+helper is joined after return. No firmware partition is modified; Quest remains
+untouched.
 
 ### Render-pass mode comparison at 90 Hz (2026-10-25)
 
@@ -2741,12 +2742,17 @@ is 0.477 ms, versus 1.430 ms in the preceding medium-priority run; maxima are
 measure shader-active time. Prioritizing the compositor does not establish an
 improvement to application throughput or overall input latency.
 
-| CPU window | Sampled frames / drops | Frame-interval p99 | Timing acceptance |
-| --- | ---: | ---: | --- |
-| OTHER/0 | 1,866 / 56 | 22.269 ms | pass |
-| RR/2 | 1,906 / 12 | 11.455 ms | fail |
-| RR/2 | 1,892 / 24 | 22.231 ms | pass |
-| OTHER/0 | 1,881 / 39 | 22.259 ms | fail |
+| CPU window | Sampled frames / drops | Frame-interval p99 | Overdue vsync samples | Timing acceptance |
+| --- | ---: | ---: | ---: | --- |
+| OTHER/0 | 1,866 / 56 | 22.269 ms | 0 | pass |
+| RR/2 | 1,906 / 12 | 11.455 ms | 2 | fail |
+| RR/2 | 1,892 / 24 | 22.231 ms | 0 | pass |
+| OTHER/0 | 1,881 / 39 | 22.259 ms | 3 | fail |
+
+Timing acceptance means all 2,000 age queries in that window return valid values
+within the unchanged two-selected-period bound. It is separate from head-pose
+validity and reported frame drops. The 3/0/1/1 fault distribution in the preceding
+CPU-only control belongs to that earlier boot, not this GPU-priority run.
 
 Each history includes its initial pre-window snapshot. All 8,000 late head
 queries pass, but five vsync-age faults remain. Their GPU submission-to-start
