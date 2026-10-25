@@ -80,6 +80,12 @@ class ImageRunnerTests(unittest.TestCase):
                     remote_files[remote] = data + (b'corrupt' if fault == 'corrupt_transfer' else b'')
                 uploads.append(remote)
             elif tokens[0] == 'chmod':
+                self.assertEqual(tokens[1], '700')
+                self.assertEqual(set(tokens[2:]), {
+                    next(iter(directories)) + '/pico-controller-images',
+                    next(iter(directories)) + '/pico-controller-images-public',
+                })
+                self.assertEqual(len(tokens[2:]), 2)
                 self.assertTrue(all(path in remote_files for path in tokens[2:]))
             elif tokens[0] == 'env':
                 self.assertEqual(len(remote_files), 3)
