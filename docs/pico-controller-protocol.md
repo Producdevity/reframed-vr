@@ -1621,7 +1621,8 @@ of 3,031. Each internal breakpoint is capped at 64 observations. That control
 validates the observation path; its invented, unoccluded pixels do not validate
 real tracking. The replay process exits zero and stops the SDK cleanly. Its
 outer runner retains an incorrect 3,304-row expectation copied from the real
-recording; the fixture actually has 3,031 IMU rows. The successful SDK result is
+recording; the version-1 control consumes 3,031 of its 3,301 IMU rows through the last
+image plus 20 ms. The successful SDK result is
 verified separately without reclassifying that runner assertion as a pass.
 
 Real optical acquisition, stable loss/reacquisition and a SteamVR pointer remain
