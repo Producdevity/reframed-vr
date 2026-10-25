@@ -1686,3 +1686,52 @@ Its full follow-up completes all 4,499 head sets and preserves head tracking.
 Both live cross-frame counters are zero in that run: live interleaving recovery
 was not exercised, and the changed boundary's proof is the exhaustive host replay.
 Optical controller confidence remains zero; this is not a pointing fix.
+
+### Offline image geometry diagnostic
+
+[`analyze-pico-controller-images.py`](../tools/analyze-pico-controller-images.py)
+uses NumPy and saved version-2 image carriers, without a device, SDK replay or
+debugger. The caller explicitly selects two recorded camera IDs and their
+factory omni/radtan YAMLs; optional pixel flips are reported assumptions. It
+checks the carrier metadata, retains input hashes, and examines at most four
+selected sets and three intensity thresholds. Bright-pixel and feature limits
+bound connected-component extraction and exhaustive five-feature stereo
+matching. Insufficient features, search limits and multiple hypotheses remain
+explicit. No vendor threshold or runtime pose changes.
+
+```sh
+python3 tools/analyze-pico-controller-images.py \
+  --images output/CAPTURE/acquire-images.raw --frames 2 3 4 \
+  --image-cameras 2 3 \
+  --camera-yamls output/CALIBRATION/cam2/sensor.yaml output/CALIBRATION/cam3/sensor.yaml \
+  --tracker-calibration output/CALIBRATION/left-tracker-vector.bin \
+  --output output/NEW_IMAGE_GEOMETRY.json
+```
+
+Coordinates are in factory body frame B, with `T_BS` mapping camera S into B.
+The unchanged b1977 initialization gate also uses body-relative translation:
+`TrackingSystem::addImage` copies `HeadData` position/quaternion into offsets
+`0xa0`/`0xc0`; instructions `0xd3788`–`0xd37b4` construct that transform at
+`ControllerTracker+0x300`. Projection composes it with factory `T_BS`, while
+`0xb9ac8`–`0xb9b84` apply its inverse to the candidate before the component and
+norm checks. Thus the tested Z is a component of the body-relative controller
+origin, not world Z or radial range. The diagnostic reports a **feature
+centroid**, not that origin, and does not run the SDK acceptance gates. Physical
+forward/height directions still require a verified physical reference.
+
+On the retained fresh recording, simple pixel components independently yield
+one compact five-point hypothesis in each of sets 2–4 at threshold 80, with
+body-Z centroids from −1.0435 to −1.0413 m and maximum per-view residual below
+0.189 pixels. This uses no head or controller IMU prior. Correspondences,
+physical camera mapping and calibration accuracy remain assumptions; residual
+limits are not position-confidence intervals. Host tests cover synthetic
+projection in a rotated body frame, ambiguity, explicit mapping/flips, malformed
+carriers/calibration and bounded refusal. Synthetic consistency is not hardware
+correctness. Private evidence is `output/pico-controller-astra-20261025-v1/`.
+
+A measured near-position recording is needed to distinguish distant placement
+from a frame/scale error. With the headset fixed and the ring exposed, holds at
+roughly 40 and 60 cm should produce consistent stereo disparity changes. A fresh
+valid stock baseline at the same placement is useful. Another unattended
+recording with unknown placement cannot resolve that distinction, and a
+geometric hypothesis never establishes accepted tracking or loss/reacquisition.
