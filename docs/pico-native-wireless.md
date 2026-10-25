@@ -199,3 +199,38 @@ boundaries, restore platform rfkill and the firmware search path, unload the
 test modules, verify full BOOT/DTBO readbacks and return to quiet offline stock.
 Host tests exercise the actual callback's wire bytes and error paths, reject the
 unpatched helper, and verify that ROME's byte order remains unchanged.
+
+## Passive scanning with native VR active
+
+The next physical test uses the single-client CNSS kernel and its retained
+module-ABI compatibility receipt with the existing camera, tracking and SteamVR
+stack. The graphics profile, restored shader cache and scheduling settings match
+the preceding layer-off control. Bluetooth initializes with the verified unit
+address and stays unpowered; the WLAN managed interface receives its verified
+stock address. NetworkManager, BlueZ and wpa_supplicant remain runtime-masked.
+
+A passive scan overlaps the first late SteamVR measurement window for 2.291 s,
+returns 60 BSS observations and leaves the interface unassociated. All four
+cameras continue supplying head and controller classes. The window passes all
+3,000 head queries, but one of 3,000 vsync-age queries is overdue. That query
+occurs 19.275 s after the scan finishes, so this recording does not establish a
+causal relationship with scanning. Its 2,771 deduplicated software frame records
+report 82 drops, GPU median/p99 7.273/8.060 ms and interval p99 21.590 ms.
+The prior separate-boot control has comparable GPU times and still reports drops;
+this is integration evidence, not controlled acceptance of wireless performance.
+
+The strict timing assertion stops the run after that first window. The planned
+second and third windows are not collected. Controller output has 13,788 decoded
+callbacks and zero public confident optical poses; tracked pointing remains open.
+The camera/SLAM termination diagnostics follow the harness's early cleanup and
+do not establish an independent camera failure. Physical lens clarity, motion
+accuracy, active Bluetooth traffic, network association and power-management
+acceptance remain unverified.
+
+Evidence is `output/pico-radio-coexistence-20261025-v1/`, including the sent
+payload manifest, module compatibility boundary, partial timing analysis and
+143 verified exported members. Setup retains a readiness-check `KeyError` and
+its same-boot correction before graphics starts. Cleanup restores the original
+interface address/flags, platform rfkill, firmware search path and fallback
+sysctl, then unloads all three radio modules. MCU references reach zero,
+SLPI/CDSP stop, full BOOT/DTBO hashes match and muted offline stock return passes.
