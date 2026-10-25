@@ -3075,3 +3075,39 @@ The 180-member export is 31,978,743 bytes, SHA-256
 `e715d4e095d41f349d85216ea5a2ef485315b73018966e239e011f0bd6e0b7e0`.
 Member/source hashes, full BOOT/DTBO readbacks, workqueue/GPU restoration,
 MCU/DSP shutdown, muted offline stock return and owned USB-wrapper exit verify.
+
+### Diagnostic client presence comparison (2026-10-25)
+
+`output/pico-observer-cost-20261025-v1/` retains the same driver, Mesa, pixels,
+kernel, tracking and scheduling. The bounded late client is present/absent/
+absent/present. Both absent windows retain the independent DRM/GPU/callback
+traces and running camera/SLAM/SteamVR stack; no head-query or vsync-age API
+acceptance is claimed for them.
+
+| Window | Client | Measured duration | Fully contained flip pairs / skipped vblanks |
+| --- | --- | ---: | ---: |
+| 1 | present | 21.101 s | 1,887 / 7 |
+| 2 | absent | 20.000 s | 1,793 / 1 |
+| 3 | absent | 20.000 s | 1,793 / 1 |
+| 4 | present | 20.976 s | 1,881 / 1 |
+
+Misses remain without the client. The final present window resembles the absent
+windows; the first present window alone does not establish a repeatable observer
+penalty. This rules out that client as the sole cause, not all tracing overhead.
+All 4,000 late head/vsync-age queries in the two measured client windows pass.
+The capture completes 4,499 head camera sets, 182,217 confident outputs and no bad
+result. Controller optical publication remains off; its 13,786 decoded callbacks
+have zero public confidence, and controller image ownership reports nine drops.
+
+This export also retains the driver counters omitted in the preceding run.
+Across 30 samples spanning 30.542 s, controller updates advance from 325 to
+3,206, while boolean input calls stay at the initial 12, with zero changes or
+errors. This verifies suppression of redundant calls on the Pico, including
+unchanged connected/disconnected states. It does not exercise physical button
+transitions or establish a frame-pacing gain.
+
+The 183-member export is 31,596,869 bytes, SHA-256
+`75ab4c3ae83cf3a5400afc6449856a62e71012506288da34cb0aa5edb96f2a80`.
+Member/source hashes and all 34,417 callback jobs verify without trace loss;
+full BOOT/DTBO readbacks, policy restoration, MCU/DSP shutdown, muted offline
+stock return and the owned USB-wrapper exit verify.
