@@ -3111,3 +3111,32 @@ The 183-member export is 31,596,869 bytes, SHA-256
 Member/source hashes and all 34,417 callback jobs verify without trace loss;
 full BOOT/DTBO readbacks, policy restoration, MCU/DSP shutdown, muted offline
 stock return and the owned USB-wrapper exit verify.
+### Pre-submit IPC stall outside Mesa's wait (2026-10-25)
+
+The observer-free phase of
+`output/pico-observer-cost-20261025-v1/` contains a missed refresh whose earlier
+syscall analysis began too late: at the preceding Mesa wait's return. The new
+`tools/analyze-pico-present-stalls.py` examines the interval from the preceding
+observed vblank through GPU queueing, retaining overlapping calls that started
+earlier. It streams and verifies the complete source trace against its byte
+count and SHA-256, distinguishes futex waits from wake operations, and records
+overlap separately from the full syscall duration. Its regression fixture
+covers a wait that ends before the old analysis window begins.
+
+For present 6208, render TID 2015 spends 8.605 ms in ARM64 futex syscall 98,
+from 200.960049 to 200.968654 seconds. The supplied process map places its address
+in `/dev/shm/u1000-ValveIPCSharedObj-SteamVR`. A `sched_wakeup` event from TID
+2380 (`CVRAPIITask::Ru`) occurs at 200.968645 seconds. This identifies the
+observed waker, not a proven lock owner or the reason it held or signalled the
+object. The trace filters did not capture that thread's own execution.
+
+The preceding present flipped at 200.961739974 seconds, while SteamVR entered
+Mesa's wait only at 200.968937109 seconds. Mesa returned at 200.968979193
+seconds, about 42 microseconds after entry. GPU queueing for the next command
+followed at 200.970952 seconds; estimated GPU retirement was 5.983 ms after the
+next observed vblank. This instance therefore includes a substantial SteamVR
+IPC delay **before entering** Mesa's wait. It does not justify changing Mesa's
+wait completion semantics, weakening the age bound, or attributing all other
+misses to the same cause. The retained expanded result is
+`pre-submit-stalls.json`; tracing the waker and the IPC critical section remains
+necessary before selecting a scheduling or lock fix.
