@@ -3140,3 +3140,110 @@ wait completion semantics, weakening the age bound, or attributing all other
 misses to the same cause. The retained expanded result is
 `pre-submit-stalls.json`; tracing the waker and the IPC critical section remains
 necessary before selecting a scheduling or lock fix.
+
+### Steam UI API worker scheduling (2026-10-25)
+
+`output/pico-ipc-worker-20261025-v1/` adds scheduler and futex tracing for the
+owned `steamwebhelper` thread named `CVRAPIITask::Ru`, after checking its UID,
+service group, executable and process/thread start identities. Its scheduling
+and affinity remain unchanged; 79 identity snapshots agree. All 4,000 measured
+head/vsync-age queries pass. The four windows have 4/2/0/0 contained DRM skips;
+these six misses do not include the API-worker stall below.
+
+Eleven renderer futex waits are woken by this worker. Nine have complete worker
+scheduler coverage; two earlier observations precede filter readiness and their
+worker execution is explicitly unobserved. The largest covered wait is 1.830 ms,
+including 1.646 ms of worker runnable delay. Its full preceding runnable interval
+is 10.387 ms, of which only the tail overlaps the renderer's wait. After scheduling
+in, the worker wakes the renderer 27 microseconds later. Another 157 microseconds
+elapses before the renderer's futex returns. The worker's 0.184 ms scheduled-in
+overlap must therefore not be called measured lock-hold work.
+
+The worker's `FUTEX_WAKE` returns one and brackets the renderer wakeup. Both
+addresses resolve to the same shared device/inode/file offset, despite different
+virtual addresses. This supports exact futex correspondence, not the proprietary
+critical section's purpose or ownership inferred from a name or expected word.
+The original 8.605 ms case is not reproduced. Verified CPU/DRM trace sizes are
+186,138,148 / 31,315,408 bytes, with no collector error or reported overruns/drops.
+
+The same-boot comparison in `output/pico-ipc-nice-20261025-v1/` changes only that
+worker's CFS niceness. The diagnostic observer is present in every window; RT
+policies, affinity, kernel, graphics and tracking settings stay fixed. Identity
+and actual per-thread niceness snapshots verify every window.
+
+| Window | Worker nice | History frames / drops | Contained DRM skips | Frame-interval p99 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 0 | 1,925 / 10 | 9 | 11.457 ms |
+| 2 | −20 | 1,916 / 2 | 2 | 11.277 ms |
+| 3 | −20 | 1,912 / 1 | 1 | 11.302 ms |
+| 4 | 0 | 1,910 / 7 | 7 | 11.362 ms |
+
+The first control reproduces a 6.575 ms shared-IPC wait before GPU queueing for
+present 5607, which misses its next observed vblank. Worker runnable intervals
+account for 5.043 ms of that wait; its exact shared-futex wake is retained. The
+two boosted windows contain no observed renderer wait woken by this worker.
+However, only two such waits occur in the measured controls, and the last control
+has none. This supports testing the narrow mitigation, not a claim that it
+eliminates long tails or explains every drop. GPU medians are
+7.302/7.199/7.190/7.204 ms. All 8,000 head/vsync-age queries pass; niceness is
+restored, and other sampled UI threads retain their original niceness.
+
+One ioctl-exit record in that CPU trace has an unexpected syscall number and
+cannot be paired. The failed full-syscall parser result is retained; complete
+syscall-pairing acceptance is not claimed. The malformed record is outside the
+6.575 ms event. The worker's 22,288 futex pairs and independent presentation
+records are checked separately. The trace anomaly's cause remains unknown;
+no field is truncated or rewritten to force a match.
+
+The exports contain 187 members / 33,020,586 bytes, SHA-256
+`e6b4327c94f6998e691e1b7559d779d8362356205308cac0dc6d6c62165bc8fd`,
+and 189 members / 33,421,296 bytes, SHA-256
+`fd9240eeb1770dbd9eb4f6aef0ae45a232250e36aa9aefc2941e9674fe538c9d`.
+Both verify member hashes, full BOOT/DTBO readbacks, GPU/workqueue restoration,
+MCU/DSP shutdown and muted offline stock return. The first capture's initial
+console-framing syntax error is retained; setup resumes in the same boot after
+locally validating corrected hash-framed delivery.
+
+### Opt-in API worker priority helper
+
+`tools/pico-steamvr-ipc-priority.py` provides the tested CFS −20 request as a
+bounded, explicit-PID/TID helper. It requires the native Pico boot identity,
+UID 1000, the owned Steam UI service, the expected executable/thread role and
+ordinary initial scheduling. It checks start identities and readback, preserves
+RT policy and affinity, and restores niceness on normal exit, handled SIGTERM/
+SIGINT, or Python failure.
+Known identity/policy changes refuse restoration writes; an exited worker needs
+no write. This is not atomic PID-reuse protection or a worker-restart manager.
+It installs no default policy and does not start Steam with root privileges.
+
+Run it only from the owner of an already verified native session, after the
+Steam UI API thread exists:
+
+```sh
+python3 tools/pico-steamvr-ipc-priority.py \
+  --boot-serial DEVICE_BOOT_SERIAL --boot-id CURRENT_BOOT_UUID \
+  --pid STEAMWEBHELPER_PID --tid CVR_API_WORKER_TID --seconds 300
+```
+
+Eight focused host tests cover role/identity refusal, restoration, applied-then-
+failed writes, readback errors, exited tasks and failed restoration. Physical
+lens latency, sustained application load and broader production scheduling
+acceptance remain separate.
+
+`output/pico-ipc-helper-20261025-v1/` tests the actual maintained helper, whose
+deployed bytes match source SHA-256
+`b88ea7b8148e9061210c1b7cfebfe1887fcaad0513aeb15d825b20c700e8fffa`.
+Both boosted contexts verify the same process/thread identities, ordinary
+scheduling and affinity, then restore their complete snapshots exactly. Cleanup
+reports no helper error. All 8,000 head/vsync-age queries pass again. The
+0/−20/−20/0 windows report 4/2/0/2 history drops and 4/1/0/2 contained DRM skips;
+their frame-interval p99 values are 11.282/11.305/11.290/11.272 ms. There is only
+one measured API-worker-woken renderer wait, 0.034 ms in the first control.
+This verifies application/restoration and another bounded workload comparison,
+not reliable elimination of a rare IPC tail. Other deadline misses remain.
+
+The 192-member export is 33,207,987 bytes, SHA-256
+`a4c3c3459554c58867c3b0ac2f914c197b6fb63f8d548d66c7afbd98d1879daa`.
+Full BOOT/DTBO readbacks, GPU/workqueue restoration, MCU/DSP shutdown, muted
+offline stock return and the owned USB helper's exit verify. No controller
+confidence gate, pose conversion or calibrated display setting changes.
