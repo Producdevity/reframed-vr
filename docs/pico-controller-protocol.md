@@ -1588,3 +1588,43 @@ tracker nor establish aim/grip calibration, prediction-time handling, optical
 validity or a SteamVR pointer. The real recorded-order replay still produces
 only state-zero callbacks. An inner brute-fit success flag is not final SDK
 initialization or a public tracked result.
+
+### Observed position-gate rejection (2026-10-25)
+
+The isolated recorded-input replay in
+`output/pico-optical-rejection-20261025-v2/` now completes under the official
+Android debugger. A private file gate before SDK loading replaces the earlier
+external group-stop. Read-only breakpoints bind to the actual loaded SDK module
+at its first public image call; installing file-address breakpoints before
+loading did not observe the internal calls. The b1977 SDK and its thresholds
+remain unchanged. Sensors and the stock tracking process are not attached.
+
+The initial debugger replay omitted its private factory-camera fixture and had
+four zero camera-ready flags. That attempt is retained and supplies no geometric
+rejection evidence. The corrected fixture matches the earlier factory-file
+hashes and reports all four cameras ready. The earlier recorded-order replay
+already supplied those files and is unaffected by this harness correction.
+
+In the corrected 150-image/3,304-IMU subset, 34 candidates reach the position
+check preceding the post-fit/brightness function. All have Z between
+−1.306 and −1.072 metres. The unchanged code rejects magnitude at least 0.8 on
+that component; its other checks include X/Y magnitudes below 1.2 and position
+norm below 1.5. None of these candidates reaches the later brightness function.
+This identifies the rejection boundary for this recording, rather than a
+general brightness or gravity diagnosis. It does not establish whether the
+candidate displacement is physically correct or results from wrong feature
+correspondences/calibration. The acceptance bound is not relaxed.
+
+The same debugger binding observes all later gates in the previously accepted
+saturated five-LED synthetic control, which yields 467 state-one callbacks out
+of 3,031. Each internal breakpoint is capped at 64 observations. That control
+validates the observation path; its invented, unoccluded pixels do not validate
+real tracking. The replay process exits zero and stops the SDK cleanly. Its
+outer runner retains an incorrect 3,304-row expectation copied from the real
+recording; the fixture actually has 3,031 IMU rows. The successful SDK result is
+verified separately without reclassifying that runner assertion as a pass.
+
+Real optical acquisition, stable loss/reacquisition and a SteamVR pointer remain
+open. Saved input hashes, calibrated and uncalibrated attempts, loaded-module
+identity, breakpoint observations and the synthetic-control boundary are retained
+in the private evidence directory.
