@@ -48,6 +48,9 @@ def main():
         boot = shell(['cat', '/proc/sys/kernel/random/boot_id'])
         if not boot:
             raise ValueError('Missing stock boot identity')
+        boot_serial = shell(['getprop', 'ro.boot.serialno'])
+        if not re.fullmatch(r'[A-Za-z0-9]{1,32}', boot_serial):
+            raise ValueError('Missing or malformed boot serial')
         if shell(['getprop', 'ro.build.fingerprint']) != FINGERPRINT:
             raise ValueError('Requires the verified Neo3 b1977 build')
         if shell(['sha256sum', HAL]).split()[0] != HAL_SHA256:
@@ -71,7 +74,8 @@ def main():
             raise ValueError('Stock Bluetooth address sources disagree')
         if shell(['cat', '/proc/sys/kernel/random/boot_id']) != boot:
             raise ValueError('Stock boot changed during snapshot')
-        return {'boot_id': boot, 'wifi_address': wifi, 'bluetooth_address': bluetooth}
+        return {'boot_id': boot, 'boot_serial': boot_serial,
+                'wifi_address': wifi, 'bluetooth_address': bluetooth}
 
     first, second = snapshot(), snapshot()
     if first != second:

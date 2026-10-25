@@ -121,8 +121,8 @@ ordinary NVM. The observed property is unset. The alternative `htnv20swift.bin`
 is therefore not substituted. Firmware hashes, HAL hash and selection analysis
 remain in private evidence; no unit identity or firmware binary is committed.
 
-The adapter still reports the firmware's default Bluetooth address. Provisioning
-the verified unit address is required before normal use. One initial frame
+The initial adapter reports the firmware's default Bluetooth address. The later
+unit-identity test below verifies provisioning before normal use. One initial frame
 reassembly error (`-84`) occurs before the successful version exchange; sustained
 UART reliability remains unverified. Pairing, audio, power management,
 Wi-Fi/tracking coexistence and installed startup remain open. Bluetooth is
@@ -145,7 +145,7 @@ the two radios are exercised sequentially, not concurrently.
 address reported by both the secure setting and Bluetooth manager. It requires
 the exact b1977 fingerprint and Bluetooth HAL hash, disabled Wi-Fi, Bluetooth
 OFF, empty IPv4/IPv6 main route tables and permanent WLAN assignment. Two complete
-snapshots and their surrounding boot IDs must agree. Missing, multicast or known
+snapshots, their surrounding boot IDs and the native boot serial must agree. Missing, multicast or known
 placeholder addresses are rejected. It issues no radio setters or firmware
 commands and refuses to overwrite an existing output.
 
@@ -159,5 +159,43 @@ results. It has been tested on the offline physical Pico; stock Bluetooth manage
 and its cached setting agree while Bluetooth is OFF. This is a stock identity
 collection boundary, not independent factory-address attestation or a native
 Bluetooth address-programming test. The native WLAN test above uses the same
-stock address, with successful Linux readback; native Bluetooth programming and
-automatic installed startup remain unverified.
+stock address, with successful Linux readback. Automatic installed startup
+remains unverified.
+
+## Native Bluetooth unit identity
+
+`tools/pico-bluetooth-identity.py` consumes the private stock receipt and requires
+its boot serial to match the selected native Neo3 and boot UUID. It checks the
+QCA6390 TTY transport, a stopped BlueZ service, public-address support and an
+unpowered adapter before using the standard Bluetooth management command. It
+verifies the resulting address and leaves discovery, pairing and advertising
+disabled. A matching address requires no write. Receipts are private mode 0600;
+no unit address or calibration is embedded in source.
+
+The first physical test exposes an endian bug in the backported QCA helper:
+the management command succeeds, but all 73 later readable adapter snapshots
+contain the byte-reversed unit address. The unchanged checker rejects this result.
+The cause matches upstream Linux commit
+[77f45cca8bc5](https://github.com/torvalds/linux/commit/77f45cca8bc55d00520a192f5a7715133591c83e).
+Experimental patch `0055-qca-public-address-byte-order.patch` backports its
+`btqca.c` correction after `0054`, retaining Johan Hovold's attribution. It swaps
+the kernel's little-endian address at the non-ROME vendor-command boundary;
+the ROME callback is unchanged. The userspace helper still supplies the ordinary
+unit address, without an endian workaround.
+
+Only `btqca.ko` changes in the second payload. Its 19 imported symbol versions
+match the retained kernel; the module signature verifies against that kernel's
+embedded certificate, and a tampered ELF is rejected. The linked kernel,
+configuration, symbol table and signing material remain unchanged. On the Pico,
+the standard command now yields the correct unit address, a second call performs
+no address write, and ten subsequent management snapshots retain that address
+with the adapter unpowered. This is address/configuration lifecycle acceptance,
+not Bluetooth pairing, traffic throughput or sustained UART-load acceptance.
+
+Evidence is `output/pico-radio-integration-20261025-v1/` for the rejected
+readback and `output/pico-radio-integration-20261025-v2/` for the fix, module build,
+signature checks and native receipts. Both retain the original failure/success
+boundaries, restore platform rfkill and the firmware search path, unload the
+test modules, verify full BOOT/DTBO readbacks and return to quiet offline stock.
+Host tests exercise the actual callback's wire bytes and error paths, reject the
+unpatched helper, and verify that ROME's byte order remains unchanged.
