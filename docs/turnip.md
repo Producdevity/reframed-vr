@@ -565,3 +565,34 @@ both WSI suites and five Freedreno tests pass. Native loading alongside the
 matched Monado and SSC packages passes, and the [updated roots](headset-root.md)
 contain the same validated driver. Recovery originals were rehashed; the
 missing `misc` backup, cold recovery and stock restoration gates remain open.
+
+## KGSL context priority
+
+Patch 0017 connects the existing Vulkan global-priority mapping to KGSL context
+creation. The common internal priorities 0–3 map to kernel values 1, 4, 8 and 12.
+The kernel interprets a zero priority field as its default, so internal priority
+zero must not be encoded as zero. An ordinary medium-priority queue remains at
+kernel priority 8. Values outside the internal range are rejected before the
+context ioctl; failed creation does not publish a queue identity.
+
+The queue-family query advertises LOW, MEDIUM and HIGH through the existing
+common helper. Its existing `globalPriorityQuery` check rejects an unadvertised
+REALTIME request when that feature is enabled. Without the query feature, the
+existing common mapping can produce internal index zero. The extracted-function
+tests cover both cases, all advertised priorities, preserved context flags,
+invalid indices and ioctl failure under ASan/UBSan. This follows the
+[Vulkan queue-priority contract](https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html);
+priority is not a guarantee of processing time or presentation latency.
+
+A native Pico test verifies a compositor context at kernel priority 1/ring 0,
+with gamescope remaining at priority 8/ring 2. The private `TU_DEBUG=hiprio`
+setting is only a fallback when the application does not supply chained global
+priority information. The API request itself was not traced, so this is evidence
+for the observed kernel tiers, not a controlled HIGH-versus-MEDIUM API comparison.
+The default interop path passes all four cross-exec semaphore/buffer cases.
+No kernel ring count is modified, and these KGSL observations do not establish
+DRM/MSM preemption support on another headset or kernel.
+
+The instrumented comparison and remaining failures are recorded in the
+[SteamVR verification notes](pico-steamvr-verification.md#kgsl-gpu-priority-path-2026-10-25).
+No realtime CPU launch policy or compositor priority override is made a default.

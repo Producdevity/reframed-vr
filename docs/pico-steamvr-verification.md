@@ -2715,3 +2715,58 @@ confidence. The 163-member export is 21,009,475 bytes, SHA-256
 `5554a71bb308a6afbc36153f707c5b814d27ccf938ef2b0fbf194cf56d04a4ec`.
 Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original render
 policy restoration, muted offline stock return and USB helper join verify.
+
+### KGSL GPU priority path (2026-10-25)
+
+`output/pico-gpu-priority-20261025-v1/` tests a Mesa candidate that connects
+Vulkan global priority to KGSL context flags. It also includes the already
+verified counter-query swapchain identity correction. Rendering, optics, the
+90 Hz mode and timing bounds match the preceding scheduler comparison. The
+same four CPU policy windows run in a new cold RAM boot. This is a separate-boot
+comparison, not a same-boot GPU-priority crossover.
+
+The exact retained kernel accepts priority bits in context creation and allocates
+multiple rings when its preemption support is active. The actual trace places
+the compositor at priority 1/ring 0; gamescope and other observed contexts remain
+at their default priority 8/ring 2. The compositor environment requests
+`TU_DEBUG=hiprio`, but that hint does not override an application's chained global
+priority. The request structure itself was not traced. Kernel priority 1 is
+therefore the verified tier, rather than an assumed HIGH/4 selection.
+
+Across the late 175–265-second interval, compositor submission-to-GPU-start p99
+is 0.477 ms, versus 1.430 ms in the preceding medium-priority run; maxima are
+0.969 and 2.868 ms respectively. Median elapsed compositor command time is
+7.278 versus 7.303 ms. Gamescope's elapsed command p99 rises from 2.931 to
+10.872 ms; these elapsed intervals include preemption/interleaving and do not
+measure shader-active time. Prioritizing the compositor does not establish an
+improvement to application throughput or overall input latency.
+
+| CPU window | Sampled frames / drops | Frame-interval p99 | Timing acceptance |
+| --- | ---: | ---: | --- |
+| OTHER/0 | 1,866 / 56 | 22.269 ms | pass |
+| RR/2 | 1,906 / 12 | 11.455 ms | fail |
+| RR/2 | 1,892 / 24 | 22.231 ms | pass |
+| OTHER/0 | 1,881 / 39 | 22.259 ms | fail |
+
+Each history includes its initial pre-window snapshot. All 8,000 late head
+queries pass, but five vsync-age faults remain. Their GPU submission-to-start
+intervals are 0.062–0.147 ms, followed by 7.362–7.955 ms elapsed command intervals.
+This supports the priority path's operation without establishing clean 90 Hz
+pacing. No CPU realtime policy or priority hint is promoted into a default profile.
+
+The incremental library is SHA-256
+`93d1df744a9946c6f33ecf15822f95b90994327a9bb06f51d4f85fae0b1ad9d9`.
+The exact functions pass focused ASan/UBSan tests, and the priority patch matches
+its compiled source with a fuzz-zero forward/reverse roundtrip. The rebuilt
+native stack passes all four 4 MiB cross-exec binary/timeline semaphore and
+buffer-sharing cases. This is incremental-build and device evidence; a fresh
+full bundle build is not represented by its private incremental receipt.
+
+All 4,499 camera sets complete, with 182,216 confident head outputs and no bad
+result. All 13,750 decoded controller callbacks still lack public optical
+confidence; tracked controller pointing remains unverified. The complete CPU/GPU
+trace is 36,779,553 bytes with no collector error, overrun or dropped events.
+The 163-member export is 20,951,034 bytes, SHA-256
+`94ca15036ce8c54c3d8bbfb853e357719457ee840092f7f1183f98ac4a2695d9`.
+Member/source hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown, original CPU
+policy restoration, muted offline stock return and USB helper join verify.

@@ -147,6 +147,19 @@ def build(profile, driver="lavapipe"):
                 "executable_sha256": digest(output / "kgsl-import-tests"),
             }
 
+            run([sys.executable, str(ROOT / "tests/kgsl-priority-tests.py"),
+                 str(source / "src/freedreno/vulkan/tu_knl_kgsl.cc"), str(output)],
+                "kgsl-priority-tests.log", timeout=120)
+            report["kgsl_priority_tests"] = {
+                "status": "passed",
+                "scope": "actual Vulkan/KGSL priority mapping; modeled context creation, no hardware",
+                "runner_sha256": digest(ROOT / "tests/kgsl-priority-tests.py"),
+                "model_sha256": digest(ROOT / "tests/kgsl-priority-tests.cpp"),
+                "helpers_sha256": digest(output / "kgsl-priority-under-test.h"),
+                "uapi_sha256": digest(output / "msm_kgsl.h"),
+                "executable_sha256": digest(output / "kgsl-priority-tests"),
+            }
+
             run([sys.executable, str(ROOT / "tests/kgsl-allocation-tests.py"),
                  str(source / "src/freedreno/vulkan/tu_knl_kgsl.cc"), str(output)],
                 "kgsl-allocation-tests.log", timeout=120)
