@@ -270,6 +270,24 @@ python3 tools/pico-wifi-identity.py \
   --interface wlan0 --output /run/NEW_WIFI_IDENTITY.json
 ```
 
+The opt-in CMake option `REFRAMED_PICO_WIFI_IDENTITY=ON` packages the helper,
+its identity-validation dependency, a launcher and
+`reframed-pico-wifi-identity@.service` in component `PicoWifiIdentity`. It does
+not enable a service. The installed launcher reads the selected boot serial
+from `/etc/reframed-vr/pico-boot-serial` and the private root-owned mode-0600
+receipt `/etc/reframed-vr/pico-radio-identities.json`.
+
+The service instance is the interface name. It binds to that network device,
+uses a private runtime directory and only `CAP_NET_ADMIN`, and runs before
+NetworkManager/wpa_supplicant. In a prepared image, enabling
+`reframed-pico-wifi-identity@wlan0.service` creates a required dependency of
+NetworkManager, so a failed identity step prevents its startup. Installation
+and dependency enablement do not themselves associate with a network.
+
+The image must still initialize the verified firmware/modules and CNSS client
+policy before this device-bound service can run. Network association, DHCP,
+throughput, suspend/resume and complete installed-image acceptance remain open.
+
 Eight host tests cover matching identities, failed writes/readback, restoration
 failure, interrupted writes, changed boot/interface/driver/flags, private receipt
 validation, actual ioctl packing and device-state refusals. A native test in
@@ -280,3 +298,42 @@ initialization and its unit-address checks also pass with the adapter unpowered.
 Original interface state, rfkill, firmware path and fallback policy are restored,
 all three radio modules unload, full BOOT/DTBO readbacks match and muted offline
 stock returns. Host rollback tests do not establish physical rollback acceptance.
+
+### Distinct vendor interface names
+
+The vendor driver creates `wlan0`, `p2p0` and `wifi-aware0` under the same PCI
+path. The default path naming policy therefore proposes `wlp1s0` for all three.
+In the rejected version-2 startup test, the kernel records `wifi-aware0` winning
+that name while the managed-interface device dependency fails. In version 3,
+`wlan0` wins and the other two fail renaming. udev itself is running correctly.
+The failure is a naming collision, not a reason to remove the device dependency.
+
+The packaged `10-reframed-pico-wifi.link` matches this Neo3 PCI path,
+`cnss_pci` driver and vendor interface names. It selects no rename policy and
+leaves the initial driver MAC unchanged; the identity service separately applies
+the verified unit address. Its first-match behavior follows the
+[systemd link policy](https://www.freedesktop.org/software/systemd/man/257/systemd.link.html).
+Install this file before loading WLAN. Reload udev configuration when installing
+it into an already running development root. Other PCI paths and drivers do not
+match the rule. Include the policy in initramfs too if that image initializes WLAN.
+
+The version-4 native test installs this policy before module loading. All three
+interfaces keep their kernel names, select the new link file, receive the
+`systemd` tag and have active device units without replaying an add event.
+The installed `reframed-pico-wifi-identity@wlan0.service` reaches active/exited
+with status zero, `NoNewPrivileges=yes` and only `CAP_NET_ADMIN`. Its restart
+performs no address write; its private runtime directory is removed on stop.
+A passive scan returns 162 BSS observations without association. The normal
+image still needs firmware/module startup and connection policy integration.
+
+Evidence is `output/pico-wifi-identity-20261025-v4/`. The failed dependency case
+and the unmodified-policy comparison remain separately retained in versions 2
+and 3. Component-only CMake installation, installed launcher guards and ARM64
+ioctl ABI checks pass; the full XR/image build is not claimed.
+
+The 11-member native export is 143,262 bytes, SHA-256
+`80e1a8c0bc32a4b17334395af0a6972f60a6e580ebaf44c396ef41068029600d`.
+Member/source hashes, interface/rfkill/firmware-path/fallback restoration, radio
+module unloading, full BOOT/DTBO readbacks, muted offline stock return and the
+owned USB helper's exit all verify. Bluetooth remains unpowered, and pairing,
+association and active-traffic acceptance remain open.

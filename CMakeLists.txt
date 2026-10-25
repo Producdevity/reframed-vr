@@ -40,6 +40,27 @@ if(REFRAMED_PICO_DISPLAY_HANDOFF)
             DESTINATION lib/udev/rules.d COMPONENT PicoDisplayHandoff)
 endif()
 
+option(REFRAMED_PICO_WIFI_IDENTITY "Install native Pico Wi-Fi identity startup" OFF)
+if(REFRAMED_PICO_WIFI_IDENTITY)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "Pico Wi-Fi identity startup requires Linux")
+    endif()
+    install(PROGRAMS tools/pico-wifi-identity.py DESTINATION libexec/reframed-vr
+            COMPONENT PicoWifiIdentity)
+    install(FILES tools/pico-wireless-config.py DESTINATION libexec/reframed-vr
+            COMPONENT PicoWifiIdentity)
+    configure_file(system/pico/reframed-pico-wifi-identity.in
+                   reframed-pico-wifi-identity @ONLY)
+    install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-wifi-identity"
+            DESTINATION libexec/reframed-vr COMPONENT PicoWifiIdentity)
+    configure_file(system/pico/reframed-pico-wifi-identity@.service.in
+                   reframed-pico-wifi-identity@.service @ONLY)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-wifi-identity@.service"
+            DESTINATION lib/systemd/system COMPONENT PicoWifiIdentity)
+    install(FILES system/pico/10-reframed-pico-wifi.link
+            DESTINATION lib/systemd/network COMPONENT PicoWifiIdentity)
+endif()
+
 option(REFRAMED_PICO_DESKTOP_TEST "Build the opt-in physical Pico desktop-layer test" OFF)
 if(REFRAMED_PICO_DESKTOP_TEST)
     find_package(X11 REQUIRED)
