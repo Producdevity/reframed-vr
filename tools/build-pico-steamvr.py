@@ -41,7 +41,7 @@ def main():
                'src/pico-slam-channel.c', 'src/pico-slam-channel.h', 'src/pico-slam-pose.c',
                'src/pico-slam-pose.h', 'src/pico-slam-result.h', 'profiles/openvr.json',
                'profiles/pico-steamvr-cjson.json', 'profiles/pico-steamvr.json',
-               'profiles/pico-steamvr-ui-90hz.json',
+               'profiles/pico-steamvr-ui-90hz.json', 'profiles/pico-steamvr-ui-72hz.json',
                'profiles/pico-controller-models.json', 'tools/convert-pico-controller-models.py',
                'system/steamvr-pico/driver.vrdrivermanifest',
                'system/steamvr-pico/resources/input/neo3_profile.json',
@@ -96,6 +96,7 @@ def main():
         shutil.copyfile(args.sdk / 'LICENSE', args.output / 'OpenVR-LICENSE')
         shutil.copyfile(ROOT / 'profiles/pico-steamvr.json', args.output / 'steamvr.vrsettings')
         shutil.copyfile(ROOT / 'profiles/pico-steamvr-ui-90hz.json', args.output / 'steamvr-ui-90hz.vrsettings')
+        shutil.copyfile(ROOT / 'profiles/pico-steamvr-ui-72hz.json', args.output / 'steamvr-ui-72hz.vrsettings')
         shutil.copyfile(ROOT / 'system/steamvr-pico/compositor.conf', args.output / 'compositor.conf')
         shutil.copyfile(ROOT / 'system/steamvr-pico/gamescope.conf', args.output / 'gamescope.conf')
         shutil.copyfile(ROOT / 'system/steamvr-pico/vrserver', args.output / 'vrserver')

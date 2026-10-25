@@ -700,6 +700,13 @@ normal template remains unchanged. Select the 90 Hz hardware mode and a private
 optical profile with `screen.frame_interval_ns=11111111` before using it; the
 settings file alone does not change the panel mode or the driver's timing.
 
+An optional `steamvr-ui-72hz.vrsettings` is also bundled. It retains the same
+resolution but requests 72 Hz; pair it with a private optical profile using
+`screen.frame_interval_ns=13888889` and verify the selected hardware mode.
+The [bounded comparison](pico-steamvr-verification.md#optional-72-hz-ui-profile-2026-10-25)
+shows improved stationary pacing, without establishing lens clarity or lower
+motion latency. Neither option replaces the normal template.
+
 Application supersampling and the internal system-layer size are separate in
 this retained Valve runtime. On the Pico, manual supersampling changed the
 application recommendation to 1832×1920 while the system layer remained

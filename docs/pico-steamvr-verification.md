@@ -2509,15 +2509,15 @@ calibration and host evidence remain intact.
 `output/pico-vsync-correlation-20261025-v1/` completes all three diagnostic
 windows and retains two overdue queries. The WSI/present log and kernel vblank
 trace verify, but the requested external Vulkan layer produces no CSV. That
-missing stream is not used to infer API wait durations. In one retained event,
-kernel delivery of sequence 4,763 precedes its Mesa callback by about 16 ms;
-this is a userspace delivery interval, not a stopped panel clock.
+missing stream is not used to infer API wait durations.
 
 The next rebuild adds counter observations to the existing optional Mesa trace.
 Its v2 run passes GPU interop, all four cross-exec binary/timeline buffer-sharing
 cases and the complete camera/head feed. It retains two overdue queries. The
 recorded metadata says paired timing is enabled, but no successful paired-counter
 trace is emitted. That metadata alone does not verify the selected counter path.
+In this v2 run, kernel delivery of sequence 4,763 precedes its Mesa callback by
+about 16 ms; this is a userspace delivery interval, not a stopped panel clock.
 
 The v3 harness explicitly supplies the production
 `MESA_VK_WSI_FRAME_COUNTER_TIMING=1` setting and verifies it in the actual
@@ -2551,3 +2551,43 @@ public optical confidence. The 153-member export verifies; full BOOT/DTBO
 readbacks, MCU/DSP shutdown and muted offline stock return pass. The restored
 build toolchain and its initial missing-dependency failures are retained in the
 private build evidence. No firmware partition or Quest device is modified.
+
+### Optional 72 Hz UI profile (2026-10-25)
+
+The next cold RAM boot, `output/pico-vsync-correlation-20261025-v4-72hz/`, keeps
+the same optics, render resolution, trace-enabled Mesa library, paired-counter
+path and camera/controller feed. It selects the 72 Hz mode and changes the
+private optical interval to 13,888,889 ns. The kernel trace measures 71.827 Hz
+over monotonic 180–260 seconds, with a median vblank interval of 13.922 ms.
+Actual compositor environment/maps and thread samples use the `vrcompositor`
+child, rather than its `runuser` wrapper. The WSI callback thread remains ordinary
+nice 0; no priority or affinity policy is added.
+
+All three late windows pass: 9,000 valid head queries and no overdue vsync ages
+against the unchanged two-selected-period bound. The trace contains 12,131
+successful paired queries and 24,221 matched display-worker fence waits. It
+does not establish GPU execution/queue separation or photon latency.
+
+| Late window | Sampled frames | Reported drops | Frame-interval p99 | GPU p99 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 2,288 | 8 | 14.081 ms | 7.770 ms |
+| 2 | 2,281 | 9 | 14.114 ms | 7.670 ms |
+| 3 | 2,288 | 9 | 14.194 ms | 7.645 ms |
+
+Each window includes its initial pre-window history snapshot; these are not
+disjoint cohorts. The matched 90 Hz run above still has six overdue queries
+and 53–76 drops per sampled window. This single separate-boot comparison supports
+an optional lower-refresh configuration, not a fix for 90 Hz or proof of lower
+motion latency. Lens acceptance and longer-run pacing remain open.
+
+The build bundles `steamvr-ui-72hz.vrsettings`; it matches the exported selected
+settings, including explicit `disableLinuxWaitForPresent=false`. The base template
+and 90 Hz option remain unchanged. Driver timing must also use the matching
+private optical interval; selecting the settings file alone is insufficient.
+
+All 4,499 camera sets complete, with 182,255 confident head outputs and no bad
+result. The 13,767 decoded controller callbacks still have zero public optical
+confidence. The 153-member export is 17,436,265 bytes, SHA-256
+`80ec3ad81c8332719024f6def3f7146c0ae55d652ff865545d7ee8bdb3a717ee`.
+Member hashes, full BOOT/DTBO readbacks, MCU/DSP shutdown and muted offline stock
+return verify. No firmware partition was flashed; Quest remains untouched.

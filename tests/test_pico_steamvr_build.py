@@ -38,6 +38,11 @@ class PicoSteamvrBuildTests(unittest.TestCase):
                 failed[0] = False
                 BUILD.main()
             record = json.loads((output / 'build.json').read_text())
+            for hz in (72, 90):
+                source = f'profiles/pico-steamvr-ui-{hz}hz.json'
+                packaged = f'steamvr-ui-{hz}hz.vrsettings'
+                self.assertEqual((ROOT / source).read_bytes(), (output / packaged).read_bytes())
+                self.assertEqual(record['source_sha256'][source], record['files_sha256'][packaged])
             for resource in (ROOT / 'system/steamvr-pico/resources').rglob('*'):
                 if resource.is_file():
                     source = str(resource.relative_to(ROOT))

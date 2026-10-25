@@ -14,6 +14,15 @@ settings, all four [gamescope patches](../patches/gamescope/README.md), and
 `gamescope_vr_use_modifiers=false`. The UI profile enables Steam overlays and VR
 Gamepad UI forwarding; it leaves the base Pico profile unchanged.
 
+The optional [`pico-steamvr-ui-72hz.json`](../profiles/pico-steamvr-ui-72hz.json)
+keeps the same render resolution and requests 72 Hz. Use it with the matching
+private optical profile's `screen.frame_interval_ns=13888889` and verify the
+selected hardware mode. The settings file alone does not configure driver timing.
+In the bounded headset comparison, this mode passed all three late vsync-age
+windows and reduced reported drops; it lowers refresh and is not a measured
+motion-latency improvement. Lens acceptance remains open. See the
+[72 Hz verification](pico-steamvr-verification.md#optional-72-hz-ui-profile-2026-10-25).
+
 Gamescope's session manager requires an input seat. In the bounded RAM test,
 seatd ran with `SEATD_VTBOUND=0`, a socket owned by the session user/group, and
 mode `0770`; gamescope used `LIBSEAT_BACKEND=seatd`. A normal installed session
