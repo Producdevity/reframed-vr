@@ -2,6 +2,9 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <initializer_list>
 
 #define MAX2(a, b) ((a) > (b) ? (a) : (b))
 #define MIN2(a, b) ((a) < (b) ? (a) : (b))
@@ -42,9 +45,24 @@ static int safe_ioctl(int fd, unsigned long request, void *argument)
 
 int main()
 {
-    tu_physical_device physical{19, 4};
+    assert(unsetenv("TU_KGSL_CONTEXT_PRIORITIES") == 0);
+    assert(kgsl_submitqueue_priority_count() == 1);
+    tu_physical_device physical{19, kgsl_submitqueue_priority_count()};
     tu_device device{&physical};
     VkQueueFamilyGlobalPriorityPropertiesKHR properties{};
+    tu_physical_device_get_global_priority_properties(&physical, TU_QUEUE_GRAPHICS, &properties);
+    assert(properties.priorityCount == 1);
+    assert(properties.priorities[0] == VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR);
+    tu_queue legacy{0, 0};
+    assert(kgsl_submitqueue_new(&device, &legacy) == 0);
+    assert((seen_flags & KGSL_CONTEXT_PRIORITY_MASK) == 0);
+    for (const char *option : {"", "0", "true", "01", "2"}) {
+        assert(setenv("TU_KGSL_CONTEXT_PRIORITIES", option, 1) == 0);
+        assert(kgsl_submitqueue_priority_count() == 1);
+    }
+    assert(setenv("TU_KGSL_CONTEXT_PRIORITIES", "1", 1) == 0);
+    physical.submitqueue_priority_count = kgsl_submitqueue_priority_count();
+    assert(physical.submitqueue_priority_count == 4);
     tu_physical_device_get_global_priority_properties(&physical, TU_QUEUE_GRAPHICS, &properties);
     assert(properties.priorityCount == 3);
     const VkQueueGlobalPriorityKHR priorities[] = {
@@ -80,5 +98,13 @@ int main()
     tu_queue failed{2, 99};
     assert(kgsl_submitqueue_new(&device, &failed) == -1);
     assert(failed.msm_queue_id == 99);
+    ioctl_result = 0;
+    for (unsigned count : {0u, 1u, 2u, 3u, 5u}) {
+        physical.submitqueue_priority_count = count;
+        tu_queue invalid_count{count == 1 ? 1u : 0u, 99};
+        before = calls;
+        assert(kgsl_submitqueue_new(&device, &invalid_count) == -EINVAL);
+        assert(calls == before && invalid_count.msm_queue_id == 99);
+    }
     puts("KGSL priorities: low=12 medium=8 high=4; invalid and failed creates preserve queue identity");
 }

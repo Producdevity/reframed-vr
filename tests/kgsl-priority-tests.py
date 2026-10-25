@@ -9,12 +9,13 @@ import subprocess
 
 def run(source_path, output):
     definitions = []
-    for path, name in [(source_path.with_name('tu_device.cc'),
+    for path, name in [(source_path, 'kgsl_submitqueue_priority_count'),
+                       (source_path.with_name('tu_device.cc'),
                         'tu_physical_device_get_global_priority_properties'),
                        (source_path.with_name('tu_queue.cc'), 'tu_get_submitqueue_priority'),
                        (source_path, 'kgsl_submitqueue_new')]:
         text = path.read_text()
-        start = re.search(r'^(?:static )?(?:void|int)\n' + name + r'\(', text, re.M)
+        start = re.search(r'^(?:static )?(?:void|int|uint32_t)\n' + name + r'\(', text, re.M)
         if start is None:
             raise ValueError('Missing priority function: ' + name)
         end = text.index('\n}\n', start.start()) + 3

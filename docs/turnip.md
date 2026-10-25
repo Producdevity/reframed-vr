@@ -569,7 +569,11 @@ missing `misc` backup, cold recovery and stock restoration gates remain open.
 ## KGSL context priority
 
 Patch 0017 connects the existing Vulkan global-priority mapping to KGSL context
-creation. The common internal priorities 0–3 map to kernel values 1, 4, 8 and 12.
+creation when `TU_KGSL_CONTEXT_PRIORITIES=1` is explicitly selected for a kernel
+whose priority flags have been verified. Without that exact opt-in, the backend
+retains its single-priority path, advertises only MEDIUM, and sends no priority
+bits. An unknown kernel is not inferred to support the new path from its GPU name.
+The common internal priorities 0–3 map to kernel values 1, 4, 8 and 12.
 The kernel interprets a zero priority field as its default, so internal priority
 zero must not be encoded as zero. An ordinary medium-priority queue remains at
 kernel priority 8. Values outside the internal range are rejected before the
@@ -580,7 +584,8 @@ common helper. Its existing `globalPriorityQuery` check rejects an unadvertised
 REALTIME request when that feature is enabled. Without the query feature, the
 existing common mapping can produce internal index zero. The extracted-function
 tests cover both cases, all advertised priorities, preserved context flags,
-invalid indices and ioctl failure under ASan/UBSan. This follows the
+invalid indices, the default/invalid-option fallback and ioctl failure under
+ASan/UBSan. This follows the
 [Vulkan queue-priority contract](https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html);
 priority is not a guarantee of processing time or presentation latency.
 
@@ -590,6 +595,8 @@ setting is only a fallback when the application does not supply chained global
 priority information. The API request itself was not traced, so this is evidence
 for the observed kernel tiers, not a controlled HIGH-versus-MEDIUM API comparison.
 The default interop path passes all four cross-exec semaphore/buffer cases.
+Those hardware measurements predate the opt-in guard; the guarded mapping is
+unchanged, and the added fallback is verified by focused extracted-function tests.
 No kernel ring count is modified, and these KGSL observations do not establish
 DRM/MSM preemption support on another headset or kernel.
 
