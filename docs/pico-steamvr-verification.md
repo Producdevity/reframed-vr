@@ -3529,3 +3529,33 @@ actual session helper and the consumer's complete 110-file compiled source
 closure. Full traces have no recorded loss; scheduler enforcement controls,
 full BOOT/DTBO readbacks and muted offline stock return pass. No firmware was
 flashed and no lens or physical-motion acceptance is inferred.
+
+## Camera request assignment gap before timing comparison (2026-10-26)
+
+Boot `053c9729-1159-4d1b-83a2-efe2c8427e12` attempts a fixed-RR/2 observer
+on/off/on comparison, but stops before dashboard readiness. No measurement
+window, renderer RR context or API-worker priority context starts; this run
+provides no observer or pacing comparison. The camera completes 934 head sets
+before its unchanged incomplete-set guard rejects frame 1875, with pending
+frames 1873/1875 and masks 3/1. SLAM subsequently returns `-ETIMEDOUT`, with no
+rejected head result.
+
+The captured failure journal records request assignment before the missing
+image: physical cameras 0 and 1 receive frame-1873 SOFs with request ID zero;
+cameras 2 and 3 receive that frame with request 1870 and deliver head-class
+headers. Cameras 0 and 1 instead receive request 1870 on frame 1874 and deliver
+controller-class headers. Header decoding agrees with classification, and the
+retained event suffix has no observed CRM/sync sequence discontinuity. A later
+frame-1875 head image therefore encounters the incomplete frame-1873 set.
+This establishes asymmetric frame/request assignment. The driver reason for request ID zero is
+unproven; request-submit ioctl boundaries and driver application decisions need
+measurement before changing queue depth, scheduling or the guard.
+
+Evidence is `output/pico-observer-contention-20261026-v1/`; offline decoding is
+under `output/pico-camera-gap-20261026-v1/`. The complete journal is 1,126,716
+bytes, SHA-256 `845d71d0e821da71833a1236ac72240eb2cb7b9ff3eb8dc4c9c0076a6d6e16a8`.
+The 9,428,431-byte export has 182 verified members, SHA-256
+`a4003af3ac7ef65ce0b3860512e4ccf9e48ec7aa1a68023007d5b3b1a996547f`.
+Source/trace integrity, all 33 setup steps, firmware readbacks, MCU/DSP shutdown
+and muted offline stock return pass. Worker release 1 and diagnostic-probe
+termination by SIGTERM remain explicit cleanup results of this failed run.
