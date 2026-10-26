@@ -3706,3 +3706,74 @@ export has 193 verified members, SHA-256
 The full 90,478,963-byte CPU trace has no recorded loss. Source, selection,
 capture-priority cleanup, both firmware readbacks and muted offline stock return
 verify. No scheduling or freshness change was made in this diagnostic.
+
+The opt-in [`pico-imu-priority.py`](../tools/pico-imu-priority.py) context addresses
+the measured reader delay by changing only the existing `ssc-imu` thread from
+ordinary CFS nice 0 to −20. It requires explicit native serial, boot UUID,
+producer PID, reader TID and executable SHA-256. It binds the exact root-owned
+producer command and service, the unique reader's membership and start identity,
+and every existing producer thread's scheduler state. Only the reader's nice
+value may differ on activation; policies, real-time priorities, affinities, limits and
+other threads stay unchanged. Cleanup restores the original value for an
+unchanged live target, skips writes to an exited owned target and refuses
+unexpected drift. Proc checks do not make PID/TID reuse atomic.
+
+There is no default activation, real-time promotion, SDK-thread selection or
+freshness relaxation. Fifteen host tests cover actual proc fixtures, explicit
+target refusals, other-thread preservation, partial activation/readback errors,
+identity drift, lock overlap, exited readers with live parents, zombies, CLI
+bounds and signal cleanup.
+
+The reader-only treatment, boot `d912eeae-96a8-4432-89f0-c3f78330d472`, uses the
+exact maintained helper, SHA-256
+`d23995be9ed6baeb0dde6439250f318e49abc92469ea959e48a7a1500f78e1f6`.
+Application, kernel, camera priority, task-selection helper and observer workload
+match the preceding diagnostic. Native before/active snapshots verify that only
+reader TID 1934 changes nice 0→−20; the other three producer tasks and every
+recorded policy, real-time priority, affinity and limit match. The producer exits
+zero and is reaped before context cleanup, which records `owned-producer-exited`
+without writing to an expired identity. Cleanup errors are empty.
+
+The bounded workload completes in 181.051521858 seconds: all 4,498 head-camera
+sets are consumed, 184,449 head callbacks produce 182,215 confident results with
+zero rejected result, and the IMU ring ends without failure. Both observed
+20-second SteamVR windows have 2,000 valid head queries, zero invalid queries and
+zero vsync-age faults. The observer-free window intentionally makes no API
+acceptance claim. This verifies the reader adjustment through the previously
+failing startup and this complete workload; it does not establish a universal
+scheduling fix or physical motion-to-photon latency.
+
+The separate complete, loss-free DRM trace measures these contained flip pairs:
+
+| Observer | Pairs | Missed presentations | Flip interval p99 |
+| --- | ---: | ---: | ---: |
+| On, first window | 1,793 | 2 | 11.459739 ms |
+| Off | 1,795 | 3 | 11.489948 ms |
+| On, final window | 1,790 | 5 | 11.475885 ms |
+
+Frame pacing remains unfinished. The first on/off pair supplies no reduction in
+misses when the observer is removed, and the third window is not a controlled
+reversal: the CPU trace reader exhausts its 384 MiB budget, with its last retained
+event at 239.615467 seconds inside that window. That timestamp is not a measured
+reader-exit time. Final CPU overrun counters are nonzero and one retained row has
+an unexpected event format. The CPU recording is therefore rejected for precise
+IPC or scheduler comparisons; its gaps are not silently parsed around. Complete
+DRM/present evidence and workload acceptance remain separate from that failed
+CPU diagnostic. The first two windows precede the last retained CPU event, but
+this does not establish loss-free CPU coverage for them.
+
+The first early dashboard probe exits 9 before successful readiness; the later
+readiness probe, early/late scanout captures and live server/compositor checks
+pass. There is no new lens check. Controller optical publication remains zero:
+13,744 motion samples are followed by a receive timeout, and sampled mailbox
+contents then remain unchanged for 150.879 seconds despite 109,198 further
+polls. No fresh-input recovery or controller-sleep explanation is established.
+
+Evidence is `output/pico-imu-priority-20261026-v1/` and the separate RX analysis
+under `output/pico-controller-rx-metadata-20261026-v1/analysis/`. The
+52,944,965-byte export has 234 verified members, SHA-256
+`63d5ad471afa781ada21f4b6631f67c6d80cd85456b8e7acf327b2848226954b`.
+All source/build bindings, full BOOT/DTBO readbacks, MCU/DSP shutdown, muted
+offline stock return and owned USB-host termination verify. No firmware was
+flashed. The accepted scope is full workload and DRM evidence with a partial,
+unaccepted CPU diagnostic, not an end-to-end tracked-controller session.
