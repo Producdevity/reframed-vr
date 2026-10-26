@@ -29,18 +29,36 @@ fi
                 'CONTAINER_ENGINE': str(engine),
                 'KERNEL_TEST_ARGUMENTS': str(arguments),
             }
-            for variant, expected in (
-                ('vendor', []),
-                ('linux-userspace', ['--linux-userspace']),
-                ('qemu-abi', ['--linux-userspace', '--qemu-abi']),
+            for profile, variant, expected in (
+                ('pico-neo3', 'vendor', []),
+                ('pico-neo3', 'linux-userspace', ['--linux-userspace']),
+                ('pico-neo3', 'qemu-abi', ['--linux-userspace', '--qemu-abi']),
+                ('quest3', 'vendor', []),
+                ('quest3', 'linux-userspace', ['--linux-userspace']),
+                ('quest3', 'qemu-abi', ['--linux-userspace', '--qemu-abi']),
+                ('quest3', 'ram-usb', ['--ram-usb']),
             ):
-                with self.subTest(variant=variant):
+                with self.subTest(profile=profile, variant=variant):
                     subprocess.run(['bash', str(ROOT / 'tools/build-kernel.sh'),
-                                    'pico-neo3', str(work / variant), variant, 'configure'],
+                                    profile, str(work / f'{profile}-{variant}'), variant, 'configure'],
                                    env=environment, check=True, capture_output=True, timeout=10)
                     actual = arguments.read_text().splitlines()
                     self.assertEqual(actual[actual.index('_') + 1:],
-                                     ['pico-neo3', *expected, '--configure-only'])
+                                     [profile, *expected, '--configure-only'])
+
+    def test_ram_usb_rejects_pico_before_starting_the_container_engine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            output = work / 'output'
+            result = subprocess.run(
+                ['bash', str(ROOT / 'tools/build-kernel.sh'),
+                 'pico-neo3', str(output), 'ram-usb', 'configure'],
+                env=os.environ | {'CONTAINER_ENGINE': str(work / 'missing-engine')},
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stderr.strip(), 'RAM USB requires quest3')
+            self.assertFalse(output.exists())
 
 
 if __name__ == '__main__':
