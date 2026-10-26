@@ -3936,3 +3936,26 @@ priority/GPU settings, full BOOT/DTBO readbacks, muted offline stock return and
 owned host termination verify. No firmware was flashed and no new lens or
 physical motion acceptance was collected. Analysis receipts preserve all three
 runs, the failed v2 entry and the rejected CPU suffix.
+
+### Startup counter publication gap (2026-10-26)
+
+The retained v3 startup fault is outside its three clean measurement windows.
+Probe sample 69 reports counter 3025 with age 25.805313 ms, while both bracketing
+kernel reads are only 3.5462–3.5467 ms old. Its logged API interval is 469 ns.
+The complete DRM trace advances through sequences 3026 and 3027 in that gap.
+
+WSI traces bind the timing queries to the actual RenderThread: its paired
+counter update remains at 3025 for 33.388594 ms, until the query after the next
+completed present returns 3028. The previous counter-to-next-queue interval is
+18.297187 ms; that queue arrives after 3026, and its fence returns after 3027.
+Its flip therefore skips two refresh sequences. The exact compiled Pico driver
+has a pose worker but no vblank polling worker or `VsyncEvent` call to adjust.
+
+This localizes the stale timing publication without identifying the work that
+delayed submission. CPU/GPU scheduler tracing was off during this startup
+interval, so running, runnable, IPC and GPU/callback causes are not separated.
+No timing bound is relaxed. The next useful capture is the existing selected
+renderer/event/commit and futex trace limited to the first 500-sample dashboard
+probe, with no additional API client or scheduling change. Exact raw rows,
+hashes and source-ownership limits are in
+`output/pico-completion-cache-20261026-v3/analysis/startup-vsync-analysis.json`.
