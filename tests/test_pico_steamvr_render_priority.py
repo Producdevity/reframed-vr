@@ -152,9 +152,28 @@ class RenderPriorityTests(unittest.TestCase):
     def test_noop_request_readback_refused_without_restoration_write(self):
         writes = []
         with self.fixture(setter=lambda _t, p, s: writes.append((p, s.sched_priority))) as (_, ready, _, _):
-            with self.assertRaisesRegex(RuntimeError, 'readback'):
+            with self.assertRaisesRegex(RuntimeError, 'readback') as error:
                 with self.context(ready):self.fail('No-op request accepted')
+            observed = json.loads(str(error.exception).split(': ', 1)[1])
+            self.assertEqual(observed, {'before': self.state(), 'active': self.state()})
         self.assertEqual(writes, [(2 | RESET, 2)])
+
+    def test_failed_readback_preserves_changed_fields_and_restores_owned_task(self):
+        state, calls = self.state(), [0]
+        def reader(*_):
+            calls[0] += 1
+            observed = copy.deepcopy(state)
+            if calls[0] == 2:observed['affinity'] = [7]
+            return observed
+        with self.fixture(state, reader=reader) as (_, ready, _, writes):
+            with self.assertRaisesRegex(RuntimeError, 'readback') as error:
+                with self.context(ready):self.fail('Changed readback accepted')
+            observed = json.loads(str(error.exception).split(': ', 1)[1])
+            self.assertEqual(observed['before'], self.state())
+            self.assertEqual(observed['active'], self.state() | {
+                'policy': 2 | RESET, 'rt_priority': 2, 'affinity': [7]})
+            self.assertEqual(state, self.state())
+            self.assertEqual(writes, [(2 | RESET, 2), (0, 0)])
 
     def test_restore_refuses_identity_policy_affinity_nice_or_limit_drift(self):
         faults = [('process_start', 101), ('thread_start', 111), ('executable', '/other/vrcompositor'),

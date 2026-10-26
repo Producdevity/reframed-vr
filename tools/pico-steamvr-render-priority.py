@@ -120,7 +120,8 @@ def prioritize_render(serial, boot, pid, tid, ready_json):
             validate_device(serial, boot)
             active = snapshot(pid, tid)
             if stable_fields(active) != stable_fields(before) or not is_rr2(active):
-                raise RuntimeError('Renderer policy readback or identity changed')
+                raise RuntimeError('Renderer policy readback or identity changed: ' +
+                                   json.dumps({'before': before, 'active': active}, sort_keys=True))
             active_verified = True
             record['active'] = active
             yield record
