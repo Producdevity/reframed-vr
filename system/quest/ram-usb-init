@@ -1,0 +1,41 @@
+#!/bin/sh
+export PATH=/bin
+mount -t devtmpfs devtmpfs /dev || exit 1
+fail() { echo "REFRAMED_RAM_USB_FAIL: $*" > /dev/kmsg; reboot -f; while :; do sleep 1; done; }
+mount -t proc proc /proc || fail proc
+mount -t sysfs sysfs /sys || fail sysfs
+mkdir -p /dev/pts /run
+mount -t devpts devpts /dev/pts || fail devpts
+mount -t tmpfs tmpfs /run || fail run
+mount -t configfs configfs /sys/kernel/config || fail configfs
+case " $(cat /proc/cmdline) " in
+  *" reframed.ram_usb=1 "*) ;;
+  *) fail missing-ram-usb-command-line-marker ;;
+esac
+hostname reframed-quest-ram
+printf 'REFRAMED_NATIVE_USB_INIT\n' > /dev/kmsg
+count=0
+while :; do
+    set -- /sys/class/udc/*
+    [ "$#" -eq 1 ] && [ -d "$1" ] && break
+    count=$((count + 1))
+    [ "$count" -lt 100 ] || fail no-single-udc
+    sleep 0.1
+done
+udc=${1##*/}
+g=/sys/kernel/config/usb_gadget/reframed_ram
+mkdir -p "$g" || fail gadget
+printf 0x1d6b > "$g/idVendor" || fail vendor
+printf 0x0104 > "$g/idProduct" || fail product
+printf 0x0100 > "$g/bcdDevice"
+printf 0x0200 > "$g/bcdUSB"
+mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409" "$g/functions/acm.usb0" || fail acm
+printf reframed-quest3-ram > "$g/strings/0x409/serialnumber"
+printf Reframed > "$g/strings/0x409/manufacturer"
+printf 'Reframed Quest RAM shell' > "$g/strings/0x409/product"
+printf 'RAM-only serial shell' > "$g/configs/c.1/strings/0x409/configuration"
+printf 120 > "$g/configs/c.1/MaxPower"
+ln -s "$g/functions/acm.usb0" "$g/configs/c.1/acm.usb0" || fail acm-link
+printf '%s' "$udc" > "$g/UDC" || fail bind
+setsid sh -c 'exec < /dev/ttyGS0 > /dev/ttyGS0 2>&1; echo REFRAMED_NATIVE_USB_SHELL; uname -a; cat /proc/sys/kernel/random/boot_id; exec sh -i'
+fail shell-exited

@@ -10,6 +10,22 @@ spec.loader.exec_module(kernel)
 
 
 class KernelPatchTests(unittest.TestCase):
+    def test_ram_usb_uses_a_separate_quest_seed_and_patch_set(self):
+        profile = kernel.sources.read_profile("quest3")
+        extensions, patches = kernel.build_inputs(profile, False, False, True)
+        self.assertEqual([path.name for path in extensions], ["quest3-ram-usb.config"])
+        self.assertEqual(patches[0].name, "0003-arm64-place-cfi-unwind-data.patch")
+        self.assertTrue(all(path.parent.name == "quest3-ram-usb" for path in patches[1:]))
+        self.assertTrue(patches[1:])
+
+    def test_ram_usb_rejects_other_hardware_and_full_userspace_configs(self):
+        for profile, userspace, qemu in (("pico-neo3", False, False),
+                                         ("quest3", True, False),
+                                         ("quest3", False, True)):
+            with self.subTest(profile=profile, userspace=userspace, qemu=qemu):
+                with self.assertRaisesRegex(ValueError, "separate Quest"):
+                    kernel.build_inputs(kernel.sources.read_profile(profile), userspace, qemu, True)
+
     def test_pico_virtual_transports_preserve_hardware_patch_set(self):
         profile = kernel.sources.read_profile("pico-neo3")
         physical, patches = kernel.build_inputs(profile, True, False)
