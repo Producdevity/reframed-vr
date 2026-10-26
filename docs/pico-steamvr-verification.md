@@ -4013,3 +4013,57 @@ The archive has 261 verified data files plus its manifest, 39,246,031 bytes,
 SHA-256 `36e063381a19b8c3b7d47ec38ed19b16a4f227f07bd75933d6ff25692a34581e`.
 The 1,208-check receipt and raw-row attribution remain in its private `analysis/`
 directory. No new physical clarity, motion or controller acceptance follows.
+
+### Build-matched cache control (2026-10-26)
+
+`output/pico-cache-harvest-20261026-v1/` preserves the same workload and collects
+the cache only after all seven owned VR units become inactive with zero PIDs.
+The complete snapshot contains 354 files: the original 189 entries and 165 new
+Turnip entries in namespace `d9efc6cf789056ddd14fc6e7875bcc48`. The verified
+2,557,983-byte carrier has SHA-256
+`950dd659496104645f8f242983fa9a05fa0c86f48c9341bccf3d04f7e5c67333`.
+
+`output/pico-cache-warm-20261026-v1/` restores every file literally before
+tracking/VR starts. Native readback verifies all 354 hashes, UID/GID 1000,
+file/directory modes 0600/0700, the unchanged Mesa library/build ID and all
+13 recorded compositor cache/driver environment values. It preserves all
+33 recipes, application commands, policies and measurement scopes. No cache
+key or header is rewritten. The original carrier remains retained.
+
+| Existing startup probe | Original 189-entry restore | Build-matched 354-entry restore |
+| --- | ---: | ---: |
+| Overdue vsync reads out of 500 | 4 | 0 |
+| Counter-to-queue maximum | 47.652813 ms | 6.587291 ms |
+| Counter-to-queue p99 | 5.125677 ms | 2.740573 ms |
+| Contained counter-to-queue intervals | 475 | 478 |
+| Contained flip pairs | 474 | 477 |
+| Missed presentations / skipped sequences | 14 / 18 | 4 / 4 |
+| Later on/off/on missed presentations | 4 / 0 / 0 | 0 / 1 / 1 |
+
+The cold maximum contains 45.944813 ms of renderer running time; that long
+on-CPU gap is absent from the warm cohort. Its maximum instead contains
+1.314291 ms running and 5.273 ms runnable. This single sequential comparison
+supports a cache-related startup effect, without proving cache hits, a specific
+compilation function or a universal pacing fix. The post-run warm snapshot has
+no added, missing or byte-changed cache files. Both later on-window probes have
+2,000 valid head and vsync queries with zero age faults; off-window API behavior
+is unmeasured.
+
+The cold run's full CPU trace independently associates two late frames with
+callback queue-to-execution delays of 1.681/3.300 ms, predominantly runnable time.
+No complete shared IPC wait overlaps the four late-frame prequeue intervals.
+The warm full steady CPU stream is rejected at row 1,007,698; its independently
+qualified prefix covers only the first on window. Both remaining warm misses
+occur after that cutoff, so their causes remain unassigned. The pinned kernel
+source also shows that ordinary timestamp waits use the same event workqueue
+and do not replace merged/imported DRM-fence dependencies; no kernel bypass or
+new priority policy is justified by this comparison.
+
+The warm head/camera workload completes 4,499 sets and 184,505 callbacks with
+zero bad results. Controller motion still ends with `-110` after 13,790 samples
+and worker exit 1. Input, source, cleanup, full BOOT/DTBO readbacks, quiet offline
+stock return and owned USB-host closure verify. The warm archive has 290 data
+files plus its manifest, 44,348,345 bytes, SHA-256
+`f09178511618e36f0d2cfa55200284792748bc04489ea78979cda27a69029e7c`.
+Its private `analysis/` directory retains the comparison and acceptance limits;
+the callback source audit is `output/pico-callback-context-audit-20261026-v1/`.

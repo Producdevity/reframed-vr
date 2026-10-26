@@ -450,6 +450,15 @@ zero overdue vsync samples in its first 500-query readiness and 2,000-query late
 windows. This is a bounded comparison, not a sustained frame-rate or optical
 acceptance result. The separate occasional late blocking fault remains open.
 
+Treat a restored cache as build-specific input. In the later
+[build-matched control](pico-steamvr-verification.md#build-matched-cache-control-2026-10-26),
+the old 189-entry carrier has a different Turnip namespace from entries generated
+by the current library. Restoring the current run's 354 exact files with the
+same library and cache environment reduces startup overdue reads from 4/500 to
+0/500. Later missed presentations remain. Preserve the library/build and actual
+environment receipts when reusing a cache; file presence does not prove hits,
+and editing keys or headers does not establish compatibility.
+
 The compositor drop-in also sets `MESA_VK_WSI_FRAME_COUNTER_TIMING=1`. It requires
 Turnip patch 0015 from this tree: the retained Frame compositor requests a private
 two-word vblank counter/time pair. Unpatched Mesa reports success after writing
