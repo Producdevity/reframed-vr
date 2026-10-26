@@ -93,7 +93,7 @@ def main():
         tests = args.output / 'controller-report-tests'
         run([*common, str(ROOT / 'tests/pico-controller-capture.c'), *shared, '-o', str(tests)], 'test-compile.log')
         run([str(tests)], 'report-tests.log')
-        if 'PICO_CONTROLLER_REPORT_TESTS_PASS cases=19 hardware_access=0' not in (args.output / 'report-tests.log').read_text():
+        if 'PICO_CONTROLLER_REPORT_TESTS_PASS cases=21 hardware_access=0' not in (args.output / 'report-tests.log').read_text():
             raise ValueError('Report tests did not complete')
         if report['source_sha256'] != {n: digest(ROOT / n) for n in sources + profile['patches']}:
             raise ValueError('Build inputs changed')
@@ -101,7 +101,7 @@ def main():
         report.update(status='compiled', binary_sha256=digest(binary),
                       ssc_source_archive_sha256=digest(archive),
                       sanitizer=args.sanitizer, requested_rate_hz=480,
-                      report_tests_sha256=digest(tests), report_test_cases=19)
+                      report_tests_sha256=digest(tests), report_test_cases=21)
     except Exception as error:
         report.update(status='failed', error=str(error))
         raise

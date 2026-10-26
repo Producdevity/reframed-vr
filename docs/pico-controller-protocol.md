@@ -427,9 +427,9 @@ builds the opt-in [`capture-pico-controller.c`](../tools/capture-pico-controller
 receiver on native ARM64 Linux. It verifies the installed SSC profile, source
 archive and patched sources, compiles libssc into a separate executable, and
 copies its GPL license. The installed tracking library is unchanged. Each build
-also runs 19 report-callback cases without accessing hardware, covering
+also runs 21 report-callback cases without accessing hardware, covering
 attribute events, stream identity, shutdown, configuration replies, accepted
-input, duplicate timestamps, corrupt records and bounded summary diagnostics.
+input, duplicate timestamps, corrupt records and bounded summary/error diagnostics.
 
 ```sh
 python3 tools/build-pico-controller-capture.py --output /tmp/controller-build
@@ -446,7 +446,12 @@ watermarks. Its explicit assumed connection mask of 3 examines both possible
 slots; it does not establish that both controllers are connected. Duplicate or
 stale records remain rejected by the normal stream. No-data intervals and output
 failures are retained. A subscription ACK or increasing raw count alone is not
-proof of fresh motion or a tracked pose. Default verbose output is unchanged.
+proof of fresh motion or a tracked pose. Default data output stays verbose.
+
+An unsupported event still fails the receiver. The first such event retains its
+ID, source ticks, payload size, a fingerprint of at most 4,096 bytes and at most
+32 payload bytes in the error log, including in summary mode. These bounded
+failure details do not classify the message or change acceptance/cleanup.
 
 Supply the boot serial from the native kernel command line, the discovered
 `ble_mcu` SUID, and this unit's verified stock configuration. The receiver
@@ -1824,3 +1829,53 @@ data would not establish a working control. The earlier DSP diagnostic collector
 also changes diagnostic mode and logging masks and must not be described as
 read-only. No automatic mailbox reset or repeated MCU pacing command is justified
 by the retained evidence.
+
+### Ordinary SSC endpoint comparison (2026-10-26)
+
+Three RAM-only diagnostics in
+`output/pico-controller-endpoints-20261026-v1/`, `-v2/` and `-v3/` compare the
+ordinary SSC endpoint with the existing FastRPC reader. They use no UI or
+compositor workload and provide no frame-pacing acceptance. Their receiver is
+SHA-256 `af655e239fb29a8322924ac1f28330aefcaa34f973293c51e5e2d8f7d860e39e`;
+each native build passes the then-current 19 callback cases. These runs precede
+the bounded unsupported-event logging above.
+
+The first attempt rejects its newly spawned child before `exec` completes.
+Its SSC logs are empty: no subscription or delivery result follows. The private
+observer now waits at most two seconds for that same owned PID/start identity
+to transition from the recorded parent executable to the exact target and argv.
+Thirteen host lifecycle fixtures exercise this transition and refusal paths.
+In both subsequent native runs the first identity snapshot already finds the
+target; the transient waiting branch has host-fixture proof only.
+
+The second run starts SSC after a 35-second baseline. Acknowledgement and disable
+succeed with zero live objects. Its 60 summary rows contain no recognized data
+or configuration event. FastRPC has already stopped progressing approximately
+8.11 seconds before SSC launches; this supplies no positive delivery control.
+The independent head/camera workload completes 4,499 sets and 184,530 callbacks
+with zero bad results. The controller motion worker still ends with `-110`.
+
+The third run starts SSC after five seconds, while surrounding FastRPC samples
+are still advancing without errors. It receives one unsupported event and exits
+within 46.3 ms, with acknowledgement/disable successful and zero live objects.
+The requested 60-second SSC observation never runs. The retained binary does
+not log that event's ID or payload, so its type and cause remain unknown.
+The head/camera workload independently completes 4,499 sets and 184,525 callbacks
+with zero bad results; the final harness assertion correctly rejects SSC exit 1.
+No recognized data or configuration event was recorded before that rejection.
+
+In both later runs, the sampled station GPIO 84 interrupt total stops at 13,786
+as the FastRPC buffer reaches its final unchanged snapshot. The interrupt label
+is bound to each boot. This differs from the earlier recording with continuing
+station traffic, but does not establish controller sleep or isolate radio,
+DSP dispatch or mapping. No working ordinary-SSC data control, optical controller
+pose or tracked pointer is established, and an unknown event does not justify
+relaxing message handling or retrying subscriptions blindly.
+
+All three retain full BOOT/DTBO readbacks matching the originals, MCU-reference
+release, SLPI/CDSP shutdown, offline quiet stock return and owned USB-host join.
+The v3 archive is 699,040 bytes with 178 verified data files plus its manifest,
+SHA-256 `552c8c4661cc885eefde8d0fddd2c50d331dbca86c493e998fccb67cc62c7053`.
+Per-attempt verification and exact timestamp/source anchors remain in each
+private `analysis/` directory. The new failure-log bounds pass 21 host callback
+cases with ASan/UBSan; the additional logging has not yet run on the Pico.

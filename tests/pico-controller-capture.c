@@ -129,6 +129,52 @@ static void summary_tests(void)
     fclose(output);
 }
 
+static void unexpected_tests(void)
+{
+    assert(fflush(stderr) == 0);
+    int saved = dup(STDERR_FILENO); assert(saved >= 0);
+    FILE *output = tmpfile(); assert(output && dup2(fileno(output), STDERR_FILENO) >= 0);
+    struct capture s = summary_capture();
+    emit(&s, 999, 3, NULL, 0);
+    s.stopping = true; emit(&s, 999, 1, NULL, 0); s.stopping = false;
+    assert(fflush(stderr) == 0 && ftell(output) == 0 && !s.failed);
+    emit(&s, 999, 1, NULL, 0);
+    assert(s.failed && s.unexpected_reports == 1 && !s.reports);
+    assert(fflush(stderr) == 0 && fseek(output, 0, SEEK_SET) == 0);
+    char line[512];
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_UNEXPECTED id=999 ticks=0 bytes=0 hash_bytes=0"
+                         " hash_fnv1a64=cbf29ce484222325 prefix_bytes=0 prefix=\n"));
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_ERROR unsupported controller event\n"));
+    assert(fgetc(output) == EOF && fseek(output, 0, SEEK_END) == 0);
+    long start = ftell(output);
+    emit(&s, 998, 1, NULL, 0);
+    assert(s.failed && s.unexpected_reports == 2);
+    assert(fflush(stderr) == 0 && fseek(output, start, SEEK_SET) == 0);
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_ERROR unsupported controller event\n"));
+    assert(fgetc(output) == EOF && fseek(output, 0, SEEK_END) == 0);
+
+    start = ftell(output);
+    unsigned char payload[4097];
+    for (unsigned i = 0; i < sizeof(payload); i++) payload[i] = i;
+    GBytes *bytes = g_bytes_new(payload, sizeof(payload));
+    s = summary_capture(); s.summary = false;
+    report(NULL, G_MAXUINT, 1, 2, UINT64_MAX, bytes, &s); g_bytes_unref(bytes);
+    assert(s.failed && s.unexpected_reports == 1 && !s.reports);
+    assert(fflush(stderr) == 0 && fseek(output, start, SEEK_SET) == 0);
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_UNEXPECTED id=4294967295 ticks=18446744073709551615"
+                         " bytes=4097 hash_bytes=4096 hash_fnv1a64=88d6ce5789d35325"
+                         " prefix_bytes=32 prefix=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\n"));
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_ERROR unsupported controller event\n"));
+    assert(fgetc(output) == EOF);
+    assert(dup2(saved, STDERR_FILENO) >= 0); close(saved); clearerr(stderr);
+    fclose(output);
+}
+
 int main(void)
 {
     assert(setvbuf(stdout, NULL, _IONBF, 0) == 0);
@@ -179,6 +225,7 @@ int main(void)
     emit(&s, 1024, 1, payload, sizeof(payload));
     assert(s.reports == 3 && s.accepted == 1 && s.rejected == 2);
     summary_tests();
-    puts("PICO_CONTROLLER_REPORT_TESTS_PASS cases=19 hardware_access=0");
+    unexpected_tests();
+    puts("PICO_CONTROLLER_REPORT_TESTS_PASS cases=21 hardware_access=0");
     return 0;
 }

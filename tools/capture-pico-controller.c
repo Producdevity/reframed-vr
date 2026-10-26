@@ -203,7 +203,17 @@ static void report(GObject *client, guint id, guint64 high, guint64 low,
     }
     if (id == SSC_MSG_RESPONSE_GET_ATTRIBUTES) return;
     if (id != 1024) {
-        s->unexpected_reports++;
+        if (!s->unexpected_reports++) {
+            size_t hashed = size < 4096 ? size : 4096;
+            size_t prefix = size < 32 ? size : 32;
+            fprintf(stderr, "PICO_CONTROLLER_UNEXPECTED id=%u ticks=%" PRIu64
+                    " bytes=%zu hash_bytes=%zu hash_fnv1a64=%016" PRIx64
+                    " prefix_bytes=%zu prefix=", id, (uint64_t)ticks, size, hashed,
+                    fingerprint(bytes, hashed), prefix);
+            for (size_t i = 0; i < prefix; i++)
+                fprintf(stderr, "%02x", ((const unsigned char *)bytes)[i]);
+            fputc('\n', stderr);
+        }
         fail(s, "unsupported controller event");
         return;
     }
