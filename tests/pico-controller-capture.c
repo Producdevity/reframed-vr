@@ -167,7 +167,26 @@ static void unexpected_tests(void)
     assert(fgets(line, sizeof(line), output));
     assert(!strcmp(line, "PICO_CONTROLLER_UNEXPECTED id=4294967295 ticks=18446744073709551615"
                          " bytes=4097 hash_bytes=4096 hash_fnv1a64=88d6ce5789d35325"
-                         " prefix_bytes=32 prefix=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\n"));
+                         " prefix_bytes=128 prefix=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                         "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+                         "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+                         "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f\n"));
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_ERROR unsupported controller event\n"));
+    assert(fgetc(output) == EOF && fseek(output, 0, SEEK_END) == 0);
+
+    start = ftell(output);
+    payload[0] = 0x0a; payload[1] = 100;
+    bytes = g_bytes_new(payload, 103); s = summary_capture();
+    report(NULL, 1025, 1, 2, 32767, bytes, &s); g_bytes_unref(bytes);
+    assert(s.failed && s.unexpected_reports == 1 && !s.reports);
+    assert(fflush(stderr) == 0 && fseek(output, start, SEEK_SET) == 0);
+    assert(fgets(line, sizeof(line), output));
+    assert(!strcmp(line, "PICO_CONTROLLER_UNEXPECTED id=1025 ticks=32767 bytes=103 hash_bytes=103"
+                         " hash_fnv1a64=4661d5c4c659542f prefix_bytes=103 prefix=0a6402030405060708090a0b0c0d0e0f"
+                         "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+                         "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f"
+                         "505152535455565758595a5b5c5d5e5f60616263646566\n"));
     assert(fgets(line, sizeof(line), output));
     assert(!strcmp(line, "PICO_CONTROLLER_ERROR unsupported controller event\n"));
     assert(fgetc(output) == EOF);
@@ -226,6 +245,6 @@ int main(void)
     assert(s.reports == 3 && s.accepted == 1 && s.rejected == 2);
     summary_tests();
     unexpected_tests();
-    puts("PICO_CONTROLLER_REPORT_TESTS_PASS cases=21 hardware_access=0");
+    puts("PICO_CONTROLLER_REPORT_TESTS_PASS cases=22 hardware_access=0");
     return 0;
 }

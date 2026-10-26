@@ -427,7 +427,7 @@ builds the opt-in [`capture-pico-controller.c`](../tools/capture-pico-controller
 receiver on native ARM64 Linux. It verifies the installed SSC profile, source
 archive and patched sources, compiles libssc into a separate executable, and
 copies its GPL license. The installed tracking library is unchanged. Each build
-also runs 21 report-callback cases without accessing hardware, covering
+also runs 22 report-callback cases without accessing hardware, covering
 attribute events, stream identity, shutdown, configuration replies, accepted
 input, duplicate timestamps, corrupt records and bounded summary/error diagnostics.
 
@@ -450,7 +450,7 @@ proof of fresh motion or a tracked pose. Default data output stays verbose.
 
 An unsupported event still fails the receiver. The first such event retains its
 ID, source ticks, payload size, a fingerprint of at most 4,096 bytes and at most
-32 payload bytes in the error log, including in summary mode. These bounded
+128 payload bytes in the error log, including in summary mode. These bounded
 failure details do not classify the message or change acceptance/cleanup.
 
 Supply the boot serial from the native kernel command line, the discovered
@@ -1877,5 +1877,38 @@ release, SLPI/CDSP shutdown, offline quiet stock return and owned USB-host join.
 The v3 archive is 699,040 bytes with 178 verified data files plus its manifest,
 SHA-256 `552c8c4661cc885eefde8d0fddd2c50d331dbca86c493e998fccb67cc62c7053`.
 Per-attempt verification and exact timestamp/source anchors remain in each
-private `analysis/` directory. The new failure-log bounds pass 21 host callback
-cases with ASan/UBSan; the additional logging has not yet run on the Pico.
+private `analysis/` directory. At that point the failure-log bounds pass 21 host
+callback cases with ASan/UBSan; native event identification follows below.
+
+### Identified generic measurement event (2026-10-26)
+
+The diagnostic in `output/pico-controller-endpoints-20261026-v4/` runs the
+21-case receiver natively and retains the first rejected event: ID 1025,
+103 bytes, beginning `0a64a501000080800040000400`. Acknowledgement and disable
+succeed with zero live objects; the receiver exits 1 after approximately 60 ms.
+The surrounding FastRPC samples are still progressing. Head/camera processing
+independently completes 4,499 sets and 184,525 callbacks with zero bad results.
+This is a verified receive-format mismatch, not successful controller delivery.
+
+The pinned SSC header names 1025 as a generic measurement. The exact stock
+`sns_ble_mcu.proto` descriptor defines 1024 with repeated fixed32 data and
+required accuracy. Its separate `sns_std_sensor.proto` defines 1025 with repeated
+float data and required status, including when that status has a default value.
+Both descriptors are byte-verified against the retained stock `libssc.so`.
+The stock callback handles the BLE and generic branches separately; the generic
+branch does not copy into the station record's event offset. An ID change alone
+therefore does not establish the BLE envelope or controller semantics.
+
+The logged `0a64` prefix declares a 100-byte first field, leaving one trailing
+byte in the reported 103-byte payload. That cannot also hold the maintained
+decoder's required status tag and value. Only 32 bytes were retained by this
+binary, so the final byte, full record CRC and complete payload fingerprint
+cannot be independently checked. No data acceptance or status requirement is
+changed on this evidence. The bounded failure log now retains up to 128 bytes;
+22 host callback cases verify its bound and complete capture of a synthetic
+103-byte envelope. Native validation of that larger bound remains pending.
+
+The v4 archive is 698,940 bytes, SHA-256
+`0c438157c373b9f378a1241be08eec48a21e3be4ef3d1b8548c19914cb1c1bd2`.
+Its private analysis retains the exact stock descriptor/source anchors, failed
+endpoint outcome, 804 verification checks and quiet offline stock/host closure.
