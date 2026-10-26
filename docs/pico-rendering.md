@@ -14,6 +14,34 @@ the display controller's two DMA planes and the DSI links. DRM/KMS handles
 display ownership, modes and scanout; Vulkan and the compositor perform the
 rendering. This is the direct-display path, without a desktop framebuffer copy.
 
+## GPU completion reuse
+
+The opt-in `TU_KGSL_DRM_SYNC` bridge exports a GPU timestamp once and imports
+that completion into the requested DRM signal objects. An ensuing empty queue
+submission still depends on the last GPU timestamp. Re-exporting that timestamp
+registers another KGSL callback, even though its completion was already exported.
+
+Turnip patch `0021-kgsl-drm-completion-cache.patch` retains one queue-owned
+CLOEXEC descriptor for a pure GPU completion. Empty submissions with signals
+can merge that cached completion with every explicit wait. Merged completions
+are never cached as pure timestamps. Every successful GPU or sparse submission
+invalidates the old cache, including submissions without signals; queue teardown
+closes it after the submit thread has joined. Native synchronization outside the
+DRM bridge retains its original path.
+
+Cache population is optional. A failed cached merge releases the cache and
+retries once with the original timestamp dependency. The bridge moves its
+private FD completion rather than duplicating it again. Empty submissions with
+no waits or signals do not allocate a completion descriptor. The cache
+intentionally costs one resident descriptor per queue; it does not guarantee
+identical behavior under an identical absolute process descriptor limit.
+
+The composed actual-function fixture checks dependencies, lifecycle, failures
+and real descriptor limits. Hardware callback counts, complete tracking load and
+remaining missed refreshes are recorded separately in the
+[verification record](pico-steamvr-verification.md). Reducing callback traffic
+does not establish physical frame pacing or eliminate all deadline failures.
+
 ## Why raw panel pixels have coloured outlines
 
 [`ComputeDistortion`](https://github.com/ValveSoftware/openvr/blob/master/docs/Driver_API_Documentation.md)

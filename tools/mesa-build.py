@@ -124,6 +124,18 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "kgsl-submit-under-test.h"),
                 "executable_sha256": digest(output / "kgsl-submit-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/kgsl-completion-cache-tests.py"),
+                 str(source / "src/freedreno/vulkan/tu_knl_kgsl.cc"), str(output)],
+                "kgsl-completion-cache-tests.log", timeout=120)
+            report["kgsl_completion_cache_tests"] = {
+                "status": "passed",
+                "scope": "actual native/DRM submissions and queue lifecycle; modeled ioctls and descriptor ownership",
+                "runner_sha256": digest(ROOT / "tests/kgsl-completion-cache-tests.py"),
+                "model_sha256": digest(ROOT / "tests/kgsl-completion-cache-tests.cpp"),
+                "queue_helpers_sha256": digest(output / "kgsl-queue-under-test.h"),
+                "helpers_sha256": digest(output / "kgsl-completion-under-test.h"),
+                "executable_sha256": digest(output / "kgsl-completion-cache-tests"),
+            }
             run([sys.executable, str(ROOT / "tests/kgsl-display-tests.py"),
                  str(source / "src/freedreno/vulkan/tu_kgsl_display.h"), str(output)],
                 "kgsl-display-tests.log", timeout=120)

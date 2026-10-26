@@ -14,7 +14,8 @@ enum VkResult { VK_SUCCESS = 0, VK_ERROR_OUT_OF_HOST_MEMORY = -1,
 enum vk_sync_flags { unused = 0 };
 struct vk_sync { bool drm; };
 struct vk_drm_syncobj { vk_sync base; uint32_t syncobj; };
-struct kgsl_syncobj { int fd; };
+enum { KGSL_SYNCOBJ_STATE_SIGNALED, KGSL_SYNCOBJ_STATE_TS, KGSL_SYNCOBJ_STATE_FD };
+struct kgsl_syncobj { int fd; int state = KGSL_SYNCOBJ_STATE_TS; };
 struct vk_kgsl_syncobj { vk_sync vk; kgsl_syncobj syncobj; };
 struct vk_sync_wait { vk_sync *sync; uint64_t stage_mask, wait_value; };
 struct vk_sync_signal { vk_sync *sync; uint64_t signal_value; };
@@ -131,6 +132,19 @@ static VkResult kgsl_syncobj_export(kgsl_syncobj *sync, int *fd)
     CHECK((sync->fd == -1) == empty_completion);
     *fd = empty_completion ? -1 : exported_fd();
     return VK_SUCCESS;
+}
+
+[[maybe_unused]] static void kgsl_syncobj_init(kgsl_syncobj *sync, bool signaled)
+{
+    CHECK(signaled);
+    sync->fd = -1;
+    sync->state = KGSL_SYNCOBJ_STATE_SIGNALED;
+}
+
+// Cache behavior is covered by the composed actual-function fixture.
+[[maybe_unused]] static void kgsl_completion_cache_store(tu_queue *, const kgsl_syncobj *, int fd)
+{
+    CHECK(fd == -1 || owned.count(fd) == 1);
 }
 
 static int tu_kgsl_drm_import_signal(int drm, uint32_t handle, uint64_t point, int fd)

@@ -26,7 +26,7 @@ struct VkQueueFamilyGlobalPriorityPropertiesKHR {
 };
 struct tu_physical_device { int local_fd; uint32_t submitqueue_priority_count; };
 struct tu_device { tu_physical_device *physical_device; };
-struct tu_queue { uint32_t priority, msm_queue_id; };
+struct tu_queue { uint32_t priority, msm_queue_id; int kgsl_completion_fd; };
 
 static unsigned calls, seen_flags;
 static int ioctl_result;
