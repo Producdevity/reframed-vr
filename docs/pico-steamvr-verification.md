@@ -4067,3 +4067,57 @@ files plus its manifest, 44,348,345 bytes, SHA-256
 `f09178511618e36f0d2cfa55200284792748bc04489ea78979cda27a69029e7c`.
 Its private `analysis/` directory retains the comparison and acceptance limits;
 the callback source audit is `output/pico-callback-context-audit-20261026-v1/`.
+
+### Independent timing windows (2026-10-26)
+
+`output/pico-window-traces-20261026-v2/` captures each existing 20-second
+on/off/on CPU window separately, preserving the workload, cache, application
+commands and policies. The complete trace-enable/filter map is restored after
+each joined reader. An initial v1 harness incorrectly requires every disabled
+event to read `0`; the existing fatal-signal stacktrace trigger reads `0*`.
+Pinned kernel source confirms that soft-disabled state. v2 preserves only that
+exact trigger, with its receipt/expression/readbacks, and rejects other marker
+or filter drift. All three restorations pass natively. Capture setup costs
+approximately 0.24–0.26 seconds and finish/restoration 1.15–1.47 seconds per
+window, outside the measurement cohorts; this is not a clean performance
+comparison with the preceding continuous trace.
+
+The full workload completes 4,499 camera sets and 184,526 head callbacks with
+zero bad results. Both later on-window API probes have 2,000 valid head/vsync
+queries with zero overdue reads. The earlier startup probe has one overdue
+sample with a 573 ns query. Full DRM records 2/1/0 missed presentations across
+1,793/1,794/1,799 contained flip pairs.
+
+The first-on and off CPU epochs pass complete hash, grammar, loss and semantic
+checks. The third contains an impossible PID/priority record and is rejected
+wholly despite complete hashes and zero loss counters. The validator now uses
+pinned PID/CPU/priority bounds, including the vendor's deadline-priority
+encoding and workqueue special CPU values. Twenty-two fixtures exercise those
+semantics. No scheduler state continues through the invalid record, and the
+record alone does not establish system-memory corruption.
+
+The three late frames have distinct qualified boundaries:
+
+- Present 4490: its fence returns 196 µs before the next DRM trace; 206 µs of
+  running commit-worker work puts kickoff 10 µs after that trace.
+- Present 4975: the renderer blocks for 7.017 ms inside a 7.266 ms shared Steam
+  IPC wait before GPU queueing. A wake emitter is observed, without a paired
+  mapped wake or lock-owner proof. GPU retirement is already late; its completion
+  callback adds only 61 µs.
+- Present 6844, with the observer off: callback dispatch takes 3.521 ms,
+  including 3.475 ms runnable. The executor runs on CPU 0; its fence return and
+  kickoff follow the DRM boundary. The trace does not identify the task occupying
+  that CPU throughout the runnable interval.
+
+GPU retirement times use the retained clock interpolation; a DRM trace is not
+the physical latch deadline. These results support separate IPC, commit-margin
+and callback-placement investigations. They do not justify one universal
+scheduling fix. Controller motion still ends with `-110`; optical acquisition
+and physical motion acceptance remain open.
+
+All 33 recipes, library/cache inputs, owned priority restoration, BOOT/DTBO
+readbacks, quiet offline stock return and USB-host join verify. The archive has
+309 data files plus its manifest, 43,250,673 bytes, SHA-256
+`da6f69604ca19bfc649930ab6bb78b0e42766a3a2eb3bf605ea991eb187ae1f3`.
+Its private `analysis/` directory retains the exact invalid row, semantic source
+proof, individual frame chains and superseded regex-only analysis receipts.
