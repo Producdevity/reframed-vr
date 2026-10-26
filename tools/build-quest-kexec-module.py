@@ -237,7 +237,7 @@ def main():
               'compiler_sha256': sha(args.toolchain / 'bin/clang-14')}
     inputs['extra_sources'] = {name: sha(module / name) for name in extra}
     (out / 'inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
-    command = ['docker', 'run', '--rm', '--network', 'none', '--platform', 'linux/amd64',
+    command = [os.environ.get('CONTAINER_ENGINE', 'docker'), 'run', '--rm', '--network', 'none', '--platform', 'linux/amd64',
                '--cpus', '2', '--memory', '4g', '--pids-limit', '256',
                '--mount', f'type=bind,source={args.source},target=/source,readonly',
                '--mount', f'type=bind,source={args.toolchain},target=/toolchain,readonly',
