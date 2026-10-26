@@ -3547,9 +3547,10 @@ headers. Cameras 0 and 1 instead receive request 1870 on frame 1874 and deliver
 controller-class headers. Header decoding agrees with classification, and the
 retained event suffix has no observed CRM/sync sequence discontinuity. A later
 frame-1875 head image therefore encounters the incomplete frame-1873 set.
-This establishes asymmetric frame/request assignment. The driver reason for request ID zero is
-unproven; request-submit ioctl boundaries and driver application decisions need
-measurement before changing queue depth, scheduling or the guard.
+This establishes asymmetric frame/request assignment. The driver reason for
+request ID zero is unproven; request-submit ioctl boundaries and driver
+application decisions need measurement before changing queue depth, scheduling
+or the guard.
 
 Evidence is `output/pico-observer-contention-20261026-v1/`; offline decoding is
 under `output/pico-camera-gap-20261026-v1/`. The complete journal is 1,126,716
@@ -3559,3 +3560,77 @@ The 9,428,431-byte export has 182 verified members, SHA-256
 Source/trace integrity, all 33 setup steps, firmware readbacks, MCU/DSP shutdown
 and muted offline stock return pass. Worker release 1 and diagnostic-probe
 termination by SIGTERM remain explicit cleanup results of this failed run.
+
+## Capture refill headroom under Steam startup load (2026-10-26)
+
+The next native trace separates submission from deferred CRM readiness.
+SCHED_REQ followed by sensor and IFE configure is valid for this driver: CRM
+creates the slot synchronously before device add-request callbacks look it up.
+Both device pipeline delays are one. Request ID zero alone does not establish
+an empty queue; several RDI IRQ states can report it. The captured IRQ order
+is normal SOF-before-RUP, with no RUP-before-SOF anomaly.
+
+In control boot `5af8bdab-c337-4ee5-b66e-2dedefa00c97`, physical cameras 2/3
+finish request-1895 IFE configuration at 160.030962229/160.031011500 seconds.
+The relevant SOF/RUP handling follows around 160.032 seconds, but their deferred
+readiness callbacks run at 160.034519/160.034538. The first CRM worker spends
+3.613 ms runnable before executing. Its FIFO drain, including the queued
+trigger, ends eight microseconds before peer readiness is processed. The pair
+applies request 1895 one trigger later, producing the incomplete head frame 1897.
+The source's peer-not-ready synchronization skip explains this ordering; that
+specific branch is source-derived, not directly logged. No submit-order,
+synchronization or missing-frame guard change is justified.
+
+The capture loop also loses substantial refill time while runnable under its
+ordinary nice-zero policy. The owning session now has an explicit
+[`pico-camera-priority.py`](../tools/pico-camera-priority.py) context to select
+ordinary CFS nice −20 for this capture task. It checks the native boot, exact
+root-owned executable bytes, single main thread, command and service identity.
+Only niceness changes; policy, affinity and resource limits remain identical.
+Exit restores the original value for an unchanged live task. A reaped task needs
+no write; unexpected state refuses restoration. Proc checks are not atomic PID
+reuse protection. The helper adds no default activation. Thirteen host tests
+cover binding refusals, activation failures, exceptions, state drift and cleanup.
+
+Boot `dfb4755b-bee0-40b5-8322-42a0df8459bd` runs the exact maintained helper,
+SHA-256 `73ff54f57ecb32c7615749c98fb1faa5f363f0705dad901218f1048b971287b3`.
+The camera executable is unchanged from control, SHA-256
+`4598e0109e1ad8287b00f320b4c95c0de9d8f8cf87766394877ac3c15e633970`.
+Kernel, workload, diagnostic instrumentation and other priority settings are
+unchanged. The helper verifies nice 0→−20 with identical policy, affinity and
+limits; the caller reaps the capture before context exit. Cleanup has no error.
+
+Paired readiness headroom is measured before the first expected trigger after
+the preceding request's application, so a delayed application cannot inflate it:
+
+| Camera pair | Control minimum | Nice −20 minimum | Treatment skipped triggers |
+| --- | ---: | ---: | ---: |
+| 0/1 | 2.388 ms | 79.699 ms | 0 |
+| 2/3 | −2.584 ms | 90.282 ms | 0 |
+
+The treatment covers 8,990 complete requests per pair. All 35,992 checked
+frame/request associations across frames 3–9000 match, with no mixed request-zero
+frame. The sole all-zero frame is the startup frame 2. All 4,499 head-camera sets
+complete over 180 seconds, with 184,546 head callbacks, 182,298 confident results
+and no rejected result. In the same logged frame-10–1900 cohorts, sampled camera
+delivery-age p99 falls from 106.988 to 22.057 ms. These are camera delivery ages,
+not a complete head-pose age distribution or physical display latency.
+
+This fixes the observed refill-headroom failure in the tested startup workload;
+broader load and longer-duration acceptance remain separate. The four display
+windows still report overlapping history drops 36/3/4/17, contained native skips
+31/3/3/19 and vsync-age faults 1/0/0/0 for OTHER/RR2/RR2/OTHER. No optical controller
+pose is accepted. Its receiver delivers 13,951 motion samples, then times
+out; subsequent activity reports stay unchanged. Neither a controller sleep state
+nor the cause of that receive stoppage is established.
+
+Evidence: `output/pico-camera-request-trace-20261026-v1/` and
+`output/pico-camera-priority-20261026-v1/`, including the pinned kernel audit,
+request/IRQ chronology, complete traces, exact compiled sources and runtime
+worker receipts. Control export: 10,639,706 bytes, 193 verified members, SHA-256
+`0364e39827eb3a902981edcb9bfd5936e81f96550f88beca15e449151055594e`.
+Priority export: 48,535,034 bytes, 232 verified members, SHA-256
+`1bda63ec4cec969d70984865fc31015de5013d51a119f1a790b0a8eec7bb3b41`.
+All trace readers join without recorded loss, helper contexts finish, full
+BOOT/DTBO readbacks match, MCU/DSP ownership shuts down and muted offline stock
+return is verified. No firmware was flashed.
