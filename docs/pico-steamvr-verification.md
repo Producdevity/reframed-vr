@@ -3634,3 +3634,37 @@ Priority export: 48,535,034 bytes, 232 verified members, SHA-256
 All trace readers join without recorded loss, helper contexts finish, full
 BOOT/DTBO readbacks match, MCU/DSP ownership shuts down and muted offline stock
 return is verified. No firmware was flashed.
+
+### Separate stale-head failure with lighter camera tracing (2026-10-26)
+
+Boot `487c748e-0b76-419e-a99a-32c3efd2b5bd` keeps the verified capture nice −20
+context but uses the earlier camera executable without the additional ioctl-phase
+recorder or separate camera kernel trace. It also adds bounded controller RX
+metadata. This is not an identical-workload replication of the preceding success.
+It ends before the planned observer on/off/on windows; no pacing comparison is
+available.
+
+The first recorded rejection is a head result timestamped 159.870374093 seconds,
+read at 159.999561709–159.999563688 seconds: its age is 129.189595 ms, while the
+result read itself takes 1.979 microseconds. The controller head-history consumer
+stops 0.901250 ms later, and the feed reports cancellation 4.286719 ms after the
+rejection. Only then, 349.962135 ms after rejection, does capture refuse
+`head-ring-full` at frame 1915. Its eight-set ring contains 956 published and
+948 consumed sets. The terminal camera counts agree across all four cameras;
+this is not another recorded request-assignment refusal.
+
+The existing CPU trace selects capture, renderer and GPU workers, but not the
+tracking consumer or IMU reader. Incidental consumer events cannot reconstruct
+the complete interval. Thus 129.189595 ms is a result age, not a proven scheduler
+stall or algorithm-call duration. The next diagnostic must cover those tasks
+before changing their priorities. Freshness and incomplete-frame guards remain
+unchanged.
+
+Evidence is `output/pico-observer-camera-priority-20261026-v1/`, including the
+ordered failure timeline and controller RX analysis. The 9,587,187-byte export
+has 189 verified members, SHA-256
+`0e7abe9c05d9364c8c86a151fa2895c5efb2fd26dfd9333d93fb3c6d068dc2bd`.
+Both trace readers join without recorded loss, capture priority cleanup succeeds,
+and full BOOT/DTBO readbacks, MCU/DSP shutdown, muted offline stock return and
+owned USB-host termination verify. Failed tracking is not accepted as a usable
+VR session.

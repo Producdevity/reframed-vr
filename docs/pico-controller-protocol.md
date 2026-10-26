@@ -1752,3 +1752,36 @@ roughly 40 and 60 cm should produce consistent stereo disparity changes. A fresh
 valid stock baseline at the same placement is useful. Another unattended
 recording with unknown placement cannot resolve that distinction, and a
 geometric hypothesis never establishes accepted tracking or loss/reacquisition.
+
+### Receive cutoff below freshness decoding (2026-10-26)
+
+The bounded native recording in
+`output/pico-observer-camera-priority-20261026-v1/` adds metadata to the worker's
+existing double snapshots. It makes no additional mailbox reads or polling/RPC
+changes. The compiled worker source is SHA-256
+`2c6b761cc4b9b1564f0849531c8026a1533736609d3de01b150e8be43edd6be4`;
+the native build and running-session receipts bind that source to executable
+`7e26de97742a508303e0dd2bf02f50c7abe51c115892e49817e5e99e5a4fefb0`.
+
+At monotonic 151.542910306 seconds, motion delivery times out after 13,785
+samples. Both snapshots contain ten stable, CRC-valid records accepted by the
+independent digital and IMU decoders for the left hand. Across the next
+10.695935829 seconds and 5,579 further polls, twelve metadata reports retain the
+same whole-buffer and per-slot fingerprints and station/IMU timestamp ranges.
+The eleven subsequent periodic activity reports also stop advancing. No resume
+or new motion generation occurs. Controller image submission continues after
+the motion timeout; the separate stale-head failure later ends the session.
+
+This localizes the observed cutoff below watermark/freshness decoding: acquired
+snapshots are not supplying newer records for those gates to accept. It does
+not distinguish radio silence, DSP production failure or mapping/cache
+visibility, and does not establish controller sleep. FNV fingerprints and
+periodic sampling cannot prove that no writes occur between reports. Restarting
+an epoch on these unchanged timestamps would reuse stale motion; no receiver
+reset or freshness relaxation is justified by this evidence. Optical pose
+publication remains zero.
+
+Offline findings and six analyzer fixtures are retained in
+`output/pico-controller-rx-metadata-20261026-v1/analysis/`. Complete worker stdout,
+49,351 bytes, has SHA-256
+`9791af8c2ea7c338be1413504f46de7ed48c3fbb063cbc208b6d25f3d73d4f27`.
