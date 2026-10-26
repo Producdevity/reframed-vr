@@ -1785,3 +1785,31 @@ Offline findings and six analyzer fixtures are retained in
 `output/pico-controller-rx-metadata-20261026-v1/analysis/`. Complete worker stdout,
 49,351 bytes, has SHA-256
 `9791af8c2ea7c338be1413504f46de7ed48c3fbb063cbc208b6d25f3d73d4f27`.
+
+### Limits of upstream delivery observables (2026-10-26)
+
+The longer reader-priority run retains the same sampled mailbox plateau while
+head/camera processing continues successfully. The upstream audit in
+`output/pico-controller-upstream-20261026-v1/` rechecks the earlier transition
+and physical-input archives, rather than treating their filenames as proof.
+
+In that recorded transition, the station GPIO 84 interrupt total continues from
+172,952 at the sample labelled `active38` to 173,209 at `active58`, after the
+controller record count has stopped advancing. The MCU's debug `left send_pack`
+counter also increases from 23,690 to 30,476. Those are station/debug traffic
+observations, not verified counts of fresh motion records. Interrupt or debug
+counter progress alone cannot distinguish continued motion delivery from other
+traffic. A passive observer must use the boot-local interrupt label or the
+existing MCU owner's already-read packets; a second SPI reader could consume
+responses belonging to that owner.
+
+The ordinary SSC `ble_mcu` endpoint is a separate potential comparison with the
+FastRPC mailbox. Enabling its 480 Hz subscription changes subscription state;
+it is not passive and can affect DSP dispatch. Native discovery, acknowledgement
+and cleanup have been tested, but connected native controller data on that route
+has not. Fresh timestamps arriving there while the mailbox stays unchanged would
+narrow the fault to low-latency delivery or mapping. An acknowledgement without
+data would not establish a working control. The earlier DSP diagnostic collector
+also changes diagnostic mode and logging masks and must not be described as
+read-only. No automatic mailbox reset or repeated MCU pacing command is justified
+by the retained evidence.
