@@ -1,0 +1,22 @@
+[Unit]
+Description=Provision Pico Bluetooth unit identity
+Before=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart="@CMAKE_INSTALL_PREFIX@/libexec/reframed-vr/reframed-pico-bluetooth-identity" /run/reframed-pico-bluetooth/identity.json /etc/reframed-vr/pico-boot-serial
+RemainAfterExit=yes
+RuntimeDirectory=reframed-pico-bluetooth
+RuntimeDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=90
+TimeoutStopSec=60
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_BLUETOOTH
+
+[Install]
+RequiredBy=bluetooth.service

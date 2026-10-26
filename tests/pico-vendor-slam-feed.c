@@ -228,9 +228,27 @@ int main(void)
     struct pico_vendor_slam_feed_status status = {0};
     pico_vendor_slam_feed_status(feed, &status);
     assert(status.imu_pairs == 1 && status.unmatched[0] == 1 && !status.unmatched[1]);
+    for (unsigned sensor = 0; sensor < 2; ++sensor) {
+        begin();
+        const int64_t now = BASE + 60000000;
+        for (unsigned i = 0; i < 56; ++i)
+            assert(!push(sensor, BASE + 100 + i * INT64_C(976667), now));
+        assert(!backend.pairs);
+        for (unsigned i = 0; i < 56; ++i)
+            assert(!push(1 - sensor, BASE + 100 + i * INT64_C(976667), now));
+        pico_vendor_slam_feed_status(feed, &status);
+        assert(backend.pairs == 56 && status.imu_pairs == 56);
+        assert(!status.error && !status.unmatched[0] && !status.unmatched[1]);
+
+        begin();
+        for (unsigned i = 0; i < 56; ++i)
+            assert(!push(sensor, BASE + 100 + i * INT64_C(976667), now));
+        assert(push(1 - sensor, BASE + 100, BASE + 100000101) == -EINVAL);
+        terminal(-EINVAL);
+    }
     begin();
-    for (unsigned i = 0; i < 32; ++i) assert(!push(0, BASE + i + 1, BASE + 100));
-    assert(push(0, BASE + 33, BASE + 100) == -ENOBUFS);
+    for (unsigned i = 0; i < 256; ++i) assert(!push(0, BASE + i + 1, BASE + 300));
+    assert(push(0, BASE + 257, BASE + 300) == -ENOBUFS);
     terminal(-ENOBUFS);
 
     for (unsigned i = 0; i < 24; ++i) {

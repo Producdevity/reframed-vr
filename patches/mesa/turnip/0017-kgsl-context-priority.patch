@@ -1,0 +1,40 @@
+--- a/src/freedreno/vulkan/tu_knl_kgsl.cc
++++ b/src/freedreno/vulkan/tu_knl_kgsl.cc
+@@ -53,6 +53,13 @@
+    return ret;
+ }
+ 
++static uint32_t
++kgsl_submitqueue_priority_count(void)
++{
++   const char *option = getenv("TU_KGSL_CONTEXT_PRIORITIES");
++   return option && !strcmp(option, "1") ? 4 : 1;
++}
++
+ static int
+ kgsl_submitqueue_new(struct tu_device *dev, struct tu_queue *queue)
+ {
+@@ -61,6 +68,14 @@
+               KGSL_CONTEXT_NO_GMEM_ALLOC |
+               KGSL_CONTEXT_PREAMBLE,
+    };
++
++   uint32_t count = dev->physical_device->submitqueue_priority_count;
++   if ((count != 1 && count != 4) || queue->priority >= count)
++      return -EINVAL;
++
++   /* Zero selects the kernel default rather than its highest priority. */
++   if (count == 4)
++      req.flags |= MAX2(1u, queue->priority * 4u) << KGSL_CONTEXT_PRIORITY_SHIFT;
+ 
+    int ret = safe_ioctl(dev->physical_device->local_fd, IOCTL_KGSL_DRAWCTXT_CREATE, &req);
+    if (ret)
+@@ -2012,7 +2027,7 @@
+ 
+    device->has_raytracing = tu_kgsl_get_raytracing(fd);
+ 
+-   device->submitqueue_priority_count = 1;
++   device->submitqueue_priority_count = kgsl_submitqueue_priority_count();
+    
+    device->timeline_type = vk_sync_timeline_get_type(&vk_kgsl_sync_type);
+ 

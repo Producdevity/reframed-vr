@@ -1,0 +1,110 @@
+From: Producdevity
+Subject: [PATCH] wsi/display: opt in to present ID completion diagnostics
+
+Correlate counter queries, atomic commits, flips and presentation waits without changing
+completion semantics. Disabled unless MESA_VK_WSI_PRESENT_TRACE=1; preserve
+errno and ignore diagnostic write failures.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -55,6 +55,9 @@
+ #include <stdio.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
++#ifdef __linux__
++#include <sys/syscall.h>
++#endif
+ #include <errno.h>
+ #include <string.h>
+ #include <fcntl.h>
+@@ -104,6 +107,27 @@
+ #define wsi_display_debug(...)
+ #define wsi_display_debug_code(...)
+ #endif
++
++static void
++wsi_present_trace(const char *event, const void *chain, const void *image,
++                  uint64_t id, uint64_t detail, int result)
++{
++   const char *option = getenv("MESA_VK_WSI_PRESENT_TRACE");
++   if (!option || strcmp(option, "1"))
++      return;
++   int saved_errno = errno;
++   long tid = 0;
++#ifdef __linux__
++   tid = syscall(SYS_gettid);
++#endif
++   char line[256];
++   int size = snprintf(line, sizeof(line),
++      "WSI_PRESENT_TRACE ns=%"PRIu64" tid=%ld event=%s chain=%p image=%p id=%"PRIu64" detail=%"PRIu64" result=%d\n",
++      os_time_get_nano(), tid, event, chain, image, id, detail, result);
++   if (size > 0 && (size_t)size < sizeof(line))
++      (void)write(STDERR_FILENO, line, (size_t)size);
++   errno = saved_errno;
++}
+ 
+ /* These have lifetime equal to the instance, so they effectively
+  * never go away. This means we must keep track of them separately
+@@ -2092,6 +2116,7 @@
+    wsi_display_debug("image %ld displayed at %d\n",
+                      image - &(image->chain->images[0]), frame);
+    image->state = WSI_IMAGE_DISPLAYING;
++   wsi_present_trace("flip", chain, image, image->present_id, frame64, 0);
+    wsi_display_present_complete(chain, image);
+ 
+    wsi_display_idle_old_displaying(image);
+@@ -3078,7 +3103,9 @@
+       flags &= ~DRM_MODE_PAGE_FLIP_EVENT;
+    }
+ 
++   wsi_present_trace("commit_begin", image->chain, image, image->present_id, flags, 0);
+    ret = drmModeAtomicCommit(fd, req, flags, image);
++   wsi_present_trace("commit_end", image->chain, image, image->present_id, flags, ret);
+    if (ret)
+       goto out;
+ 
+@@ -3381,6 +3408,7 @@
+       return chain->status;
+ 
+    image->present_id = present_id;
++   wsi_present_trace("queue", chain, image, present_id, image_index, 0);
+    image->timing_request = chain->timing_request;
+ 
+    assert(image->state == WSI_IMAGE_DRAWING);
+@@ -3423,8 +3451,10 @@
+ 
+    /* Need to observe that the swapchain semaphore has been unsignalled,
+     * as this is guaranteed when a present is complete. */
++   wsi_present_trace("wait_begin", chain, NULL, waitValue, timeout, 0);
+    VkResult result = wsi_swapchain_wait_for_present_semaphore(
+       &chain->base, waitValue, timeout);
++   wsi_present_trace("wait_semaphore_end", chain, NULL, waitValue, timeout, result);
+    if (result != VK_SUCCESS)
+       return result;
+ 
+@@ -3447,7 +3477,9 @@
+ 
+    if (result == VK_SUCCESS && chain->present_id_error)
+       result = chain->present_id_error;
++   uint64_t completed = chain->present_id;
+    mtx_unlock(&chain->present_id_mutex);
++   wsi_present_trace("wait_end", chain, NULL, waitValue, completed, result);
+    return result;
+ }
+ 
+@@ -4638,6 +4670,7 @@
+    /* Frame's private query returns sequence, then CLOCK_MONOTONIC nanoseconds. */
+    bool timing = counter == (VkSurfaceCounterFlagBitsEXT)0x7ffffffd &&
+                  option && !strcmp(option, "1");
++   wsi_present_trace("counter_query", wsi_swapchain_from_handle(_swapchain), NULL, counter, timing, 0);
+    if (counter != VK_SURFACE_COUNTER_VBLANK_BIT_EXT && !timing)
+       return VK_ERROR_UNKNOWN;
+ 
+@@ -4666,6 +4699,7 @@
+           !values[1])
+          return VK_ERROR_UNKNOWN;
+       memcpy(pCounterValue, values, sizeof(values));
++      wsi_present_trace("counter", swapchain, NULL, values[0], values[1], 0);
+       return VK_SUCCESS;
+    }
+ 

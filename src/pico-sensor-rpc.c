@@ -29,7 +29,8 @@ int pico_sensor_rpc_open(struct pico_sensor_rpc *client) {
         remote_handle64_open(ITRANSPORT_PREFIX "createstaticpd:sensorspd" SDSP_DOMAIN, &mode);
     if (result)
         return result;
-    result = remote_handle64_open("sns_low_lat_stream" SDSP_DOMAIN, &handle);
+    result = remote_handle64_open("file:///libsns_low_lat_stream_skel.so?"
+                                  "sns_low_lat_stream_skel_invoke" SDSP_DOMAIN, &handle);
     if (result)
         return result;
     *client = (struct pico_sensor_rpc){handle, -1, PICO_SENSOR_RPC_OPEN};

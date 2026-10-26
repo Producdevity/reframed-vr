@@ -528,6 +528,19 @@ relevant limitation, not proof of identical Pro Eye behavior.
 
 ## Confirmed unlock effects
 
+The 2026-10-24 engineering-ABL session demonstrates the distinction between
+command authorization and persistent unlock. `getvar unlocked` returned `yes`,
+but `fastboot boot` rejected the transferred image with `unknown command`.
+Repeating the previously recorded
+`fastboot -s c980c8d4 oem picoDJXF96T unlock` authorization, then sending the
+same image, produced a successful RAM boot. This matches the handler-registration
+behavior below; persistent unlock alone did not establish command availability
+in that session. Both attempts and the authorization result are retained in
+`output/pico-controller-image-lifetime-20261023-v1/native/`. Full boot/DTBO
+readbacks remained unchanged, and the unit returned to stock b1977 with
+`flash.locked=0` and orange verified-boot state. Other persistent-state stores
+were not read back by this test.
+
 Static analysis of the authenticated 4.6.3 ABL and this unit's saved XBL narrows
 the transition requirements:
 
@@ -710,6 +723,34 @@ rejects incomplete or wrong-device reports. A received report proves neither phy
 return to stock; those require separate observation. The diagnostic does not
 load an SELinux policy, so the enforcing kernel arguments alone are not a
 claim of userspace policy enforcement.
+
+### Development USB root console
+
+`tools/pico-live-usb.c` transfers the verified RAM-root payload and connects its
+interactive console. `--console` waits for the initial console marker without
+sending a root image. `--console --resume` attaches to an existing console after
+that one-time marker has already been consumed. Resume still requires the exact
+USB identity, serial and interface layout, and detaches no kernel driver. It
+sends no automatic shell command; verify the expected native boot UUID before
+continuing device actions. It does not restore a lost kernel or reset an
+incomplete shell command.
+
+Console input is forwarded in 512-byte batches, with USB output drained between
+batches. Large pastes previously allowed a blocking output transfer to prevent
+that drain and time out. Root-image transfers retain their larger batches.
+The regression test exercises a 37,469-byte paste against a peer with only a
+1 KiB feedback buffer: a single blocking send stalls, while the console loop
+transfers and receives the complete stream. Existing fragmented-handshake,
+partial-write, timeout, disconnect, SHA and symlink checks also pass.
+
+During the 2026-10-24 native test, the original client stopped during a large
+launch command. The revised client resumed the same boot, allowed the incomplete
+heredoc to be terminated, and delivered the complete hash-guarded launch. The
+camera/head/SteamVR test subsequently completed. Its later full export was
+incomplete before automatic stock return, so that attempt does not provide a
+complete frame-pacing acceptance record. Evidence is
+`output/pico-controller-integration-20261024-v4/`, including the client tests and
+native console/recovery receipts.
 
 ## Offline verification
 

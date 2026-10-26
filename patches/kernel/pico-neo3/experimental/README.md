@@ -1,4 +1,4 @@
-# Neo3 display experiments
+# Neo3 diagnostic patches
 
 These patches are retained for review and explicit diagnostic builds. They are
 not part of the default Neo3 kernel patch set: `tools/kernel-build.py` selects
@@ -18,3 +18,17 @@ use each image's retained build provenance when reproducing a result.
 
 Apply these GPL-2.0 kernel changes only to a separate diagnostic source copy,
 record both patch hashes, and revalidate the result on the target headset.
+
+## QCA6390 Bluetooth
+
+`0054-qca6390-tty.patch` backports the Linux v5.10 Qualcomm firmware helper and
+adds explicit QCA6390 TTY attachment to the Neo3 vendor UART driver. The patch
+header records upstream provenance; original copyright and GPL notices remain.
+It is independent of the display candidates above and is also excluded from
+normal kernel builds.
+
+Signed modules built from this patch read the physical controller's ROM version,
+download the authentic Hastings 2.0 patch/NVM into controller RAM and expose a
+BlueZ management adapter. Power restoration and unload pass. This is firmware
+initialization acceptance, not pairing, audio, coexistence or persistent system
+integration. See [native wireless bring-up](../../../../docs/pico-native-wireless.md).

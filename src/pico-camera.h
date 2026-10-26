@@ -47,6 +47,41 @@ struct pico_camera_frame_set {
     int64_t first_ns, last_ns;
 };
 
+struct pico_camera_frame_sequence {
+    uint64_t frame_number;
+    unsigned mask;
+    bool synchronized;
+};
+
+/* A zero-initialized, single-owner four-camera sequence may join mid-set.
+ * Skip incomplete startup sets until the first complete set; thereafter reject
+ * missing, duplicate or regressing frames. Returns 0 while collecting, 1 for a
+ * complete set, -1 on error (state unchanged). Owns no pixels and establishes
+ * neither timestamp skew nor pixel lifetime. Reset only for a new stream. */
+int pico_camera_frame_sequence_push(struct pico_camera_frame_sequence *sequence,
+                                     unsigned camera, uint64_t frame_number);
+
+#define PICO_CAMERA_FRAME_WINDOW_CAPACITY 2
+struct pico_camera_frame_window {
+    uint64_t numbers[PICO_CAMERA_FRAME_WINDOW_CAPACITY];
+    unsigned masks[PICO_CAMERA_FRAME_WINDOW_CAPACITY];
+    uint64_t camera_numbers[4], published_number;
+    unsigned seen;
+    bool published;
+};
+
+/* Zero-initialized, single-owner metadata for two independently drained rigs. Reserve a
+ * slot, copy that camera's pixels into caller-owned storage, then take all ready
+ * slots in frame order before pushing again. Only complete four-camera sets
+ * are released; an observed per-camera gap, duplicate or regression is refused.
+ * Returns 0 on reserve, -1 on refusal, preserving state and slot on refusal.
+ * Owns no pixels and establishes neither timestamp skew nor pixel lifetime. */
+int pico_camera_frame_window_push(struct pico_camera_frame_window *window,
+                                   unsigned camera, uint64_t frame_number, unsigned *slot);
+/* 1 = oldest complete slot released, 0 = waiting, -1 = invalid arguments.
+ * The slot remains valid until the next push. Reset only for a new stream. */
+int pico_camera_frame_window_take(struct pico_camera_frame_window *window, unsigned *slot);
+
 /* Require two or four complete head images in the explicitly configured camera
  * order, within the selected skew (at most stock's 100 us bound). No missing
  * camera, zero capture time or controller frame is admitted. All frames must

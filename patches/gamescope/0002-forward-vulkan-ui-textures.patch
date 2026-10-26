@@ -1,0 +1,214 @@
+--- a/src/backend.h
++++ b/src/backend.h
+@@ -22,6 +22,7 @@
+ struct wlr_dmabuf_attributes;
+ 
+ struct FrameInfo_t;
++class CVulkanTexture;
+ 
+ extern bool steamMode;
+ 
+@@ -400,7 +401,7 @@
+         virtual void NotifyPhysicalInput( InputType eInputType ) = 0;
+ 
+         virtual bool SupportsVROverlayForwarding() = 0;
+-        virtual void ForwardFramebuffer( std::shared_ptr<IBackendPlane> &pPlane, IBackendFb *pFramebuffer, const void *pData ) = 0;
++        virtual bool ForwardTexture( std::shared_ptr<IBackendPlane> &pPlane, const Rc<CVulkanTexture> &pTexture, const void *pData ) = 0;
+ 
+         virtual bool NewlyInitted() = 0;
+ 
+@@ -437,7 +438,7 @@
+         virtual void NotifyPhysicalInput( InputType eInputType ) override {}
+ 
+         virtual bool SupportsVROverlayForwarding() override { return false; }
+-        virtual void ForwardFramebuffer( std::shared_ptr<IBackendPlane> &pPlane, IBackendFb *pFramebuffer, const void *pData ) override {}
++        virtual bool ForwardTexture( std::shared_ptr<IBackendPlane> &pPlane, const Rc<CVulkanTexture> &pTexture, const void *pData ) override { return false; }
+ 
+         virtual bool NewlyInitted() override { return false; }
+ 
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -3064,14 +3064,9 @@
+ 				if ( !lastCommit )
+ 					continue;
+ 
+-                gamescope::IBackendFb* pFb = lastCommit->vulkanTex->GetBackendFb();
+-				if ( !pFb )
+-					continue;
+-
+ 				const uint64_t ulOverlayHandle = *w->oulTargetVROverlay;
+-				GetBackend()->ForwardFramebuffer( w->pForwarderPlane, pFb, &ulOverlayHandle );
+-
+-				w->bNeedsForwarding = false;
++				if ( GetBackend()->ForwardTexture( w->pForwarderPlane, lastCommit->vulkanTex, &ulOverlayHandle ) )
++					w->bNeedsForwarding = false;
+ 			}
+ 		}
+ 	}
+--- a/src/Backends/OpenVRBackend.cpp
++++ b/src/Backends/OpenVRBackend.cpp
+@@ -282,7 +282,8 @@
+         void Present( std::optional<OpenVRPlaneState> oState );
+         void Present( const FrameInfo_t::Layer_t *pLayer );
+ 
+-        void ForwardFramebuffer( COpenVRFb *pFb );
++        bool ForwardFramebuffer( COpenVRFb *pFb );
++        bool ForwardTexture( const Rc<CVulkanTexture> &pTexture );
+ 
+         vr::VROverlayHandle_t GetOverlay() const { return m_hOverlay; }
+         vr::VROverlayHandle_t GetOverlayThumbnail() const { return m_hOverlayThumbnail; }
+@@ -315,6 +316,8 @@
+         std::mutex m_mutFbIds;
+         Rc<COpenVRFb> m_pQueuedFbId;
+         Rc<COpenVRFb> m_pVisibleFbId;
++        Rc<CVulkanTexture> m_pQueuedTexture;
++        Rc<CVulkanTexture> m_pVisibleTexture;
+     };
+ 
+     class COpenVRConnector final : public CBaseBackendConnector, public INestedHints
+@@ -974,17 +977,9 @@
+             return true;
+         }
+         
+-        void ForwardFramebuffer( std::shared_ptr<IBackendPlane> &pPlane, IBackendFb *pFramebuffer, const void *pData ) override
+-        {
+-            COpenVRFb *pVRFB = static_cast<COpenVRFb *>( pFramebuffer->EnsureImported() );
+-            if ( !pVRFB )
+-            {
+-                openvr_log.debugf( "ForwardFramebuffer: No FB!" );
+-                return;
+-            }
+-
++        bool ForwardTexture( std::shared_ptr<IBackendPlane> &pPlane, const Rc<CVulkanTexture> &pTexture, const void *pData ) override
++        {
+             vr::VROverlayHandle_t hOverlay = static_cast<vr::VROverlayHandle_t>( *reinterpret_cast<const uint64_t*>( pData ) );
+-            openvr_log.debugf( "Forwarding for overlay: %lx", (unsigned long)hOverlay );
+ 
+             if ( !pPlane )
+             {
+@@ -996,7 +991,15 @@
+             std::shared_ptr<COpenVRPlane> pOpenVRPlane = std::static_pointer_cast<COpenVRPlane>( pPlane );
+             assert( pOpenVRPlane->GetOverlay() == hOverlay );
+ 
+-            pOpenVRPlane->ForwardFramebuffer( pVRFB );
++            if ( UsesModifiers() )
++            {
++                auto *fb = pTexture->GetBackendFb();
++                auto *imported = fb ? static_cast<COpenVRFb *>( fb->EnsureImported() ) : nullptr;
++                if ( !imported || !pOpenVRPlane->ForwardFramebuffer( imported ) )
++                    return false;
++            }
++            else if ( !pOpenVRPlane->ForwardTexture( pTexture ) )
++                return false;
+             {
+                 std::scoped_lock lock{ m_mutForwarderPlanes };
+                 if ( !Algorithm::Contains( m_pForwarderPlanesInFlight, pOpenVRPlane ) )
+@@ -1004,6 +1007,7 @@
+                     m_pForwarderPlanesInFlight.emplace_back( std::move( pOpenVRPlane ) );
+                 }
+             }
++            return true;
+         }
+ 
+         vr::IVRIPCResourceManagerClient *GetIPCResourceManager()
+@@ -2460,17 +2464,44 @@
+         }
+     }
+ 
+-    void COpenVRPlane::ForwardFramebuffer( COpenVRFb *pFb )
++    bool COpenVRPlane::ForwardFramebuffer( COpenVRFb *pFb )
+     {
+         vr::SharedTextureHandle_t ulHandle = pFb->GetSharedTextureHandle();
+ 
+         vr::Texture_t texture = { (void *)&ulHandle, vr::TextureType_SharedTextureHandle, vr::ColorSpace_Gamma };
+-        vr::VROverlay()->SetOverlayTexture( m_hOverlay, &texture );
++        if ( vr::VROverlay()->SetOverlayTexture( m_hOverlay, &texture ) != vr::VROverlayError_None )
++            return false;
+ 
+         {
+             std::scoped_lock lock{ m_mutFbIds };
+             m_pQueuedFbId = pFb;
+         }
++        return true;
++    }
++
++    bool COpenVRPlane::ForwardTexture( const Rc<CVulkanTexture> &pTexture )
++    {
++        vr::VRVulkanTextureData_t data =
++        {
++            .m_nImage            = (uint64_t)(uintptr_t)pTexture->vkImage(),
++            .m_pDevice           = g_device.device(),
++            .m_pPhysicalDevice   = g_device.physDev(),
++            .m_pInstance         = g_device.instance(),
++            .m_pQueue            = g_device.queue(),
++            .m_nQueueFamilyIndex = g_device.queueFamily(),
++            .m_nWidth            = pTexture->width(),
++            .m_nHeight           = pTexture->height(),
++            .m_nFormat           = pTexture->format(),
++            .m_nSampleCount      = 1,
++        };
++        vr::Texture_t texture = { &data, vr::TextureType_Vulkan, vr::ColorSpace_Gamma };
++        if ( vr::VROverlay()->SetOverlayTexture( m_hOverlay, &texture ) != vr::VROverlayError_None )
++            return false;
++        std::scoped_lock lock{ m_mutFbIds };
++        if ( !m_pVisibleTexture && !m_pQueuedTexture )
++            openvr_log.infof( "Vulkan forwarding active for overlay %llx", (unsigned long long)m_hOverlay );
++        m_pQueuedTexture = pTexture;
++        return true;
+     }
+ 
+     void COpenVRPlane::OnPageFlip()
+@@ -2484,6 +2515,11 @@
+             {
+                 m_pVisibleFbId = std::move( m_pQueuedFbId );
+                 m_pQueuedFbId = nullptr;
++            }
++            if ( m_pQueuedTexture )
++            {
++                m_pVisibleTexture = std::move( m_pQueuedTexture );
++                m_pQueuedTexture = nullptr;
+             }
+         }
+     }
+--- a/src/Backends/DeferredBackend.h
++++ b/src/Backends/DeferredBackend.h
+@@ -342,13 +342,14 @@
+             // Doesn't need to be 'initted' for this check.
+             return m_pChild->SupportsVROverlayForwarding();
+         }
+-        virtual void ForwardFramebuffer( std::shared_ptr<IBackendPlane> &pPlane, IBackendFb *pFramebuffer, const void *pData ) override
+-        {
+-            {
+-                std::shared_lock lock{ m_mutInit };
+-                if ( m_bInittedChild )
+-                    return m_pChild->ForwardFramebuffer( pPlane, pFramebuffer, pData );
+-            }
++        virtual bool ForwardTexture( std::shared_ptr<IBackendPlane> &pPlane, const Rc<CVulkanTexture> &pTexture, const void *pData ) override
++        {
++            {
++                std::shared_lock lock{ m_mutInit };
++                if ( m_bInittedChild )
++                    return m_pChild->ForwardTexture( pPlane, pTexture, pData );
++            }
++            return false;
+         }
+ 
+         bool IsChildInitted()
+--- a/src/rendervulkan.cpp
++++ b/src/rendervulkan.cpp
+@@ -3679,6 +3679,7 @@
+ 
+ 	CVulkanTexture::createFlags texCreateFlags;
+ 	texCreateFlags.bSampled = true;
++	texCreateFlags.bTransferSrc = GetBackend()->SupportsVROverlayForwarding() && !GetBackend()->UsesModifiers();
+ 
+ 	//fprintf(stderr, "pDMA->width: %d pDMA->height: %d pDMA->format: 0x%x pDMA->modifier: 0x%lx pDMA->n_planes: %d\n",
+ 	//	pDMA->width, pDMA->height, pDMA->format, pDMA->modifier, pDMA->n_planes);
+@@ -4811,6 +4812,7 @@
+ 	gamescope::OwningRc<CVulkanTexture> pTex = new CVulkanTexture();
+ 	CVulkanTexture::createFlags texCreateFlags;
+ 	texCreateFlags.bSampled = true;
++	texCreateFlags.bTransferSrc = GetBackend()->SupportsVROverlayForwarding() && !GetBackend()->UsesModifiers();
+ 	texCreateFlags.bTransferDst = true;
+ 	texCreateFlags.bFlippable = true;
+ 	if ( pTex->BInit( width, height, 1u, drmFormat, texCreateFlags, nullptr, 0, 0, nullptr, pBackendFb ) == false )

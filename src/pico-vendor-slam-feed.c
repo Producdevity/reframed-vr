@@ -10,7 +10,8 @@ _Static_assert(sizeof(struct pico_vendor_slam_image) == 0x48, "Vendor frame ABI"
 _Static_assert(offsetof(struct pico_vendor_slam_image, sof_ns) == 0x20, "Vendor frame time ABI");
 _Static_assert(offsetof(struct pico_vendor_slam_image, pixels) == 0x40, "Vendor frame pixels ABI");
 
-#define IMU_CAPACITY 32
+/* SSC can deliver matched accelerometer and gyroscope samples in separate bursts. */
+#define IMU_CAPACITY 256
 #define MAX_RETAINED 384
 #define PIXELS (PICO_VENDOR_SLAM_WIDTH * PICO_VENDOR_SLAM_HEIGHT)
 

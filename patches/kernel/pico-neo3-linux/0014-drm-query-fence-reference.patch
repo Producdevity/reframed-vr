@@ -1,0 +1,19 @@
+Subject: [Pico Linux] Release the query's separate owning fence reference
+
+Import the owning-reference correction from Linux 2093dea3def9d5bf3000697ae3b0ec36c43354e0
+("drm/syncobj: extend syncobj query ability v3", Chunming Zhou).
+The earlier b33b556ce59b fix balances iterator references only. Release the
+separately acquired fence before copy-back on both success and EFAULT.
+Keep the existing pad0 query ABI; the last-submitted extension is not needed.
+Upstream: https://github.com/torvalds/linux/commit/2093dea3def9d5bf3000697ae3b0ec36c43354e0
+
+--- a/drivers/gpu/drm/drm_syncobj.c
++++ b/drivers/gpu/drm/drm_syncobj.c
+@@ -1426,6 +1426,7 @@
+ 		} else {
+ 			point = 0;
+ 		}
++		dma_fence_put(fence);
+ 		ret = copy_to_user(&points[i], &point, sizeof(uint64_t));
+ 		ret = ret ? -EFAULT : 0;
+ 		if (ret)

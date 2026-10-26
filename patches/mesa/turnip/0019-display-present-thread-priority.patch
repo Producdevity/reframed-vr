@@ -1,0 +1,50 @@
+From: Producdevity
+Subject: [PATCH] wsi/display: opt in to priority after completed presentation
+
+Request RR/2 once per ordinary presentation-wait caller, after its first
+completed nonzero present and after releasing the wait mutex. Leave startup
+GPU submissions, other policies, affinity and resource limits unchanged.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -3459,6 +3459,31 @@
+    return chain->status;
+ }
+ 
++static void
++wsi_display_present_thread_priority(void)
++{
++#ifdef __linux__
++   static _Thread_local bool attempted = false;
++   if (attempted)
++      return;
++   attempted = true;
++   const char *option = getenv("MESA_VK_WSI_PRESENT_THREAD_RT");
++   if (!option || strcmp(option, "1"))
++      return;
++   int saved_errno = errno;
++   int policy = sched_getscheduler(0);
++   int error = policy < 0 ? errno : 0;
++   if (policy == SCHED_OTHER) {
++      struct sched_param param = { .sched_priority = 2 };
++      if (sched_setscheduler(0, SCHED_RR | SCHED_RESET_ON_FORK, &param))
++         error = errno;
++   }
++   if (error)
++      fprintf(stderr, "WSI present-thread priority unavailable: %s\n", strerror(error));
++   errno = saved_errno;
++#endif
++}
++
+ static VkResult
+ wsi_display_wait_for_present(struct wsi_swapchain *wsi_chain,
+                              uint64_t waitValue,
+@@ -3502,6 +3527,8 @@
+    uint64_t completed = chain->present_id;
+    mtx_unlock(&chain->present_id_mutex);
+    wsi_present_trace("wait_end", chain, NULL, waitValue, completed, result);
++   if (result == VK_SUCCESS && completed > 0)
++      wsi_display_present_thread_priority();
+    return result;
+ }
+ 

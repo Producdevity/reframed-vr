@@ -1,0 +1,107 @@
+From: Producdevity
+Subject: [PATCH] openvr: copy forwarded overlays into presentation images
+
+OpenVR requires submitted Vulkan images in TRANSFER_SRC_OPTIMAL. Surface
+textures use GENERAL and may be imported from another queue family, so keep
+their existing sampling/export lifecycle and copy into local output images.
+Reuse up to four images per plane and retain the queued/visible pair through
+page flips, following the composite-target ownership pattern.
+
+--- a/src/Backends/OpenVRBackend.cpp
++++ b/src/Backends/OpenVRBackend.cpp
+@@ -284,6 +284,7 @@
+ 
+         bool ForwardFramebuffer( COpenVRFb *pFb );
+         bool ForwardTexture( const Rc<CVulkanTexture> &pTexture );
++        Rc<CVulkanTexture> GetForwardTarget( const Rc<CVulkanTexture> &pTexture );
+ 
+         vr::VROverlayHandle_t GetOverlay() const { return m_hOverlay; }
+         vr::VROverlayHandle_t GetOverlayThumbnail() const { return m_hOverlayThumbnail; }
+@@ -318,6 +319,8 @@
+         Rc<COpenVRFb> m_pVisibleFbId;
+         Rc<CVulkanTexture> m_pQueuedTexture;
+         Rc<CVulkanTexture> m_pVisibleTexture;
++        std::vector<OwningRc<CVulkanTexture>> m_pForwardImages;
++        size_t m_uNextForwardImage = 0;
+     };
+ 
+     class COpenVRConnector final : public CBaseBackendConnector, public INestedHints
+@@ -2479,19 +2482,63 @@
+         return true;
+     }
+ 
++    Rc<CVulkanTexture> COpenVRPlane::GetForwardTarget( const Rc<CVulkanTexture> &pTexture )
++    {
++        if ( !m_pForwardImages.empty() &&
++             ( m_pForwardImages[0]->width() != pTexture->width() ||
++               m_pForwardImages[0]->height() != pTexture->height() ||
++               m_pForwardImages[0]->drmFormat() != pTexture->drmFormat() ) )
++        {
++            m_pForwardImages.clear();
++            m_uNextForwardImage = 0;
++        }
++
++        for ( size_t i = 0; i < m_pForwardImages.size(); ++i )
++        {
++            auto &pImage = m_pForwardImages[( m_uNextForwardImage + i ) % m_pForwardImages.size()];
++            if ( !pImage->IsInUse() )
++            {
++                m_uNextForwardImage = ( m_uNextForwardImage + i + 1 ) % m_pForwardImages.size();
++                return pImage;
++            }
++        }
++        if ( m_pForwardImages.size() >= 4 )
++            return nullptr;
++
++        OwningRc<CVulkanTexture> pImage = new CVulkanTexture();
++        CVulkanTexture::createFlags flags;
++        flags.bSampled = true;
++        flags.bTransferSrc = true;
++        flags.bTransferDst = true;
++        flags.bOutputImage = true;
++        if ( !pImage->BInit( pTexture->width(), pTexture->height(), 1u, pTexture->drmFormat(), flags ) )
++            return nullptr;
++        m_pForwardImages.push_back( std::move( pImage ) );
++        return m_pForwardImages.back();
++    }
++
+     bool COpenVRPlane::ForwardTexture( const Rc<CVulkanTexture> &pTexture )
+     {
++        Rc<CVulkanTexture> pForward = GetForwardTarget( pTexture );
++        if ( !pForward )
++            return false;
++
++        // SteamVR requires TRANSFER_SRC_OPTIMAL; surface textures remain GENERAL for sampling.
++        auto cmdBuffer = g_device.commandBuffer();
++        cmdBuffer->copyImage( pTexture, pForward );
++        vulkan_wait( g_device.submit( std::move( cmdBuffer ) ), true );
++
+         vr::VRVulkanTextureData_t data =
+         {
+-            .m_nImage            = (uint64_t)(uintptr_t)pTexture->vkImage(),
++            .m_nImage            = (uint64_t)(uintptr_t)pForward->vkImage(),
+             .m_pDevice           = g_device.device(),
+             .m_pPhysicalDevice   = g_device.physDev(),
+             .m_pInstance         = g_device.instance(),
+             .m_pQueue            = g_device.queue(),
+             .m_nQueueFamilyIndex = g_device.queueFamily(),
+-            .m_nWidth            = pTexture->width(),
+-            .m_nHeight           = pTexture->height(),
+-            .m_nFormat           = pTexture->format(),
++            .m_nWidth            = pForward->width(),
++            .m_nHeight           = pForward->height(),
++            .m_nFormat           = pForward->format(),
+             .m_nSampleCount      = 1,
+         };
+         vr::Texture_t texture = { &data, vr::TextureType_Vulkan, vr::ColorSpace_Gamma };
+@@ -2499,8 +2546,8 @@
+             return false;
+         std::scoped_lock lock{ m_mutFbIds };
+         if ( !m_pVisibleTexture && !m_pQueuedTexture )
+-            openvr_log.infof( "Vulkan forwarding active for overlay %llx", (unsigned long long)m_hOverlay );
+-        m_pQueuedTexture = pTexture;
++            openvr_log.infof( "Vulkan forwarding via presentation copy active for overlay %llx", (unsigned long long)m_hOverlay );
++        m_pQueuedTexture = pForward;
+         return true;
+     }
+ 

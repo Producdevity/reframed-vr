@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import signal
 import struct
+import subprocess
 import time
 import uuid
 import zlib
@@ -206,11 +207,68 @@ def capture():
     return native, state, layout
 
 
+def capture_paused(unit):
+    if not re.fullmatch(r'pico-steamvr-compositor-[a-z0-9-]+(?:\.service)?', unit):
+        raise ValueError('Expected an explicitly selected Pico compositor unit')
+
+    def command(arguments, check=True):
+        return subprocess.run(arguments, capture_output=True, text=True, check=check, timeout=5)
+
+    def identity():
+        result = command(['systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID'])
+        values = dict(line.split('=', 1) for line in result.stdout.splitlines())
+        if values.get('ActiveState') != 'active' or int(values.get('MainPID', '0')) <= 1:
+            raise ValueError('Selected compositor is not active')
+        return int(values['MainPID'])
+
+    pid = identity()
+    watchdog = 'pico-scanout-resume-' + uuid.uuid4().hex
+    resume = ['systemctl', 'kill', '--kill-whom=all', '--signal=CONT', unit]
+    command(['systemd-run', '--quiet', '--unit='+watchdog, '--on-active=3s',
+             '--timer-property=AccuracySec=10ms', '/usr/bin/systemctl',
+             'kill', '--kill-whom=all', '--signal=CONT', unit])
+
+    def require_waiting_watchdog():
+        # An elapsed timer can remain active after its service has run.
+        result = command(['systemctl', 'show', watchdog+'.timer', '-p', 'ActiveState',
+                          '-p', 'SubState', '-p', 'LastTriggerUSecMonotonic'])
+        values = dict(line.split('=', 1) for line in result.stdout.splitlines())
+        if (values.get('ActiveState') != 'active' or values.get('SubState') != 'waiting' or
+                values.get('LastTriggerUSecMonotonic') != '0'):
+            raise ValueError('Capture resume watchdog is not waiting or has already fired')
+
+    try:
+        require_waiting_watchdog()
+        command(['systemctl', 'kill', '--kill-whom=all', '--signal=STOP', unit])
+        paused = time.monotonic()
+        time.sleep(.1)
+        native, state, metadata = capture()
+        repeated, _, second = capture()
+        if native != repeated or metadata['active'] != second['active']:
+            raise ValueError('Framebuffer changed while the compositor was paused')
+        if identity() != pid:
+            raise ValueError('Compositor identity changed during capture')
+        require_waiting_watchdog()
+        metadata.update(stable_readback_verified=True, compositor_pause={
+            'unit': unit, 'main_pid': pid, 'resume_watchdog_seconds': 3,
+            'paused_at': paused, 'comparison_copy_started': second['copy_started'],
+            'comparison_copy_ended': second['copy_ended'],
+            'matching_readbacks': 2, 'sha256': hashlib.sha256(repeated).hexdigest()})
+        return native, state, metadata
+    finally:
+        continued = command(resume, check=False)
+        if continued.returncode == 0:
+            command(['systemctl', 'stop', watchdog+'.timer', watchdog+'.service'], check=False)
+        else:
+            raise RuntimeError('Compositor resume failed; independent resume watchdog remains armed')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--boot-serial', required=True)
     parser.add_argument('--boot-id', required=True)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--pause-compositor-unit', help='Briefly pause this Pico compositor and require two identical readbacks')
     args = parser.parse_args()
     if (os.getuid() != 0 or os.uname().sysname != 'Linux' or os.uname().machine != 'aarch64' or
             Path('/proc/1/comm').read_text().strip() != 'systemd' or
@@ -223,7 +281,8 @@ def main():
     if args.output.parent != Path('/run') or args.output.exists() or args.output.is_symlink():
         raise ValueError('Output must be a new private directory directly under /run')
     signal.alarm(20)
-    native, state, metadata = capture()
+    native, state, metadata = (capture_paused(args.pause_compositor_unit)
+                               if args.pause_compositor_unit is not None else capture())
     metadata.update(boot_id=args.boot_id, boot_serial=args.boot_serial)
     width, height = metadata['size']
     preview = bytearray()

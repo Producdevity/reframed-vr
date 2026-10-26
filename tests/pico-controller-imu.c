@@ -69,6 +69,7 @@ int main(int argc, char **argv)
             assert(!memcmp(p->gyroscope, gyro[slot], sizeof(p->gyroscope)));
             assert(!memcmp(p->acceleration, accel[slot], sizeof(p->acceleration)));
             assert(p->temperature == temperature[slot]);
+            assert(p->flags == raw[86 + slot]);
         }
         assert(out.count == count); ++checks;
     }

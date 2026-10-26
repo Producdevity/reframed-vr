@@ -1,0 +1,52 @@
+From: Producdevity
+Subject: [PATCH] wsi/display: opt in to event-thread realtime priority
+
+The page-flip event thread releases the next compositor frame. Allow verified
+Pico runtimes to request RR/2 only for this thread; leave default scheduling,
+affinity and resource limits unchanged. Report denied requests and continue.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -57,6 +57,7 @@
+ #include <unistd.h>
+ #ifdef __linux__
+ #include <sys/syscall.h>
++#include <sched.h>
+ #endif
+ #include <errno.h>
+ #include <string.h>
+@@ -2153,6 +2154,23 @@
+    .sequence_handler = wsi_display_sequence_handler,
+ };
+ 
++static int
++wsi_display_event_priority(void)
++{
++#ifdef __linux__
++   const char *option = getenv("MESA_VK_WSI_DISPLAY_EVENT_RT");
++   if (!option || strcmp(option, "1"))
++      return 0;
++   struct sched_param param = { .sched_priority = 2 };
++   int saved_errno = errno;
++   int error = sched_setscheduler(0, SCHED_RR | SCHED_RESET_ON_FORK, &param) ? errno : 0;
++   errno = saved_errno;
++   return error;
++#else
++   return 0;
++#endif
++}
++
+ static void *
+ wsi_display_wait_thread(void *data)
+ {
+@@ -2161,6 +2179,10 @@
+       .fd = wsi->fd,
+       .events = POLLIN
+    };
++
++   int priority_error = wsi_display_event_priority();
++   if (priority_error)
++      fprintf(stderr, "WSI display event priority unavailable: %s\n", strerror(priority_error));
+ 
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    for (;;) {

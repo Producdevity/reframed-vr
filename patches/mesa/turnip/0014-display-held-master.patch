@@ -1,0 +1,19 @@
+From: Reframed VR contributors
+Subject: [PATCH] wsi/display: recognize an already held DRM master
+
+Neo3's vendor kernel permits an unprivileged first opener to become master,
+but requires privilege for both DROP_MASTER and SET_MASTER. After the ignored
+drop failure during WSI initialization, the file is still master. Avoid a
+redundant SET_MASTER that would otherwise reject a usable display file.
+
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -1851,7 +1851,7 @@
+       return 0;
+ 
+    if (wsi->master_refcount++ == 0) {
+-      int ret = drmSetMaster(wsi->fd);
++      int ret = drmIsMaster(wsi->fd) ? 0 : drmSetMaster(wsi->fd);
+       if (ret != 0) {
+          wsi_display_debug("drm fd %d failed to re-set master: %s", wsi->fd, strerror(-errno));
+          wsi->master_refcount--;

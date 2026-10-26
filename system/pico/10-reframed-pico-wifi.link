@@ -1,0 +1,9 @@
+[Match]
+Driver=cnss_pci
+Path=platform-1c00000.qcom,pcie-pci-0000:01:00.0
+OriginalName=wlan* p2p* wifi-aware*
+
+[Link]
+# These vendor interfaces share a PCI path, so path-based naming collides.
+NamePolicy=
+MACAddressPolicy=none

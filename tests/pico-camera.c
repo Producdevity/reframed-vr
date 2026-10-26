@@ -7,6 +7,96 @@
 
 static void put32(uint8_t *p, uint32_t n) { for (unsigned i = 0; i < 4; ++i) p[i] = (uint8_t)(n >> (8*i)); }
 static void put64(uint8_t *p, uint64_t n) { for (unsigned i = 0; i < 8; ++i) p[i] = (uint8_t)(n >> (8*i)); }
+
+static unsigned window_orders;
+static void window_order(unsigned *order, unsigned count, unsigned used)
+{
+    if (count == 8) {
+        struct pico_camera_frame_window window = {0};
+        unsigned released = 0;
+        uint64_t stored[2][4] = {{0}};
+        for (unsigned i = 0; i < 8; ++i) {
+            unsigned camera = order[i] % 4, slot = 99;
+            uint64_t number = order[i] < 4 ? 1901 : 1903;
+            assert(pico_camera_frame_window_push(&window, camera, number, &slot) == 0);
+            assert(slot < 2);
+            stored[slot][camera] = number;
+            while (pico_camera_frame_window_take(&window, &slot) == 1) {
+                assert(window.published_number == (released ? 1903 : 1901));
+                for (unsigned c = 0; c < 4; ++c)
+                    assert(stored[slot][c] == window.published_number);
+                ++released;
+            }
+        }
+        assert(released == 2);
+        ++window_orders;
+        return;
+    }
+    for (unsigned i = 0; i < 8; ++i) {
+        if (used & (1u << i)) continue;
+        if (i >= 4 && !(used & (1u << (i - 4)))) continue;
+        order[count] = i;
+        window_order(order, count + 1, used | (1u << i));
+    }
+}
+
+static void frame_window(void)
+{
+    unsigned order[8], slot = 99;
+    window_order(order, 0, 0);
+    assert(window_orders == 2520);
+    struct pico_camera_frame_window window = {0};
+    assert(pico_camera_frame_window_push(&window, 2, 1901, &slot) == 0);
+    assert(pico_camera_frame_window_push(&window, 3, 1901, &slot) == 0);
+    assert(pico_camera_frame_window_push(&window, 3, 1903, &slot) == 0);
+    assert(pico_camera_frame_window_push(&window, 0, 1901, &slot) == 0);
+    assert(pico_camera_frame_window_push(&window, 1, 1901, &slot) == 0);
+    assert(pico_camera_frame_window_take(&window, &slot) == 1);
+    assert(window.published_number == 1901);
+    struct pico_camera_frame_window before = window;
+    slot = 99;
+    assert(pico_camera_frame_window_push(&window, 3, 1903, &slot) == -1);
+    assert(pico_camera_frame_window_push(&window, 0, 1901, &slot) == -1);
+    assert(pico_camera_frame_window_push(&window, 4, 1903, &slot) == -1);
+    assert(!memcmp(&window, &before, sizeof(window)) && slot == 99);
+    window = (struct pico_camera_frame_window){0};
+    assert(pico_camera_frame_window_push(&window, 0, 1, &slot) == 0);
+    before = window;
+    slot = 99;
+    assert(pico_camera_frame_window_push(&window, 1, 3, &slot) == -1);
+    assert(!memcmp(&window, &before, sizeof(window)) && slot == 99);
+    assert(pico_camera_frame_window_push(&window, 0, 3, &slot) == 0);
+    before = window;
+    slot = 99;
+    assert(pico_camera_frame_window_push(&window, 0, 5, &slot) == -1);
+    assert(!memcmp(&window, &before, sizeof(window)) && slot == 99);
+    window = (struct pico_camera_frame_window){0};
+    assert(pico_camera_frame_window_push(&window, 0, 3, &slot) == 0);
+    before = window;
+    assert(pico_camera_frame_window_push(&window, 1, 1, &slot) == -1);
+    assert(!memcmp(&window, &before, sizeof(window)));
+    assert(pico_camera_frame_window_push(NULL, 0, 1, &slot) == -1);
+    assert(pico_camera_frame_window_push(&window, 0, 5, NULL) == -1);
+    assert(pico_camera_frame_window_take(NULL, &slot) == -1);
+    assert(pico_camera_frame_window_take(&window, NULL) == -1);
+    window = (struct pico_camera_frame_window){0};
+    for (uint64_t number = 1; number < 129; number += 2) {
+        for (unsigned c = 0; c < 2; ++c)
+            assert(pico_camera_frame_window_push(&window, c, number, &slot) == 0);
+        for (unsigned c = 0; c < 2; ++c)
+            assert(pico_camera_frame_window_push(&window, c, number + 1, &slot) == 0);
+        for (unsigned c = 2; c < 4; ++c)
+            assert(pico_camera_frame_window_push(&window, c, number, &slot) == 0);
+        assert(pico_camera_frame_window_take(&window, &slot) == 1);
+        assert(window.published_number == number);
+        slot = 99;
+        assert(pico_camera_frame_window_take(&window, &slot) == 0 && slot == 99);
+        for (unsigned c = 2; c < 4; ++c)
+            assert(pico_camera_frame_window_push(&window, c, number + 1, &slot) == 0);
+        assert(pico_camera_frame_window_take(&window, &slot) == 1);
+        assert(window.published_number == number + 1);
+    }
+}
 static void fill(uint8_t *p)
 {
     memset(p, 0, 95);
@@ -76,10 +166,40 @@ static void metadata_tests(void)
     assert(!pico_camera_metadata_raw8(row, 83, &value));
     assert(!memcmp(&value, &saved, sizeof(value)));
 }
+static void sequence_tests(void)
+{
+    for (unsigned a=0;a<4;++a) for (unsigned b=0;b<4;++b)
+        for (unsigned c=0;c<4;++c) for (unsigned d=0;d<4;++d) {
+            if (a==b || a==c || a==d || b==c || b==d || c==d) continue;
+            unsigned order[]={a,b,c,d};
+            for (unsigned start=0;start<4;++start) {
+                struct pico_camera_frame_sequence sequence={0};
+                for (unsigned i=start;i<4;++i)
+                    assert(pico_camera_frame_sequence_push(&sequence,order[i],1228)==(start==0 && i==3));
+                for (uint64_t frame=1230;frame<=1234;frame+=2)
+                    for (unsigned i=0;i<4;++i)
+                        assert(pico_camera_frame_sequence_push(&sequence,order[i],frame)==(i==3));
+                struct pico_camera_frame_sequence before=sequence;
+                assert(pico_camera_frame_sequence_push(&sequence,0,1234)==-1);
+                assert(pico_camera_frame_sequence_push(&sequence,0,1232)==-1);
+                assert(pico_camera_frame_sequence_push(&sequence,4,1236)==-1);
+                assert(!memcmp(&sequence,&before,sizeof(sequence)));
+                assert(pico_camera_frame_sequence_push(&sequence,0,1236)==0);
+                before=sequence;
+                assert(pico_camera_frame_sequence_push(&sequence,0,1236)==-1);
+                assert(pico_camera_frame_sequence_push(&sequence,1,1238)==-1);
+                assert(!memcmp(&sequence,&before,sizeof(sequence)));
+            }
+        }
+    assert(pico_camera_frame_sequence_push(NULL,0,1)==-1);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--decode")) return decode();
+    frame_window();
     metadata_tests();
+    sequence_tests();
     uint8_t storage[98], *raw=storage+1; fill(raw);
     struct pico_camera_frame f;
     assert(pico_camera_decode(raw,95,&f));

@@ -1,1 +1,3 @@
 SUBSYSTEM=="drm", KERNEL=="card0", TAG+="systemd"
+SUBSYSTEM=="kgsl", KERNEL=="kgsl-3d0", GROUP="video", MODE="0660"
+SUBSYSTEM=="misc", KERNEL=="ion", GROUP="video", MODE="0660"

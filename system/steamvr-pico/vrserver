@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+library=/usr/lib64/libnm.so.0
+if [ ! -r "$library" ]; then
+    printf '%s\n' 'Pico SteamVR requires its system libnm for process-lifetime retention.' >&2
+    exit 1
+fi
+# GLib retains static strings registered by libnm across a later dlclose.
+export LD_PRELOAD="$library${LD_PRELOAD:+:$LD_PRELOAD}"
+exec /opt/reframed-vr/steamvr/bin/linuxarm64/vrserver "$@"

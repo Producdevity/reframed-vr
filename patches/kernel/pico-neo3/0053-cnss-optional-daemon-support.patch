@@ -1,0 +1,29 @@
+From: Producdevity <y.gherbi.dev@gmail.com>
+Subject: [PATCH] cnss2: allow native userspace without the Android daemon
+
+The stock device tree enables cnss-daemon-support. CNSS then advertises two
+WLFW clients, although a native Linux session has no Android cnss-daemon.
+Provide a boot parameter to select the kernel-only client arrangement.
+The default preserves the device tree policy.
+
+--- a/drivers/net/wireless/cnss2/main.c
++++ b/drivers/net/wireless/cnss2/main.c
+@@ -2372,11 +2372,16 @@
+ 	del_timer(&plat_priv->fw_boot_timer);
+ }
+ 
++static bool daemon_support = true;
++module_param(daemon_support, bool, 0444);
++MODULE_PARM_DESC(daemon_support,
++		"Honor device tree support for the Android CNSS daemon");
++
+ static void cnss_init_control_params(struct cnss_plat_data *plat_priv)
+ {
+ 	plat_priv->ctrl_params.quirks = CNSS_QUIRKS_DEFAULT;
+-	if (of_property_read_bool(plat_priv->plat_dev->dev.of_node,
+-				  "cnss-daemon-support"))
++	if (daemon_support && of_property_read_bool(
++		plat_priv->plat_dev->dev.of_node, "cnss-daemon-support"))
+ 		plat_priv->ctrl_params.quirks |= BIT(ENABLE_DAEMON_SUPPORT);
+ 
+ 	plat_priv->ctrl_params.mhi_timeout = CNSS_MHI_TIMEOUT_DEFAULT;

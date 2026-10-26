@@ -185,6 +185,68 @@ interrupts without vblank-fence timeouts. Both runs still average about 80
 completions/s. This is a startup correction, separate from patch 0013's timeout
 result fix, and it does not establish clean physical optics or a runtime winner.
 
+### Frame compositor counter timing
+
+Patch 0015 implements a process-scoped compatibility ABI for the retained Frame
+compositor. Its `vkGetSwapchainCounterEXT` call uses private counter `0x7ffffffd`
+and expects two `uint64_t` outputs: vblank sequence and CLOCK_MONOTONIC time in
+nanoseconds. Mesa 26.1.8 ignored the counter argument and returned success after
+writing only the sequence. The compositor's zero-initialized timestamp stayed
+zero, producing a vsync age equal to monotonic uptime.
+
+The contract is verified independently in Valve's retained official
+`deckard-mesa-linux-aarch64-26.3.0_devel+gite07916b4-5-aarch64` package. Its
+`wsi_GetSwapchainCounterEXT` compares the private value and calls
+`drmCrtcGetSequence(fd, crtc, out, out + 1)`. Package SHA-256 is
+`c30eb810cf537e839f5b7ff66b1088e3c29cf67e17bcbf44856b3ac38064b7cb`;
+the reference `libvulkan_freedreno.so` has SHA-256
+`6bed18a0a9d59fc0132766947f1c2657b50c4188776f718cfdf723cf8dd7b4ee`.
+This patch independently implements the observed Valve ABI; it does not import
+Frame optical calibration or add a public Vulkan enum.
+
+Set `MESA_VK_WSI_FRAME_COUNTER_TIMING=1` only for this compositor process.
+The private path returns both values from one real DRM query. Inactive display,
+query failure or a missing timestamp returns an error without changing output.
+Other unsupported counters are rejected. Public one-word vblank queries retain
+their existing behavior even with the option enabled; there is no change to
+query waits, GPU synchronization or connector timestamp caching.
+
+`tests/mesa-display-counter-tests.py` extracts the actual patched function and
+checks dispatch, failure output preservation and output bounds with ASan/UBSan.
+The original Mesa function fails the unsupported-counter control; a guard-only
+implementation fails the paired-output control. The complete ARM64 build passes
+this suite, the other eleven helper suites and all five Freedreno tests.
+Native Pico GPU interop and all four binary/timeline OPAQUE_FD buffer-sharing
+cases pass. Two corrected Facet captures match their reported kernel vblank
+timestamp within 9 microseconds in the sampled checks. Some client notifications
+remain delayed; this is not proof of sustained 120 FPS or clean physical optics.
+See the [full verification](pico-steamvr-verification.md#frame-counter-abi-and-pose-read-order).
+
+### Presentation completion tracing
+
+Patch 0016 adds opt-in `MESA_VK_WSI_PRESENT_TRACE=1` diagnostics for display
+queueing, atomic commits, page-flip completion and both phases of present waits.
+It also records counter-query arguments and whether the private paired path is
+enabled. Both query and successful-pair records identify the queried swapchain,
+including requests that fail or use an unsupported counter. A successful paired
+query records its sequence and DRM timestamp,
+allowing the compositor's last clock update to be correlated with those waits.
+Present IDs and counter sequences are separate namespaces even when their
+numeric values coincide. The extracted-function regression checks these trace
+arguments across two swapchains while retaining standard-query and failure-output
+assertions. Each line records monotonic time, thread, swapchain and image, plus
+event-specific IDs, details and result. It preserves `errno` and ignores
+write errors; wait and completion semantics are unchanged. Leave it disabled
+for normal operation. Enabled trace I/O adds overhead and is not a performance
+optimization.
+
+The isolated ARM64 build under
+`output/mesa/pico-present-trace-20261023-v1/` passes all twelve helper suites and
+five Freedreno tests. Its library SHA-256 is
+`85129536b1b05de22544f303a6799b5e63666f08491981aa449e52062998440b`.
+The native Pico combined trial retains 106,890 correlated events. See the
+[present-ID analysis](pico-steamvr-verification.md#present-id-correlation).
+
 ## Correction to earlier build evidence
 
 The September 10 `output/mesa/turnip-drm-v5/` driver compiled with
@@ -503,3 +565,126 @@ both WSI suites and five Freedreno tests pass. Native loading alongside the
 matched Monado and SSC packages passes, and the [updated roots](headset-root.md)
 contain the same validated driver. Recovery originals were rehashed; the
 missing `misc` backup, cold recovery and stock restoration gates remain open.
+
+## KGSL context priority
+
+Patch 0017 connects the existing Vulkan global-priority mapping to KGSL context
+creation when `TU_KGSL_CONTEXT_PRIORITIES=1` is explicitly selected for a kernel
+whose priority flags have been verified. Without that exact opt-in, the backend
+retains its single-priority path, advertises only MEDIUM, and sends no priority
+bits. An unknown kernel is not inferred to support the new path from its GPU name.
+The common internal priorities 0–3 map to kernel values 1, 4, 8 and 12.
+The kernel interprets a zero priority field as its default, so internal priority
+zero must not be encoded as zero. An ordinary medium-priority queue remains at
+kernel priority 8. Values outside the internal range are rejected before the
+context ioctl; failed creation does not publish a queue identity.
+
+The queue-family query advertises LOW, MEDIUM and HIGH through the existing
+common helper. Its existing `globalPriorityQuery` check rejects an unadvertised
+REALTIME request when that feature is enabled. Without the query feature, the
+existing common mapping can produce internal index zero. The extracted-function
+tests cover both cases, all advertised priorities, preserved context flags,
+invalid indices, the default/invalid-option fallback and ioctl failure under
+ASan/UBSan. This follows the
+[Vulkan queue-priority contract](https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html);
+priority is not a guarantee of processing time or presentation latency.
+
+A native Pico test verifies a compositor context at kernel priority 1/ring 0,
+with gamescope remaining at priority 8/ring 2. The private `TU_DEBUG=hiprio`
+setting is only a fallback when the application does not supply chained global
+priority information. The API request itself was not traced, so this is evidence
+for the observed kernel tiers, not a controlled HIGH-versus-MEDIUM API comparison.
+The default interop path passes all four cross-exec semaphore/buffer cases.
+Those hardware measurements predate the opt-in guard; the guarded mapping is
+unchanged, and the added fallback is verified by focused extracted-function tests.
+No kernel ring count is modified, and these KGSL observations do not establish
+DRM/MSM preemption support on another headset or kernel.
+
+The instrumented comparison and remaining failures are recorded in the
+[SteamVR verification notes](pico-steamvr-verification.md#kgsl-gpu-priority-path-2026-10-25).
+No realtime CPU launch policy or compositor priority override is made a default.
+
+The subsequent guarded-library test in
+`output/pico-camera-reorder-20261025-v1/` verifies the actual compositor opt-in
+and priority separation on the pinned Pico kernel, with all four default interop
+cases passing. The verification notes retain its exact library hash and limits.
+
+## Display-event thread scheduling
+
+Patch 0018 adds the Linux opt-in `MESA_VK_WSI_DISPLAY_EVENT_RT=1`. It requests
+RR/2 with reset-on-fork for Mesa's display-event thread before dispatch starts.
+The default path makes no scheduling request. A denied request logs its error
+and continues with the existing policy; it does not fail presentation. No
+affinity, render-thread policy or resource limit is changed by the library.
+
+The event thread handles page-flip completion, which releases the next frame.
+An exact-TID Pico comparison with render RR/2 fixed reduces recorded frame drops
+from 18/9 in the normal-policy windows to 2/0 in the RR/2 windows. These are
+overlapping OpenVR history snapshots, not disjoint display cohorts or a photon
+latency measurement. See the [verification notes](pico-steamvr-verification.md#display-event-thread-delay-2026-10-25)
+for the corresponding DRM sequence gaps and remaining misses.
+
+The compositor service must permit this request. The original diagnostic's
+`RestrictRealtime=yes` and zero `LimitRTPRIO` deny it, as a native test confirms.
+The library does not bypass those settings. Sanitizer tests exercise the actual
+helper with modeled scheduling calls, including absent/invalid opt-ins and
+permission failures. Build and artifact checks bind that helper to its evidence.
+
+The verified startup profile uses systemd `User=vr`, `LimitRTPRIO=2`,
+`RestrictRealtime=no` and the existing `LimitRTTIME=100ms`. It grants no
+capabilities. The owned session selects render RR/2 before starting the Steam UI;
+that render-thread choice is separate from this library option. The full native
+test in `output/pico-wsi-event-startup-20261025-v3/` verifies event RR/2 at startup,
+all four default interop cases, Steam rendering and camera/head tracking. Rare
+missed frames remain; no launch setting is made a default by this patch.
+
+Patch 0019 adds `MESA_VK_WSI_PRESENT_THREAD_RT=1` for the presentation-wait caller.
+After its first successful, nonzero present, and outside the wait mutex, an
+ordinary SCHED_OTHER caller requests RR/2 once. Other scheduling policies are
+retained. Timeout, semaphore/condition errors and zero completed IDs do not
+activate it; a denied scheduling request preserves the presentation result.
+Configuration is read once per thread after that first completion.
+
+This replaces the diagnostic's external render-TID priority setter. Applying the
+same policy at the first GPU submission was rejected after hardware exposed a
+startup CPU-watchdog timeout; that implementation is retained only as ignored
+evidence. The completed-present version finishes a full native SteamVR/camera
+run with the existing 100 ms watchdog. Its render readback is RR/2 without the
+reset-on-fork bit, despite requesting that bit; continued preservation of the bit
+is not established. The service ceiling remains 2 and no capabilities are added.
+The instrumented run still has one overdue age query, so this is not a complete
+frame-pacing acceptance result.
+
+A later cold run still exhausts the 100 ms real-time CPU watchdog while creating
+a dashboard shader, after presentation has begun. Completing the first present
+does not ensure that startup compilation is over. Patch 0020 therefore adds
+`MESA_VK_WSI_PRESENT_THREAD_NICE=1` as an ordinary SCHED_OTHER nice −20 alternative.
+It activates at the same completed-present boundary, once per thread and outside
+the wait mutex. Setting both priority options to `1` rejects the request without
+changing policy or niceness. Other scheduling policies, affinity, resource limits
+and presentation results are preserved; both modes remain disabled by default.
+The caller needs permission to request nice −20, such as the diagnostic service's
+existing `LimitNICE=-20`. This option does not disable or increase its watchdog.
+
+Ordinary mode alone is not a watchdog fix on this vendor kernel. The version-2
+pool capture verifies SCHED_OTHER/nice −20 at startup and scheduler boundaries,
+but the kernel still reports a hard RT-time watchdog kill during GPU submission.
+KGSL can temporarily promote the caller to FIFO internally. Its restored CFS
+sleepers miss the RT-class-only timeout reset, allowing accounting to survive
+blocking sleeps. The option remains an explicit scheduling comparison; the
+kernel wake-accounting correction requires separate validation. Pico Linux patch
+0015 passes native blocking-wake and nonblocking enforcement controls; its first
+combined run retains the compositor but stops on a camera sequence gap before
+steady timing windows. It does not establish complete pacing acceptance.
+
+The later post-dashboard comparison keeps ordinary nice −20 through startup,
+then selects RR/2 only after the owning session verifies the Steam dashboard,
+live tracking and scanout. The maintained opt-in helper
+[`pico-steamvr-render-priority.py`](../tools/pico-steamvr-render-priority.py)
+checks that session's recent private readiness receipt, native boot and live
+compositor identity before applying the bounded policy. It preserves the
+100 ms watchdog, resource ceilings, affinity and niceness, then restores the
+original policy. It installs no default policy. Two matched native comparisons
+reduce missed frames substantially in their RR windows; rare misses and optical
+controller acquisition remain open. See the post-dashboard section in
+[`pico-steamvr-verification.md`](pico-steamvr-verification.md).

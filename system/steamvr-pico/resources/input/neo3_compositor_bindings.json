@@ -1,0 +1,277 @@
+{
+  "controller_type": "reframed_pico_neo3",
+  "name": "Neo3 digital dashboard controls",
+  "description": "Digital buttons and touches; analog axes, haptics and tracked controller poses are not yet available.",
+  "bindings": {
+    "/actions/system": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/system",
+          "mode": "complex_button",
+          "inputs": {
+            "single": {
+              "output": "/actions/system/in/toggledashboard"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/system",
+          "mode": "complex_button",
+          "inputs": {
+            "single": {
+              "output": "/actions/system/in/toggledashboard"
+            }
+          }
+        }
+      ]
+    },
+    "/actions/lasermouse": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/leftclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/middleclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/joystick",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/rightclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/x",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/home"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/y",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/back"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/application_menu",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/back"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/leftclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/middleclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/joystick",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/rightclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/home"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/back"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/application_menu",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse/in/back"
+            }
+          }
+        }
+      ],
+      "poses": [
+        {
+          "path": "/user/hand/left/pose/tip",
+          "output": "/actions/lasermouse/in/pointer"
+        },
+        {
+          "path": "/user/hand/right/pose/tip",
+          "output": "/actions/lasermouse/in/pointer"
+        }
+      ]
+    },
+    "/actions/lasermouse_secondary": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse_secondary/in/switchlaserhand"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/lasermouse_secondary/in/switchlaserhand"
+            }
+          }
+        }
+      ]
+    },
+    "/actions/dualanalog": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/dualanalog/in/leftclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/joystick",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/dualanalog/in/leftclick"
+            },
+            "touch": {
+              "output": "/actions/dualanalog/in/lefttouch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/dualanalog/in/modeswitch1"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/dualanalog/in/rightclick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/joystick",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/dualanalog/in/rightclick"
+            },
+            "touch": {
+              "output": "/actions/dualanalog/in/righttouch"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/dualanalog/in/modeswitch2"
+            }
+          }
+        }
+      ]
+    },
+    "/actions/roomsetup": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/roomsetup/in/accept"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/application_menu",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/roomsetup/in/back"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/roomsetup/in/accept"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/application_menu",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/roomsetup/in/back"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

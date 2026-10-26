@@ -14,7 +14,7 @@ volume="${KERNEL_BUILD_VOLUME:-reframed-vr-$profile-kernel}"
 case "$memory" in 4g|6g) ;; *) echo "KERNEL_BUILD_MEMORY must be 4g or 6g" >&2; exit 1 ;; esac
 case "$profile" in quest3|pico-neo3) ;; *) echo "Unknown kernel profile" >&2; exit 1 ;; esac
 args=("$profile")
-case "$variant" in vendor) ;; linux-userspace) args+=(--linux-userspace) ;; qemu-abi) args+=(--qemu-abi) ;; ram-usb) [[ "$profile" == quest3 ]] || { echo "RAM USB requires quest3" >&2; exit 1; }; args+=(--ram-usb) ;; *) echo "Unknown kernel variant" >&2; exit 1 ;; esac
+case "$variant" in vendor) ;; linux-userspace) args+=(--linux-userspace) ;; qemu-abi) args+=(--linux-userspace --qemu-abi) ;; ram-usb) [[ "$profile" == quest3 ]] || { echo "RAM USB requires quest3" >&2; exit 1; }; args+=(--ram-usb) ;; *) echo "Unknown kernel variant" >&2; exit 1 ;; esac
 case "$mode" in build) ;; configure) args+=(--configure-only) ;; *) echo "Unknown kernel mode" >&2; exit 1 ;; esac
 [[ ! -e "$out" ]] || { echo "Output exists: $out; choose a new report directory" >&2; exit 1; }
 image=$("$engine" image inspect --format '{{.Id}}' localhost/reframed-vr:kernel)

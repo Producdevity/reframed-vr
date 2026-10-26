@@ -1,0 +1,148 @@
+From: Producdevity
+Subject: [PATCH] turnip/kgsl: reuse DRM queue completion for empty submits
+
+Retain one CLOEXEC reference to an already exported pure GPU completion in
+DRM sync mode. Empty submissions still merge every explicit wait, but may
+reuse this reference instead of exporting the same KGSL timestamp again.
+Invalidate on every successful GPU submission, including zero-signal and
+sparse submissions. Optional cache allocation failure preserves submission
+results. Move private FD completions without another duplicate, and retry
+a failed cached merge once using its original timestamp dependency. Native
+non-DRM synchronization remains unchanged.
+
+--- a/src/freedreno/vulkan/tu_knl_kgsl.cc
++++ b/src/freedreno/vulkan/tu_knl_kgsl.cc
+@@ -60,9 +60,19 @@
+    return option && !strcmp(option, "1") ? 4 : 1;
+ }
+ 
++static void
++kgsl_completion_cache_clear(struct tu_queue *queue)
++{
++   if (queue->kgsl_completion_fd >= 0)
++      close(queue->kgsl_completion_fd);
++   queue->kgsl_completion_fd = -1;
++}
++
+ static int
+ kgsl_submitqueue_new(struct tu_device *dev, struct tu_queue *queue)
+ {
++   queue->kgsl_completion_fd = -1;
++
+    struct kgsl_drawctxt_create req = {
+       .flags = KGSL_CONTEXT_SAVE_GMEM |
+               KGSL_CONTEXT_NO_GMEM_ALLOC |
+@@ -89,6 +99,8 @@
+ static void
+ kgsl_submitqueue_close(struct tu_device *dev, struct tu_queue *queue)
+ {
++   kgsl_completion_cache_clear(queue);
++
+    struct kgsl_drawctxt_destroy req = {
+       .drawctxt_id = queue->msm_queue_id,
+    };
+@@ -1424,10 +1436,34 @@
+          };
+ 
+       wait_semaphores[wait_count] = &last_submit_sync;
++#ifdef HAVE_LIBDRM
++      bool used_completion_cache = false;
++      struct kgsl_syncobj cached_submit_sync;
++      if (signal_count && queue->device->physical_device->has_kgsl_drm_sync &&
++          last_submit_sync.state == KGSL_SYNCOBJ_STATE_TS &&
++          queue->kgsl_completion_fd >= 0 &&
++          queue->kgsl_completion_timestamp == last_submit_sync.timestamp) {
++         cached_submit_sync = (struct kgsl_syncobj) {
++            .state = KGSL_SYNCOBJ_STATE_FD,
++            .fd = queue->kgsl_completion_fd,
++         };
++         /* The merge borrows its inputs; only the queue owns this FD. */
++         wait_semaphores[wait_count] = &cached_submit_sync;
++         used_completion_cache = true;
++      }
++#endif
+ 
+       struct kgsl_syncobj wait_sync;
+       VkResult result = kgsl_syncobj_merge(wait_semaphores, wait_count + 1,
+                                            &wait_sync);
++#ifdef HAVE_LIBDRM
++      if (result != VK_SUCCESS && used_completion_cache) {
++         kgsl_completion_cache_clear(queue);
++         wait_semaphores[wait_count] = &last_submit_sync;
++         result = kgsl_syncobj_merge(wait_semaphores, wait_count + 1,
++                                     &wait_sync);
++      }
++#endif
+       if (result != VK_SUCCESS)
+          return result;
+ 
+@@ -1668,6 +1704,10 @@
+       goto fail_submit;
+    }
+ 
++#ifdef HAVE_LIBDRM
++   if (queue->device->physical_device->has_kgsl_drm_sync)
++      kgsl_completion_cache_clear(queue);
++#endif
+    p_atomic_set(&queue->fence, timestamp);
+ 
+    for (uint32_t i = 0; i < signal_count; i++) {
+@@ -1701,6 +1741,24 @@
+ }
+ 
+ #ifdef HAVE_LIBDRM
++static void
++kgsl_completion_cache_store(struct tu_queue *queue,
++                            const struct kgsl_syncobj *completion, int fd)
++{
++   if (completion->state != KGSL_SYNCOBJ_STATE_TS ||
++       completion->queue != queue ||
++       completion->timestamp != (uint32_t) queue->fence)
++      return;
++
++   int cached_fd = os_dupfd_cloexec(fd);
++   if (cached_fd < 0)
++      return;
++
++   kgsl_completion_cache_clear(queue);
++   queue->kgsl_completion_fd = cached_fd;
++   queue->kgsl_completion_timestamp = completion->timestamp;
++}
++
+ static VkResult
+ kgsl_queue_submit_drm(struct tu_queue *queue, void *submit,
+                       struct vk_sync_wait *waits, uint32_t wait_count,
+@@ -1766,7 +1824,12 @@
+    if (result != VK_SUCCESS || !signal_count)
+       goto finish;
+ 
+-   result = kgsl_syncobj_export(&completion.syncobj, &completion_fd);
++   if (completion.syncobj.state == KGSL_SYNCOBJ_STATE_FD) {
++      completion_fd = completion.syncobj.fd;
++      kgsl_syncobj_init(&completion.syncobj, true);
++   } else {
++      result = kgsl_syncobj_export(&completion.syncobj, &completion_fd);
++   }
+    if (result != VK_SUCCESS) {
+       result = vk_device_set_lost(vk, "Failed to export submitted KGSL fence");
+       goto finish;
+@@ -1779,6 +1842,7 @@
+          goto finish;
+       }
+    }
++   kgsl_completion_cache_store(queue, &completion.syncobj, completion_fd);
+ 
+ finish:
+    if (completion_fd >= 0)
+--- a/src/freedreno/vulkan/tu_queue.h
++++ b/src/freedreno/vulkan/tu_queue.h
+@@ -36,6 +36,9 @@
+    unsigned render_pass_idx;
+ 
+    int fence;           /* timestamp/fence of the last queue submission */
++
++   int kgsl_completion_fd;
++   uint32_t kgsl_completion_timestamp;
+ };
+ VK_DEFINE_HANDLE_CASTS(tu_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
+ 

@@ -1,0 +1,21 @@
+{
+  "steamvr": {
+    "forcedDriver": "reframed_pico",
+    "activateMultipleDrivers": false,
+    "requireHmd": true,
+    "enableHomeApp": false,
+    "enableLinuxVulkanAsync": true,
+    "useFacetRenderer": true,
+    "renderSystemLayerInDistortPass": false,
+    "motionSmoothing": false,
+    "startCompositorFromAppLaunch": false,
+    "preferredRefreshRate": 120.0
+  },
+  "driver_reframed_pico": { "enable": true },
+  "driver_null": { "enable": false },
+  "driver_cv": { "enable": false },
+  "power": {
+    "turnOffScreensTimeout": 1800.0,
+    "pauseCompositorOnStandby": false
+  }
+}

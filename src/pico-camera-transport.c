@@ -125,6 +125,27 @@ int pico_camera_transport_event(struct pico_camera_transport *t,
     return pico_camera_stream_event(t->stream, source, event, now_ns) == PICO_CAMERA_CAPTURE_FAILED ?
         fail(t, -EIO) : 0;
 }
+int pico_camera_transport_event_refill(struct pico_camera_transport *t,
+                                        enum pico_camera_event_source source,
+                                        const struct pico_camera_event *event,
+                                        const int64_t offsets[2],
+                                        int64_t (*clock)(void *), void *clock_data)
+{
+    if (!t) return -EINVAL;
+    if (!clock || !offsets) return fail(t, -EINVAL);
+    int64_t now = clock(clock_data);
+    if (now <= 0) return fail(t, -EIO);
+    int result = pico_camera_transport_event(t, source, event, now);
+    if (result) return result;
+    for (unsigned i = 0; i <= PICO_CAMERA_CAPTURE_MAX_PENDING / 2; ++i) {
+        now = clock(clock_data);
+        if (now <= 0) return fail(t, -EIO);
+        result = pico_camera_transport_queue(t, offsets, now);
+        if (result == -EAGAIN) return 0;
+        if (result) return fail(t, result);
+    }
+    return fail(t, -EIO);
+}
 static int poll_events(struct pico_camera_transport *t, int64_t now_ns,
                        int64_t (*clock)(void *), void *clock_data)
 {

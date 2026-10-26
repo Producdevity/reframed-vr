@@ -1,0 +1,14 @@
+--- a/src/Backends/OpenVRBackend.cpp
++++ b/src/Backends/OpenVRBackend.cpp
+@@ -1839,9 +1839,9 @@
+ 
+         bNeedsFullComposite |= !!(g_uCompositeDebug & CompositeDebugFlag::Heatmap);
+ 
+-        // Non-Steam windows NEVER use composition!
++        // Subviews require DMA imports, including explicit non-Steam windows.
+         bool bExplicitNonSteam = VirtualConnectorKeyIsNonSteamWindow( GetVirtualConnectorKey() );
+-        if ( bExplicitNonSteam )
++        if ( bExplicitNonSteam && m_pBackend->UsesModifiers() )
+             bNeedsFullComposite = false;
+ 
+         if ( !bNeedsFullComposite )

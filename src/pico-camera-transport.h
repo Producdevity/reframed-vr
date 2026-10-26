@@ -47,6 +47,18 @@ int pico_camera_transport_poll_clock(struct pico_camera_transport *transport,
 int pico_camera_transport_event(struct pico_camera_transport *transport,
                                  enum pico_camera_event_source source,
                                  const struct pico_camera_event *event, int64_t now_ns);
+/* Continuous capture: dispatch one event and immediately refill free stereo
+ * slots, using a fresh clock after callbacks and each queued stereo pair.
+ * Refill before dequeuing the next event: a completion batch can otherwise
+ * drain the hardware queue while completed buffers are being released.
+ * With shared descriptors, call for every member in event order and stop all
+ * members if any call fails. No descriptor is read here. Returns zero or errno;
+ * queue capacity is normal, while all other queue/clock failures stop input. */
+int pico_camera_transport_event_refill(struct pico_camera_transport *transport,
+                                        enum pico_camera_event_source source,
+                                        const struct pico_camera_event *event,
+                                        const int64_t center_offsets_ns[2],
+                                        int64_t (*clock)(void *), void *clock_data);
 int pico_camera_transport_check(struct pico_camera_transport *transport, int64_t now_ns);
 void pico_camera_transport_stop(struct pico_camera_transport *transport);
 /* Stop scheduling/callbacks and independently establish device/DMA quiescence

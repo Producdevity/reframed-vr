@@ -1,0 +1,23 @@
+[Unit]
+Description=Provision Pico Wi-Fi unit identity (%I)
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+Before=NetworkManager.service wpa_supplicant.service
+
+[Service]
+Type=oneshot
+ExecStart="@CMAKE_INSTALL_PREFIX@/libexec/reframed-vr/reframed-pico-wifi-identity" %I /run/reframed-pico-wifi-%i/identity.json /etc/reframed-vr/pico-boot-serial
+RemainAfterExit=yes
+RuntimeDirectory=reframed-pico-wifi-%i
+RuntimeDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=90
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+
+[Install]
+RequiredBy=NetworkManager.service

@@ -12,11 +12,11 @@ struct pico_camera_buffer {
     struct pico_camera_buffer_view view;
     bool ready, flight, cpu;
 };
-static struct pico_camera_buffer *buffers[64];
+static struct pico_camera_buffer *buffers[128];
 static unsigned next_buffer, live_buffers, io_calls, fail_io_at, memory_calls, fail_memory_at;
 static unsigned frames, invalidations, fences, fence_destroys;
 static unsigned event_head[2],event_tail[2],sequence[2],event_error;
-static unsigned frame_failure, stale_cookie, corrupt_sequence, pending_camera;
+static unsigned frame_failure, stale_cookie, corrupt_sequence, pending_camera, defer_events;
 static uint64_t request_id;
 static int64_t event_time;
 static unsigned clock_calls, clock_fault;
@@ -47,7 +47,7 @@ static int memory_failure(void) { return ++memory_calls == fail_memory_at ? -EIO
 int pico_camera_buffer_create(int crm, int ion, const struct pico_camera_buffer_config *c,
                               struct pico_camera_buffer **out)
 {
-    assert(crm == 31 && ion == 32 && out && !*out && next_buffer < 64);
+    assert(crm == 31 && ion == 32 && out && !*out && next_buffer < 128);
     struct pico_camera_buffer *b = calloc(1, sizeof(*b)); assert(b);
     *out = b; unsigned id = next_buffer++; buffers[id] = b; ++live_buffers;
     b->view = (struct pico_camera_buffer_view){100 + (int)id, 200 + (int)id, calloc(1, c->size), c->size};
@@ -108,13 +108,14 @@ int ioctl(int fd, unsigned long request, ...)
         assert(fd >= 34 && fd <= 37 && opcode == 0x105);
         assert(get(data,4,4) == 41 + pending_camera * 2 + (fd % 2));
         unsigned id = (unsigned)get(data,16,8) - 100;
-        assert(id < 64 && buffers[id] && buffers[id]->flight);
+        assert(id < 128 && buffers[id] && buffers[id]->flight);
         const uint8_t *packet = buffers[id]->view.data;
         assert(get(packet,8,8) == request_id);
         if (fd % 2) {
             unsigned image = (unsigned)get(packet,80,4) - 100;
-            assert(image < 64 && buffers[image]->flight);
+            assert(image < 128 && buffers[image]->flight);
             memset(buffers[image]->view.data,0x5a,buffers[image]->view.size);
+            if (defer_events) return 0;
             assert(event_tail[0]<32 && event_tail[1]<32);
             struct pico_camera_event *f=&events[0][event_tail[0]++], *s=&events[1][event_tail[1]++];
             *f=(struct pico_camera_event){.type=0x08000000,.sequence=sequence[0]++};
@@ -141,7 +142,7 @@ static struct pico_camera_transport *create_session(int32_t session)
     assert(!live_buffers);next_buffer = io_calls = memory_calls = fail_io_at = fail_memory_at = 0;
     event_head[0]=event_head[1]=event_tail[0]=event_tail[1]=0;
     sequence[0]=sequence[1]=UINT32_MAX-1;
-    frame_failure=stale_cookie=corrupt_sequence=event_error=0;event_time=200;
+    frame_failure=stale_cookie=corrupt_sequence=event_error=defer_events=0;event_time=200;
     struct pico_camera_transport_config c={.timeout_ns=1000};
     for(unsigned i=0;i<2;i++)c.cameras[i]=(struct pico_camera_request_config){
         .crm_fd=31,.sync_fd=33,.ion_fd=32,.sensor_fd=34+(int)i*2,.ife_fd=35+(int)i*2,
@@ -161,6 +162,17 @@ static void cleanup(struct pico_camera_transport **t)
     assert(!pico_camera_transport_quiesced(*t));assert(invalidations<=before+1);
     assert(!pico_camera_transport_destroy(t) && !*t);
 }
+static int64_t refill_clock(void *opaque)
+{
+    unsigned *calls = opaque;
+    return 200 + ++*calls;
+}
+static int64_t stopped_clock(void *opaque)
+{
+    unsigned *calls = opaque;
+    return ++*calls == 1 ? 200 : 0;
+}
+
 int main(void)
 {
     const int64_t offsets[2]={-10,-20};unsigned successful=0,faults=0;
@@ -213,6 +225,41 @@ int main(void)
     assert(pico_camera_transport_poll_clock(silent,transport_clock,&clock_calls)==-EIO && clock_calls==2);
     cleanup(&silent);
     printf("PICO_CAMERA_TRANSPORT_CLOCK_PASS cases=5 dequeues_refreshed=1 silent_timeout=1\n");
+    struct pico_camera_transport *continuous=create();
+    for(unsigned i=0;i<8;++i)assert(!pico_camera_transport_queue(continuous,offsets,100));
+    assert(live_buffers==64);defer_events=1;unsigned refill_clocks=0;
+    unsigned delivered_before=frames;
+    for(unsigned pair=0;pair<8;++pair)for(unsigned camera=0;camera<2;++camera) {
+        unsigned index=2*pair+camera;
+        assert(!pico_camera_transport_event_refill(continuous,PICO_CAMERA_CRM_EVENTS,
+            &events[1][index],offsets,refill_clock,&refill_clocks));
+        assert(!pico_camera_transport_event_refill(continuous,PICO_CAMERA_SYNC_EVENTS,
+            &events[0][index],offsets,refill_clock,&refill_clocks));
+        assert(frames==delivered_before+index+1);
+        assert(live_buffers==(camera?64:60));
+        assert(next_buffer==64+8*(pair+camera));
+    }
+    assert(frames==delivered_before+16 && refill_clocks==72);
+    assert(next_buffer==128 && live_buffers==64);
+    cleanup(&continuous);
+    continuous=create();assert(!pico_camera_transport_queue(continuous,offsets,100));
+    defer_events=1;refill_clocks=0;fail_memory_at=memory_calls+1;
+    assert(pico_camera_transport_event_refill(continuous,PICO_CAMERA_CRM_EVENTS,
+        &events[1][0],offsets,refill_clock,&refill_clocks)==-EIO);
+    assert(pico_camera_transport_check(continuous,300)==-EIO);
+    cleanup(&continuous);
+    continuous=create();assert(!pico_camera_transport_queue(continuous,offsets,100));
+    assert(pico_camera_transport_event_refill(continuous,PICO_CAMERA_CRM_EVENTS,
+        &events[1][0],offsets,NULL,NULL)==-EINVAL);
+    assert(pico_camera_transport_check(continuous,300)==-EIO);
+    cleanup(&continuous);
+    continuous=create();assert(!pico_camera_transport_queue(continuous,offsets,100));
+    refill_clocks=0;
+    assert(pico_camera_transport_event_refill(continuous,PICO_CAMERA_CRM_EVENTS,
+        &events[1][0],offsets,stopped_clock,&refill_clocks)==-EIO);
+    assert(refill_clocks==2 && pico_camera_transport_check(continuous,300)==-EIO);
+    cleanup(&continuous);
+    printf("PICO_CAMERA_TRANSPORT_REFILL_PASS frames=16 capacity=8 failures_terminal=1\n");
     struct pico_camera_transport *shared[2] = {create_session(11), create_session(12)};
     assert(!pico_camera_transport_queue(shared[0],offsets,100));
     assert(!pico_camera_transport_queue(shared[1],offsets,100));

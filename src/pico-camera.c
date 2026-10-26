@@ -71,6 +71,74 @@ bool pico_camera_center(int64_t qtimer_ns, uint32_t exposure_lines,
     return true;
 }
 
+int pico_camera_frame_sequence_push(struct pico_camera_frame_sequence *sequence,
+                                     unsigned camera, uint64_t frame_number)
+{
+    if (!sequence || camera >= 4) return -1;
+    struct pico_camera_frame_sequence value = *sequence;
+    if (value.mask || value.synchronized) {
+        if (frame_number < value.frame_number ||
+            (frame_number == value.frame_number && (!value.mask || (value.mask & (1u << camera))))) return -1;
+        if (frame_number != value.frame_number) {
+            if (value.mask && value.synchronized) return -1;
+            value.mask = 0;
+        }
+    }
+    value.frame_number = frame_number;
+    value.mask |= 1u << camera;
+    int complete = value.mask == 15;
+    if (complete) { value.mask = 0; value.synchronized = true; }
+    *sequence = value;
+    return complete;
+}
+
+int pico_camera_frame_window_push(struct pico_camera_frame_window *window,
+                                   unsigned camera, uint64_t number, unsigned *slot)
+{
+    if (!window || !slot || camera >= 4) return -1;
+    struct pico_camera_frame_window value = *window;
+    unsigned bit = 1u << camera;
+    if ((value.published && number <= value.published_number) ||
+        ((value.seen & bit) && number <= value.camera_numbers[camera])) return -1;
+    unsigned selected = PICO_CAMERA_FRAME_WINDOW_CAPACITY;
+    unsigned empty = PICO_CAMERA_FRAME_WINDOW_CAPACITY;
+    for (unsigned i = 0; i < PICO_CAMERA_FRAME_WINDOW_CAPACITY; ++i) {
+        if (!value.masks[i]) {
+            if (empty == PICO_CAMERA_FRAME_WINDOW_CAPACITY) empty = i;
+            continue;
+        }
+        if (value.numbers[i] < number && !(value.masks[i] & bit)) return -1;
+        if (value.numbers[i] == number) selected = i;
+    }
+    if (selected == PICO_CAMERA_FRAME_WINDOW_CAPACITY) selected = empty;
+    if (selected == PICO_CAMERA_FRAME_WINDOW_CAPACITY) return -1;
+    for (unsigned i = 0; i < 4; ++i)
+        if ((value.seen & (1u << i)) && value.camera_numbers[i] > number &&
+            !(value.masks[selected] & (1u << i))) return -1;
+    value.numbers[selected] = number;
+    value.masks[selected] |= bit;
+    value.camera_numbers[camera] = number;
+    value.seen |= bit;
+    *window = value;
+    *slot = selected;
+    return 0;
+}
+
+int pico_camera_frame_window_take(struct pico_camera_frame_window *window, unsigned *slot)
+{
+    if (!window || !slot) return -1;
+    unsigned oldest = PICO_CAMERA_FRAME_WINDOW_CAPACITY;
+    for (unsigned i = 0; i < PICO_CAMERA_FRAME_WINDOW_CAPACITY; ++i)
+        if (window->masks[i] && (oldest == PICO_CAMERA_FRAME_WINDOW_CAPACITY ||
+                                window->numbers[i] < window->numbers[oldest])) oldest = i;
+    if (oldest == PICO_CAMERA_FRAME_WINDOW_CAPACITY || window->masks[oldest] != 15) return 0;
+    window->published_number = window->numbers[oldest];
+    window->published = true;
+    window->masks[oldest] = 0;
+    *slot = oldest;
+    return 1;
+}
+
 bool pico_camera_head_set(const struct pico_camera_frame *frames, size_t count,
                            const uint8_t *camera_ids, int64_t max_skew_ns,
                            struct pico_camera_frame_set *set)

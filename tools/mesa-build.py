@@ -124,6 +124,18 @@ def build(profile, driver="lavapipe"):
                 "helpers_sha256": digest(output / "kgsl-submit-under-test.h"),
                 "executable_sha256": digest(output / "kgsl-submit-tests"),
             }
+            run([sys.executable, str(ROOT / "tests/kgsl-completion-cache-tests.py"),
+                 str(source / "src/freedreno/vulkan/tu_knl_kgsl.cc"), str(output)],
+                "kgsl-completion-cache-tests.log", timeout=120)
+            report["kgsl_completion_cache_tests"] = {
+                "status": "passed",
+                "scope": "actual native/DRM submissions and queue lifecycle; modeled ioctls and descriptor ownership",
+                "runner_sha256": digest(ROOT / "tests/kgsl-completion-cache-tests.py"),
+                "model_sha256": digest(ROOT / "tests/kgsl-completion-cache-tests.cpp"),
+                "queue_helpers_sha256": digest(output / "kgsl-queue-under-test.h"),
+                "helpers_sha256": digest(output / "kgsl-completion-under-test.h"),
+                "executable_sha256": digest(output / "kgsl-completion-cache-tests"),
+            }
             run([sys.executable, str(ROOT / "tests/kgsl-display-tests.py"),
                  str(source / "src/freedreno/vulkan/tu_kgsl_display.h"), str(output)],
                 "kgsl-display-tests.log", timeout=120)
@@ -145,6 +157,19 @@ def build(profile, driver="lavapipe"):
                 "model_sha256": digest(ROOT / "tests/kgsl-import-tests.cpp"),
                 "helpers_sha256": digest(output / "kgsl-import-under-test.h"),
                 "executable_sha256": digest(output / "kgsl-import-tests"),
+            }
+
+            run([sys.executable, str(ROOT / "tests/kgsl-priority-tests.py"),
+                 str(source / "src/freedreno/vulkan/tu_knl_kgsl.cc"), str(output)],
+                "kgsl-priority-tests.log", timeout=120)
+            report["kgsl_priority_tests"] = {
+                "status": "passed",
+                "scope": "actual Vulkan/KGSL priority mapping; modeled context creation, no hardware",
+                "runner_sha256": digest(ROOT / "tests/kgsl-priority-tests.py"),
+                "model_sha256": digest(ROOT / "tests/kgsl-priority-tests.cpp"),
+                "helpers_sha256": digest(output / "kgsl-priority-under-test.h"),
+                "uapi_sha256": digest(output / "msm_kgsl.h"),
+                "executable_sha256": digest(output / "kgsl-priority-tests"),
             }
 
             run([sys.executable, str(ROOT / "tests/kgsl-allocation-tests.py"),
@@ -193,6 +218,53 @@ def build(profile, driver="lavapipe"):
                 "model_sha256": digest(ROOT / "tests/mesa-display-refresh-tests.c"),
                 "helpers_sha256": digest(output / "display-refresh-under-test.h"),
                 "executable_sha256": digest(output / "mesa-display-refresh-tests"),
+            }
+            run([sys.executable, str(ROOT / "tests/mesa-display-counter-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-counter-tests.log", timeout=120)
+            report["display_counter_tests"] = {
+                "status": "passed",
+                "scope": "actual WSI counter dispatch; modeled DRM queries and output bounds",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-counter-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-counter-tests.c"),
+                "helpers_sha256": digest(output / "display-counter-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-counter-tests"),
+            }
+
+            run([sys.executable, str(ROOT / "tests/mesa-display-event-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-event-tests.log", timeout=120)
+            report["display_event_tests"] = {
+                "status": "passed",
+                "scope": "actual opt-in event-thread request; modeled scheduler, no host policy changes",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-event-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-event-tests.c"),
+                "helpers_sha256": digest(output / "display-event-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-event-tests"),
+            }
+
+            run([sys.executable, str(ROOT / "tests/mesa-present-priority-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-present-priority-tests.log", timeout=120)
+            report["display_present_priority_tests"] = {
+                "status": "passed",
+                "scope": "actual presentation-wait activation; modeled synchronization and scheduler",
+                "runner_sha256": digest(ROOT / "tests/mesa-present-priority-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-present-priority-tests.c"),
+                "helpers_sha256": digest(output / "display-present-priority-under-test.h"),
+                "executable_sha256": digest(output / "mesa-present-priority-tests"),
+            }
+
+            run([sys.executable, str(ROOT / "tests/mesa-display-master-tests.py"),
+                 str(source / "src/vulkan/wsi/wsi_common_display.c"), str(output)],
+                "mesa-display-master-tests.log", timeout=120)
+            report["display_master_tests"] = {
+                "status": "passed",
+                "scope": "actual WSI master reference counting with modeled vendor-kernel permissions",
+                "runner_sha256": digest(ROOT / "tests/mesa-display-master-tests.py"),
+                "model_sha256": digest(ROOT / "tests/mesa-display-master-tests.c"),
+                "helpers_sha256": digest(output / "display-master-under-test.h"),
+                "executable_sha256": digest(output / "mesa-display-master-tests"),
             }
             run([sys.executable, str(ROOT / "tests/mesa-pico-split-tests.py"),
                  str(source / "src/vulkan/wsi/wsi_display_pico.h"), str(output)],
@@ -272,11 +344,17 @@ def build(profile, driver="lavapipe"):
             if ("libdrm.so.2" not in dynamic or b"TU_KGSL_DRM_SYNC" not in library or
                     b"TU_KGSL_DISPLAY" not in library or b"MESA_VK_WSI_PICO_SPLIT_DMA" not in library):
                 raise ValueError("Turnip library is missing the DRM bridge or dependency")
+            if b"MESA_VK_WSI_DISPLAY_EVENT_RT" not in library:
+                raise ValueError("Turnip library is missing the display-event priority option")
+            if b"MESA_VK_WSI_PRESENT_THREAD_RT" not in library:
+                raise ValueError("Turnip library is missing the present-thread priority option")
+            if b"MESA_VK_WSI_PRESENT_THREAD_NICE" not in library:
+                raise ValueError("Turnip library is missing the ordinary present-thread priority option")
             (output / "kgsl-compile-command.txt").write_text(kgsl[0] + "\n")
             (output / "dynamic-dependencies.txt").write_text(dynamic)
             report["kgsl_drm_bridge_compiled"] = True
             report["kgsl_display_compiled"] = True
-        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
+        evidence = ["kgsl-compile-command.txt", "dynamic-dependencies.txt", "display-refresh-under-test.h", "display-counter-under-test.h", "display-event-under-test.h", "display-present-priority-under-test.h", "wsi_display_pico.h"] if driver == "turnip" else []
         for name in (*names, "vulkan-external-sync", "vulkan-interop", *evidence):
             path = output / name
             report["artifacts"].append({"path": name, "bytes": path.stat().st_size, "sha256": digest(path)})

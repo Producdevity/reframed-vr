@@ -13,9 +13,10 @@ ln -sfn "$client/ubuntu12_64" "$HOME/.steam/bin64"
 cd "$client"
 export LD_LIBRARY_PATH="$client/steamrtarm64:$client/steamrtarm64/libs"
 export PATH="$client/steam-runtime-steamrt-arm64/bin:$PATH"
-# This ARM64 client cannot load the public SteamVR package's x86-64 vrclient.
-if [[ -f "$client/steamapps/common/SteamVR/bin/linux64/vrclient.so" &&
-      ! -f "$client/steamapps/common/SteamVR/bin/linuxarm64/vrclient.so" ]]; then
+# The public x86-64 package cannot serve an ARM64 client; a native override can.
+runtime="${VR_OVERRIDE:-$client/steamapps/common/SteamVR}"
+if [[ -f "$runtime/bin/linux64/vrclient.so" &&
+      ! -f "$runtime/bin/linuxarm64/vrclient.so" ]]; then
     set -- -vrdisable "$@"
 fi
 exec ./steamrtarm64/steam -nobootstrapupdate -skipinitialbootstrap -publicbeta \

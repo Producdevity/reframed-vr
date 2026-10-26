@@ -1,0 +1,37 @@
+{
+  "steamvr": {
+    "forcedDriver": "reframed_pico",
+    "activateMultipleDrivers": false,
+    "requireHmd": true,
+    "enableHomeApp": false,
+    "enableLinuxVulkanAsync": true,
+    "useFacetRenderer": true,
+    "renderSystemLayerInDistortPass": false,
+    "motionSmoothing": false,
+    "startCompositorFromAppLaunch": false,
+    "preferredRefreshRate": 90.0,
+    "supersampleManualOverride": true,
+    "supersampleScale": 1.0,
+    "systemLayerWidth": 1832,
+    "systemLayerHeight": 1920
+  },
+  "driver_reframed_pico": {
+    "enable": true
+  },
+  "dashboard": {
+    "allowSteamOverlays": true,
+    "allowVRGamepadUI": true,
+    "allowVRGamepadUIViaGamescope": true,
+    "expectSteam": true
+  },
+  "driver_null": {
+    "enable": false
+  },
+  "driver_cv": {
+    "enable": false
+  },
+  "power": {
+    "turnOffScreensTimeout": 1800.0,
+    "pauseCompositorOnStandby": false
+  }
+}
