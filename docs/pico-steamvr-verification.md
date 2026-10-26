@@ -3647,8 +3647,9 @@ available.
 The first recorded rejection is a head result timestamped 159.870374093 seconds,
 read at 159.999561709–159.999563688 seconds: its age is 129.189595 ms, while the
 result read itself takes 1.979 microseconds. The controller head-history consumer
-stops 0.901250 ms later, and the feed reports cancellation 4.286719 ms after the
-rejection. Only then, 349.962135 ms after rejection, does capture refuse
+stops 0.901250 ms after that read returns, and the feed reports cancellation
+4.286719 ms after the return. Only then, 349.962135 ms after the read returns,
+does capture refuse
 `head-ring-full` at frame 1915. Its eight-set ring contains 956 published and
 948 consumed sets. The terminal camera counts agree across all four cameras;
 this is not another recorded request-assignment refusal.
@@ -3668,3 +3669,40 @@ Both trace readers join without recorded loss, capture priority cleanup succeeds
 and full BOOT/DTBO readbacks, MCU/DSP shutdown, muted offline stock return and
 owned USB-host termination verify. Failed tracking is not accepted as a usable
 VR session.
+
+### IMU reader scheduling delay during Steam startup (2026-10-26)
+
+The next diagnostic keeps the application and policies unchanged and adds static,
+identity-bound scheduler coverage for the existing tracking consumer, its SDK
+threads and the native IMU producer. Process start times, executable bytes,
+consumer program mappings, task policies and initial filters are retained.
+Coverage starts before GUI load; later-created or transient threads are not
+claimed, and the added tracing has measurement overhead.
+
+Boot `f321ff38-602c-4016-ac22-e40156091d35` reproduces the stale result with
+timestamp 161.381570395 seconds. `get_result` runs at
+161.514119625–161.514120771 seconds, taking 1.146 microseconds; the returned
+result's age is 132.550376 ms. The following table covers the distinct interval
+from that input timestamp to the beginning of the result read, 132.549230 ms:
+
+| Selected task | Running | Runnable, awaiting CPU | Blocked |
+| --- | ---: | ---: | ---: |
+| Consumer main, TID 1944 | 12.575625 ms | 47.996000 ms | 71.977605 ms |
+| SSC IMU reader, TID 1940 | 5.787625 ms | 126.761605 ms | 0 ms |
+
+These tasks have complete scheduler state coverage for this interval. Clipped to
+the cohort boundaries, the SSC reader's runnable spans are 64.302, 43.976 and
+18.483605 ms.
+It is ordinary CFS nice zero; the trace therefore establishes substantial reader
+scheduling delay, rather than a 132 ms result-read call. It does not prove that
+reader scheduling explains every part of the result age or every pacing fault.
+The callback/feed guard again stops the session before the observer windows;
+the subsequent camera-ring overflow is not request-assignment acceptance or a
+pacing comparison.
+
+Evidence is `output/pico-tracking-consumption-20261026-v1/`. The 13,469,760-byte
+export has 193 verified members, SHA-256
+`85c5bd6a98973700e7da8b02966d50d2444c440007619fcad603fa415ad34189`.
+The full 90,478,963-byte CPU trace has no recorded loss. Source, selection,
+capture-priority cleanup, both firmware readbacks and muted offline stock return
+verify. No scheduling or freshness change was made in this diagnostic.
