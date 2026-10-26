@@ -3839,3 +3839,100 @@ members, 38,499,674 bytes, SHA-256
 Source/build bindings, priority restoration, MCU/DSP shutdown, full BOOT/DTBO
 readbacks, muted offline stock return and owned host termination verify. No
 firmware was flashed. Optical controller publication remains zero.
+
+### Reusing exported queue completions (2026-10-26)
+
+The source audit finds that the DRM bridge already exports one GPU completion
+for all signals in a submission. The redundant export instead occurs when an
+ensuing empty submission reconstructs that same queue timestamp. Patch 0021
+retains one owned completion descriptor per queue and preserves every explicit
+wait; [rendering notes](pico-rendering.md#gpu-completion-reuse) describe its
+lifecycle and fallback. Native callback counts below are observed events, not
+direct counts of registration ioctls.
+
+The composed fixture executes the actual native submission, DRM bridge,
+merge/export and queue lifecycle functions with modeled GPU/DRM primitives.
+Baseline and corrected candidate each pass 399 ownership cases and 54 real
+`RLIMIT_NOFILE` cases. The candidate avoids an extra no-signal duplication,
+moves its private FD completion, and can retry a failed cached merge once using
+the original timestamp. Tests preserve dependencies under failures and compare
+equal free descriptor headroom; the cache still intentionally owns one extra
+resident descriptor per queue. All seven focused Linux suites pass. The
+retained-source incremental build verifies all 21 ordered patches and 14
+patched targets; this is not a fresh full-image build.
+
+The initial candidate in `output/pico-completion-cache-20261026-v1/` completes
+4,499 head-camera sets and 184,576 callbacks with zero bad results. All 1,184
+source, workload and recovery checks pass. Both CPU and DRM traces are complete,
+with accepted grammar and zero loss. Matched first-on 16.059172435-second
+cohorts contain 1,437 renderer commands/2,874 callbacks in the preceding baseline
+and 1,439/1,439 in this candidate. Every complete candidate command cohort has
+one callback per context/timestamp, compared with two in that baseline.
+
+Its on/off/on windows have 2/0/0 missed presentations versus the preceding
+baseline's 4/3/1. This is a single-run descriptive comparison. One remaining
+miss has 1.349 ms from callback queueing to execution, including 1.143 ms of
+executor runnable time. The selected scheduler trace cannot attribute all that
+time to the task seen preempting it. Neither missed frame has a scheduling gap
+after fence return and before kickoff. Shared IPC waits peak at 0.442 ms in the
+three windows; the earlier 8.6 ms tail is not declared eliminated.
+
+The corrected library, SHA-256
+`1c8a5a834f92f1a0bb39a7b040075924dbf91baea418202e86827f93b8d1453b`,
+is first tested in `output/pico-completion-cache-20261026-v2/`. It passes the four
+cross-exec checks and reaches SteamVR, but the renderer-priority helper rejects
+its immediate policy/identity readback before the measurement windows. Its
+original error omits the compared states, so the mismatching field is unknown.
+Subsequent feed cancellation and camera ring exhaustion follow harness shutdown;
+they are not established independent failures or a cache synchronization cause.
+This run is retained as partial evidence, without full-workload acceptance.
+The maintained helper now includes both snapshots on that failed comparison;
+its guards, scheduling and restoration are unchanged, and 18 focused tests pass.
+
+The diagnostic-only repeat in `output/pico-completion-cache-20261026-v3/`, boot
+`b1fd1d63-2801-4537-a6fb-73c49e9ee30f`, uses that same corrected library and
+completes the 181.012-second head/camera workload: 4,498 sets, 184,562 callbacks,
+182,256 confident outputs and zero bad results. All four cross-exec checks and
+1,186 source, workload and recovery checks pass. Both measured OpenVR windows
+have 2,000 valid head queries and 2,000 vsync queries without age faults. The
+observer-free window makes no API acceptance claim. The earlier dashboard probe
+still has one overdue vsync out of 500 queries, before successful readiness;
+startup timing is not declared fixed.
+
+The complete, loss-free DRM recording measures:
+
+| Observer | Contained flip pairs | Missed presentations | Flip interval p99 |
+| --- | ---: | ---: | ---: |
+| On | 1,795 | 0 | 11.441563 ms |
+| Off | 1,795 | 0 | 11.466615 ms |
+| On | 1,795 | 0 | 11.472865 ms |
+
+These are bounded native windows, not sustained or through-lens pacing
+acceptance. CPU row 606,075 has unknown event formatting, so the full CPU stream
+is rejected despite zero loss counters. Its explicit clean prefix ends before
+205.519800 seconds. The first on-window contains 1,795 renderer commands and
+1,795 callbacks; only 87.197735 ms of the off window and none of the final window
+have accepted CPU coverage. No causal scheduler comparison spans all three.
+The 16.059172435-second matched cohort contains 1,442 commands/1,442 callbacks,
+confirming the callback reduction in the final build.
+
+The renderer-priority failure did not recur in v3. Pinned Pico sources show that a
+normal GPU submission can temporarily promote its submitting thread to FIFO40
+and restore its saved policy. A race with the external RR2 setter is therefore
+source-supported, but v2's missing readback states prevent assigning that cause
+to its failure. No priority guard is relaxed and no new policy fix is claimed.
+
+Controller receive still times out after 13,794 motion samples; public optical
+confidence and publication remain zero. The later worker exit 1 reflects its
+retained motion error, also present in the baseline, rather than successful
+controller acceptance. Stop RPC results are zero, MCU references reach zero,
+and required SLPI/CDSP states 7/3 are OFFLINE. Subsystem 2 is only OFFLINING in
+the saved snapshot; complete shutdown of every DSP is not claimed.
+
+The v3 export has 254 verified members, 37,697,273 bytes, SHA-256
+`9ba9681a7b8a9100b5243fab06668cc3a94923a0124a3e285f49b12ee554a071`.
+Exact source/build and both deployed ICD-path hashes, restoration of owned
+priority/GPU settings, full BOOT/DTBO readbacks, muted offline stock return and
+owned host termination verify. No firmware was flashed and no new lens or
+physical motion acceptance was collected. Analysis receipts preserve all three
+runs, the failed v2 entry and the rejected CPU suffix.
