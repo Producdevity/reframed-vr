@@ -3959,3 +3959,57 @@ renderer/event/commit and futex trace limited to the first 500-sample dashboard
 probe, with no additional API client or scheduling change. Exact raw rows,
 hashes and source-ownership limits are in
 `output/pico-completion-cache-20261026-v3/analysis/startup-vsync-analysis.json`.
+
+### Startup renderer CPU work (2026-10-26)
+
+The follow-up in `output/pico-startup-counter-20261026-v1/` adds a bounded CPU
+trace around attempt 0 of the existing 500-sample dashboard probe. It preserves
+the Mesa library, 33 setup recipes, application commands and scheduling policy.
+It adds no API client. Trace-enable/filter states are restored exactly before
+the later measurement windows. The extra capture has measurement overhead;
+this is an attribution diagnostic, not a clean performance comparison.
+
+All four overdue samples, 117–120, share one stale-counter interval, 3028→3034.
+Their API calls take 1.510–2.864 µs while the kernel vblank ages remain
+4.53–6.61 ms. The previous counter update to next present queue takes
+52.071302 ms. Over that interval the CFS nice −20 renderer runs for
+50.732302 ms, is runnable for 1.339 ms and has zero blocked or unknown time.
+Its seven traced futex calls are wake operations. This establishes predominantly
+on-CPU work before queueing; no additional priority change is justified.
+
+The matching GPU command queues approximately 51.804 ms after the old counter
+update, then submits, retires and fires its completion callback. The callback's
+queue-to-execution interval is 114 µs. Four refresh boundaries pass before the
+present queue and a fifth during its fence wait; present 2860 flips at sequence
+3034. The complete startup probe contains 486 flip pairs, 17 missed
+presentations and 21 skipped DRM sequences. The four overdue API samples
+describe one of those gaps, not four independent stalls.
+
+No callstack was captured. Running time does not distinguish compilation,
+command preparation, spinning or other synchronous work. Facet pipeline-creation
+messages are retained, but their realtime log timestamps lack a precise saved
+monotonic calibration. The 189 restored cache files also do not establish hits.
+The retained Turnip entry headers use driver ID
+`270e6a677076a7f92882e477e70268da`; the same library build's Steam Vulkan-query
+bucket uses `d9efc6cf789056ddd14fc6e7875bcc48`. That is a namespace mismatch for
+the query process, not a directly observed compositor UUID. A cache comparison
+must preserve the exact library and actual cache environment; rewriting cache
+keys or headers would not establish compatibility.
+
+The complete short CPU trace is 17,702,492 bytes, SHA-256
+`ba7eef869aaea0dded6447c3987ce20880c09a9397670f3f454765d34416b1f2`.
+It and the full 31,176,835-byte DRM trace pass grammar and loss checks. The later
+steady CPU stream contains `Unknown type 56` at row 172,725 and is rejected.
+The independent complete DRM stream measures 5/0/2 missed presentations across
+1,792/1,794/1,793 contained flip pairs in the on/off/on windows; there is no
+accepted steady CPU/IPC comparison across those windows.
+
+The full workload completes 4,499 camera sets and 184,579 head callbacks with
+zero bad results. Controller motion still ends with `-110` after 13,784 samples,
+and its worker exits 1; optical acquisition and pointing remain open. All four
+cross-exec cases, exact source/library deployment, priority restoration,
+BOOT/DTBO readbacks, muted offline stock return and owned USB-host join verify.
+The archive has 261 verified data files plus its manifest, 39,246,031 bytes,
+SHA-256 `36e063381a19b8c3b7d47ec38ed19b16a4f227f07bd75933d6ff25692a34581e`.
+The 1,208-check receipt and raw-row attribution remain in its private `analysis/`
+directory. No new physical clarity, motion or controller acceptance follows.
