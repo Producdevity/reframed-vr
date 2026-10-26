@@ -4121,3 +4121,67 @@ readbacks, quiet offline stock return and USB-host join verify. The archive has
 `da6f69604ca19bfc649930ab6bb78b0e42766a3a2eb3bf605ea991eb187ae1f3`.
 Its private `analysis/` directory retains the exact invalid row, semantic source
 proof, individual frame chains and superseded regex-only analysis receipts.
+
+### Optional callback affinity (2026-10-26)
+
+`output/pico-callback-affinity-20261026-v2/` tests queue mask `f0` with the
+existing nice −20 policy. Native preflight verifies all eight CPU MIDRs,
+relative capacities, maximum frequencies, online/possible masks and global
+workqueue mask. The active queue maps to pool 18, after original pool 16 and
+intermediate nice-only pool 17. All original attributes are restored afterward;
+individual worker scheduling policies and IRQ handling are not changed.
+
+The initial v1 diagnostic stops after its first window. Its snapshot guard
+incorrectly treats the complete `/proc` worker name as stable identity. Pinned
+`workqueue.c` shows that these names append mutable `+desc`/`-desc` text. The
+lost partial snapshot prevents identifying which field changed in that specific
+failure. v2 retains raw names/stat records and compares PID, start time and the
+stable pool/worker prefix; a native suffix change is retained successfully.
+Its 23 private fixtures cover identity changes and restoration failures. The
+maintained helper retains only the policy core, with 17 focused affinity cases
+and the seven existing default/device/signal cases passing. Its core definitions
+match the native-tested implementation, with the default context preserved.
+
+The incomplete v1 CPU epoch also contains mismatched workqueue start/end
+pointers and is rejected wholly for causal analysis. Its independent DRM/API
+results are retained as partial evidence, without adopting its callback subset.
+All three v2 CPU epochs pass full hashes, grammar, numeric bounds, loss and
+scheduler/workqueue association checks. Complete before/after worker identities
+and source-supported pool lifetimes also bind four trace names printed as
+`<...>`. All 6,874 selected callback generations execute, fire and finish on
+CPUs 4–7 in pool 18; no old-pool or unjoined generation is silently removed.
+
+The same 33 recipes, library, warmed 354-file cache, GPU floor and three
+20-second on/off/on observer calls are retained. Expanded pool filters and
+passive snapshots add instrumentation overhead, so this is one sequential
+experiment rather than a clean or repeated performance comparison.
+
+| Measurement | Earlier per-window baseline | Optional affinity |
+| --- | --- | --- |
+| Missed presentations, on/off/on | 2 / 1 / 0 | 0 / 0 / 0 |
+| Contained flip pairs | 1,793 / 1,794 / 1,799 | 1,795 / 1,797 / 1,795 |
+| Queue-to-execution p99, ms | 0.514 / 0.416 / unqualified | 0.628 / 0.559 / 0.697 |
+| Queue-to-execution maximum, ms | 1.665 / 3.521 / unqualified | 1.621 / 1.382 / 1.438 |
+
+The candidate's maximum fully known runnable portions are
+1.598/1.360/1.427 ms. Its p99 delays increase, so callback tails do not uniformly
+improve. Both steady on-window probes have 2,000 valid head/vsync queries and
+zero overdue ages; off-window API behavior is unmeasured. Startup still has
+two overdue ages, 23.039270 and 22.609739 ms, with query durations of only
+521 and 1,614 ns. The longest shared IPC waits are 0.740/0.445/0.453 ms;
+server wake emitters still lack mapped-wake coverage and no lock owner is
+established. This run does not prove the earlier IPC stall is fixed.
+
+The full workload consumes 4,499 head-camera sets and produces 184,481 head
+callbacks with zero bad results. Optical controller pose publication remains
+zero and its worker ends with status 1. Real tracked pointing and physical
+motion/lens acceptance remain open. The helper's `--cpu-mask f0` option is
+therefore retained for further experiments, with the default mask unchanged.
+
+All native source/cache/cleanup checks, full BOOT/DTBO readbacks, quiet offline
+stock return and owned USB-host join verify. The archive has 321 data files plus
+its manifest, 45,663,452 bytes, SHA-256
+`087099975a832c64324f2043c25bd977d7555d5417bac74c1394cc4acda9a833`.
+The private `analysis/` directory retains complete placement, pacing and
+rejected-v1 evidence; `maintained-core-proof.json` binds the published policy
+core to the native-tested source.

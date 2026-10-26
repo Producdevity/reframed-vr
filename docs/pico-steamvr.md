@@ -623,7 +623,7 @@ The Neo3 timing trace identifies late `kgsl-events` callback dispatch after GPU
 retirement as a cause of missed presentation boundaries. The opt-in
 `tools/pico-gpu-events.py` helper selects nice -20 for that queue's unbound
 worker pool while a bounded VR session runs. This is a CFS priority setting;
-the compositor's scheduling policy, queue CPU mask and concurrency are preserved.
+the default mode retains the existing queue CPU mask and concurrency.
 A native combined capture verifies reduced callback latency; see the
 [control and acceptance limits](pico-steamvr-verification.md#kgsl-fence-callback-dispatch-2026-10-23-utc).
 
@@ -643,6 +643,20 @@ readback. Session owners can instead wrap their workload and cleanup in
 the policy on exceptions. A private exclusive lock prevents overlapping owners.
 The helper checks the native Neo3 compatible string, boot serial and UUID before
 changing the queue. It is not enabled automatically by the driver bundle.
+
+For the optional CPU-affinity experiment, add `--cpu-mask f0`, or pass
+`cpu_mask='f0'` to the same context owner. This selects CPUs 4–7 only after
+checking the native Neo3's MIDRs, relative capacities, maximum frequencies,
+online CPUs and global workqueue mask. It requires the original queue to have
+nice 0 and mask `ff`. The receipt records intermediate pool mappings; each
+attempted attribute write is restored independently on exit, with boot/queue
+identity and final readback checks. Individual worker policies and IRQ handling
+are outside this operation.
+
+The [native affinity experiment](pico-steamvr-verification.md#optional-callback-affinity-2026-10-26)
+verifies callback placement and zero steady-window missed vblanks in one run.
+Its p99 callback delay increases and startup-age faults remain, so this option
+is experimental and the default mask policy is unchanged.
 
 ### Optional tracked left-controller input
 
