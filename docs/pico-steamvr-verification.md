@@ -3777,3 +3777,65 @@ All source/build bindings, full BOOT/DTBO readbacks, MCU/DSP shutdown, muted
 offline stock return and owned USB-host termination verify. No firmware was
 flashed. The accepted scope is full workload and DRM evidence with a partial,
 unaccepted CPU diagnostic, not an end-to-end tracked-controller session.
+
+### Bounded steady tracing and remaining deadline boundaries (2026-10-26)
+
+The next private profile separates a small queued-event-only GPU identity trace
+from the steady CPU trace. It drains and joins the identity reader before GUI
+startup, keeps CPU tracing off through startup, then records only the three
+measurement windows. Selection includes the exact display commit worker and
+critical tracking tasks; other SDK task identities remain snapshot-only.
+The explicit tracer is `nop`. This repairs the previous capture-budget problem
+without increasing its 384 MiB cap or changing rendering/scheduling policy.
+
+Its first run, boot `61de562e-9300-4e16-b143-3de793366017`, stops before the
+windows with camera I/O error −5. The consumer has 39,354 callbacks, 954 camera
+sets and no rejected head result. Kernel logs show request 1909 in the RDI
+bubble path on ISP contexts 1/3, followed by the branch that calls error-fence
+signaling. That does not establish signal delivery, physical camera mapping or
+the first userspace failure. The private caller only dumped its bounded camera
+journal on a frame-callback refusal, leaving this lower-layer failure without
+a journal. Source/cleanup, both firmware readbacks and quiet stock return verify.
+Its 5,761,002-byte, 200-member export has SHA-256
+`9739b811adb06c7c6c284069900b49742df4e3d155878810094dda9e5391543c`.
+
+The repeat adds only `camera_gap_dump("loop-end", clock_now())` after the capture
+loop and before exposure readbacks. Registered snapshot owners are still alive;
+the existing idempotent dump preserves an earlier first refusal if one exists.
+No camera gate, queue, timeout or recovery policy changes. Boot
+`873f6700-376b-496b-a2ca-e76c137103e6` completes 4,499 head-camera sets and
+184,609 callbacks with zero bad results. Its successful terminal journal does
+not explain the preceding intermittent bubble. Both measured OpenVR windows
+return 2,000 valid head/vsync queries with zero age faults; the off window has
+no API measurement. Audio remains off.
+
+The identity trace is 142,162 bytes and the steady trace 237,070,570 bytes over
+68.3 seconds; both readers join without errors, cleanup failures or loss-counter
+increments. However, CPU row 449,380 has malformed event formatting. A later
+DRM row also has unknown event formatting. Full-stream grammar acceptance is
+rejected. The analysis instead verifies explicit clean prefixes, without
+repairing either row or carrying scheduler state through them. The CPU prefix
+ends before 197.751152 seconds; the DRM prefix extends beyond all three windows.
+Cross-CPU text merge inversions are retained and handled using timestamps and
+per-CPU ordering, not mistaken for event loss.
+
+The verified DRM prefix measures 4/3/1 missed presentations. Only the first
+16.059-second on-cohort has clean CPU coverage. Its four missed presents have
+complete GPU/callback chains. The commit worker is FIFO/99 on CPU 7; its
+181–263 microseconds from fence return to kickoff are entirely running, with no
+recorded runnable or blocked time. Those intervals do not support increasing
+commit-worker priority. Callback queue-to-execution times for these frames are
+39–366 microseconds. Two callbacks share each context/timestamp; this is not
+proof of duplicate work or of which callback signals the selected DRM fence.
+The 170 contained shared-IPC waits have maximum 0.484 ms. The earlier 8.605 ms
+tail does not reproduce in this short cohort; it is not declared eliminated.
+
+Evidence and exact prefix hashes are under
+`output/pico-camera-terminal-20261026-v1/analysis/`. The source audit and earlier
+complete DRM boundary analysis are under
+`output/pico-display-deadlines-20261026-v1/`. The repeat export has 245 verified
+members, 38,499,674 bytes, SHA-256
+`90a5be869fb0d2a0aef93525cfb73090b61b7a8216d09c4c41152ffa890d23a3`.
+Source/build bindings, priority restoration, MCU/DSP shutdown, full BOOT/DTBO
+readbacks, muted offline stock return and owned host termination verify. No
+firmware was flashed. Optical controller publication remains zero.
