@@ -427,15 +427,26 @@ builds the opt-in [`capture-pico-controller.c`](../tools/capture-pico-controller
 receiver on native ARM64 Linux. It verifies the installed SSC profile, source
 archive and patched sources, compiles libssc into a separate executable, and
 copies its GPL license. The installed tracking library is unchanged. Each build
-also runs nine report-callback cases without accessing hardware, covering
+also runs 19 report-callback cases without accessing hardware, covering
 attribute events, stream identity, shutdown, configuration replies, accepted
-input, duplicate timestamps and corrupt records.
+input, duplicate timestamps, corrupt records and bounded summary diagnostics.
 
 ```sh
 python3 tools/build-pico-controller-capture.py --output /tmp/controller-build
 /tmp/controller-build/capture-pico-controller \
   BOOT_SERIAL SUID_HIGH SUID_LOW MCU RADIO TOUCH SECONDS
 ```
+
+Append `--summary` to replace raw payload and per-sample printing with at most
+one aggregate line per second and a final line. It retains raw event counts
+before stream acceptance, accepted/rejected counts, the latest valid
+configuration rate, payload fingerprints and timestamp ranges. An independent
+CRC decoder records station and per-hand IMU ranges without changing stream
+watermarks. Its explicit assumed connection mask of 3 examines both possible
+slots; it does not establish that both controllers are connected. Duplicate or
+stale records remain rejected by the normal stream. No-data intervals and output
+failures are retained. A subscription ACK or increasing raw count alone is not
+proof of fresh motion or a tracked pose. Default verbose output is unchanged.
 
 Supply the boot serial from the native kernel command line, the discovered
 `ble_mcu` SUID, and this unit's verified stock configuration. The receiver
