@@ -1906,9 +1906,34 @@ binary, so the final byte, full record CRC and complete payload fingerprint
 cannot be independently checked. No data acceptance or status requirement is
 changed on this evidence. The bounded failure log now retains up to 128 bytes;
 22 host callback cases verify its bound and complete capture of a synthetic
-103-byte envelope. Native validation of that larger bound remains pending.
+103-byte envelope. The subsequent native capture below validates that larger bound.
 
 The v4 archive is 698,940 bytes, SHA-256
 `0c438157c373b9f378a1241be08eec48a21e3be4ef3d1b8548c19914cb1c1bd2`.
 Its private analysis retains the exact stock descriptor/source anchors, failed
 endpoint outcome, 804 verification checks and quiet offline stock/host closure.
+
+The v5 capture uses the unchanged 1024-only acceptance rule with the larger
+failure log. All 103 bytes are retained and independently reproduce FNV-1a64
+`2c9afd8f8b10d21a`; their SHA-256 is
+`cf264472375b173289bcc3f8437f5e988cdcf68b566d61b5cb46599cd7742b12`.
+The message is `0a64`, a 100-byte field beginning `a501`, and a final `00` byte.
+The extracted record's stored and computed CRC both equal `e9`.
+
+Both exact stock descriptors reject the complete outer message as corrupt wire
+data. An offline counterfactual removing only the trailing byte parses but still
+lacks the required accuracy/status field. That counterfactual is not a repair
+or runtime acceptance proposal. A CRC-valid inner record does not validate its
+envelope or supply missing status metadata. This ordinary SSC capture remains
+an unvalidated delivery control; no further subscription retry or relaxed
+protobuf rule follows from these bytes. The separate FastRPC receive and optical
+acquisition paths remain open.
+
+All 22 callback cases run on native ARM64. The receiver exits 1 after about
+57 ms; acknowledgement/disable succeed and no objects remain. The independent
+head/camera workload completes 4,499 sets and 184,659 callbacks with zero bad
+results. Its archive is 698,348 bytes, SHA-256
+`64274aa5f4b6b9d51c5497f4cdd710f33f028289f81047cf52c95496f4bcac2d`.
+`output/pico-controller-endpoints-20261026-v5/analysis/full-event.json` retains
+the complete payload, descriptor identities, required-field and CRC results;
+the accompanying findings retain source, cleanup and stock/host closure checks.
