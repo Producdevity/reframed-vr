@@ -391,3 +391,46 @@ component-only CMake installation pass; the installed wrapper refuses a
 non-Pico Linux environment and invalid argument counts. This does not establish
 pairing, Bluetooth audio, active radio throughput, suspend/resume or complete
 installed-image acceptance.
+
+## UART startup integration remains blocked (2026-10-27)
+
+The four diagnostics in `output/pico-wireless-session-20261027-v{1,2,3,4}/`
+attempt automatic UART ownership before the graphics workload. They use the
+current scheduler-corrected RAM kernel, with kernel-notes SHA-256
+`2e1922a20cf71c2894f095f0b559fd3b95fddab0bd9666b88121bbf30cbb7e64`.
+Firmware initialization can complete, but the subsequent unit-address update
+fails: the kernel records command `0xfc14` timing out and the address callback
+returning `-110`; management information then remains unavailable. This is
+failed integration, not a working BlueZ startup chain or a pairing result.
+
+The first diagnostic also exposes a management-readiness gap: an HCI sysfs
+device can exist before management information is available. Waiting for that
+information, checking `hciconfig` state, explicitly closing startup HCI, and
+retaining the earlier manual path's 18-second interval do not establish a
+successful complete startup. These alternatives must not be described as fixes.
+The pinned kernel masks `HCI_UP` during auto-off in both management and
+`HCIGETDEVINFO`, so a displayed unpowered/down state alone is insufficient to
+prove that startup has finished.
+
+The successful October 25 identity-service reference used
+`single-client-boot-v2/boot-live-single-client.img`, whereas these attempts use
+the later scheduler-corrected kernel and the full tracking/display preparation.
+Those differences remain unisolated. Reproduce the working minimal reference
+on the current kernel before attributing this failure to scheduling, firmware,
+startup ordering or the service sandbox. The unverified transport service and
+its sources remain in ignored experimental output; they are not installed by
+the repository's CMake components.
+
+The failed guards prevent the combined graphics test from starting. A separate
+graphics-only control is recorded in `pico-steamvr-verification.md`. All four
+wireless attempts retain verified full BOOT/DTBO after-readbacks and muted,
+offline stock return. One early UART teardown also times out; successful native
+transport teardown is not claimed. The private archives have verified member
+manifests and the following SHA-256 values:
+
+| Attempt | Bytes | SHA-256 |
+| --- | ---: | --- |
+| v1 | 53,550 | `1e983e1c7f9b50f3728e62a959ebe5b53505a74078f221932de7c0380aae39e5` |
+| v2 | 2,849,144 | `263b3ba23da717350f4c76d0f493bcec262f674aea79b473b13bf619d48f4d75` |
+| v3 | 2,849,192 | `bbe5c32917423d06a2ebd4ff214c8dcdb5ac03e17c88c2271a4bdff09fd1f3b0` |
+| v4 | 2,849,765 | `28b7689d1167d7a166b46872d8286ac05b00d8060ba61f27df525f726469cea8` |
