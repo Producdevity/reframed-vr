@@ -4256,3 +4256,60 @@ Their private `analysis/` directories retain full-stream qualification,
 individual frame chains and the source-pinned placement comparison. The
 candidate's `maintained-core-proof.json` binds its native-tested topology and
 queue metadata checks to the published helper.
+
+### Callback execution context (2026-10-27)
+
+`output/pico-callback-dispatch-20261027-v2/` uses the combined scheduler/CNSS
+kernel described in `pico-native-wireless.md`. It retains mask `0f` and nice
+−20, adding every scheduler switch and hard/soft interrupt entry/exit on CPUs
+0–3. The kernel's generic `CPU` event-filter field selects that cluster while
+the existing role filters retain the commit/render observations elsewhere.
+Capture is bounded to 256 MiB per epoch. This added instrumentation is a causal
+diagnostic, not a clean performance comparison.
+
+The full DRM stream passes hash, grammar, bounds and loss checks. It records
+2/1/2 missed presentations over 1,792/1,794/1,793 contained pairs. All sampled
+startup and steady vsync-age queries pass. The first-on CPU epoch contains an
+impossible scheduler priority and is rejected wholly. Off and final-on epochs
+pass complete validation, workqueue-generation joins, all four CPU switch
+chains and nested interrupt pairing. Their missed frames have different causes:
+
+- Present 7423: queue-to-execution takes 301 µs, but the interval from the
+  callback's fire marker to its emitted commit wake is another 3.521 ms. The
+  callback worker is preempted runnable and remains off CPU for 3.446 ms while
+  `qrtr_rx`, `do_devfreq_notify` and `_deferred_destroy` work execute. Captured
+  interrupt time overlaps 139 µs of that interval. The commit worker dispatches
+  in 7 µs after its wake. A fire marker is therefore insufficient evidence that
+  fence notification has already completed.
+- Present 9495: callback queue-to-execution is 47 µs and fire-to-commit-wake is
+  34 µs. Kickoff precedes the vblank trace by 39 µs, but the flip advances an
+  extra sequence. Its physical latch condition remains unmeasured.
+- Present 9711: queue-to-execution takes 2.248 ms, including 2.189 ms runnable
+  on CPU 0 while `ssc-imu` is scheduled. Captured interrupts occupy 454 µs of
+  that runnable interval. After execution starts, fire-to-commit-wake takes
+  only 23 µs and commit dispatch takes 7 µs. This motivates testing callback
+  exclusion from CPU 0 while preserving the IMU reader's priority.
+
+Scheduled intervals include interrupt and untraced exception time; these are
+not pure per-function CPU costs. Native readback has wakeup preemption enabled
+and a 4 ms CFS wakeup granularity. No particular CFS decision or universal
+priority fix follows from those settings alone.
+
+The 180-second workload completes 4,498 head sets and 184,566 callbacks with zero
+bad results. It has one fewer head set than the earlier control; that difference
+is retained without claiming a measured camera drop or matched-workload pacing
+acceptance. Controller ownership completes 4,444 image sets but publishes zero
+optical poses. Motion ends with `-110` after 13,786 delivered samples. The
+physical near-position acquisition check remains outstanding.
+
+The initial v1 stops before graphics because its bootstrap recipe retains the
+previous kernel-note hash. Its five-file preflight archive, failed assertion,
+full partition after-hashes and quiet stock recovery are preserved. v2 updates
+that one recipe and verifies that no previous kernel-note pin remains in the
+staged payload. Its full source/cache/cleanup checks, queue restoration,
+BOOT/DTBO after-readbacks, muted offline stock return and owned host exit pass.
+The verified v2 archive has 323 data files, 71,414,498 bytes, SHA-256
+`ffff06d96f6015e2a3ebe54c78c7fcb8203fc5d16fe503959e94fcf16aeb062e`.
+The private `analysis/` directory retains strict epoch qualification, complete
+callback generations, CPU/interrupt intervals and the explicit camera-count
+boundary adaptation; no subset of the rejected first epoch is accepted.
