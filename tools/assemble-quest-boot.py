@@ -104,7 +104,8 @@ def root_arguments(label, *, quest_services=False, pico_services=False):
             "rd.fstab=0 rd.luks=0 rd.lvm=0 rd.md=0 rd.systemd.gpt_auto=0 systemd.gpt_auto=0 "
             f"rd.shell=0 rd.emergency={'reboot' if pico_services else 'poweroff'} rd.retry=15 rd.timeout=30"
             + (" reframed.quest=usb-root" if quest_services else "")
-            + (" reframed.pico=qrtr service_locator.enable=1" if pico_services else ""))
+            + (" reframed.pico=qrtr service_locator.enable=1 cnss2.daemon_support=0"
+               if pico_services else ""))
 
 
 def checked_kernel_image(path, expected_sha256):

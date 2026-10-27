@@ -57,11 +57,13 @@ class ArgumentTests(unittest.TestCase):
         self.assertNotIn("reframed.quest=usb-root", plain)
         self.assertEqual(enabled, plain + ["reframed.quest=usb-root"])
 
-    def test_pico_startup_preserves_locator_enablement_and_root_protections(self):
+    def test_pico_startup_selects_native_cnss_and_preserves_root_protections(self):
         plain = assembly.root_arguments("reframed-vr-root").split()
         enabled = assembly.root_arguments("reframed-vr-root", pico_services=True).split()
         plain[plain.index("rd.emergency=poweroff")] = "rd.emergency=reboot"
-        self.assertEqual(enabled, plain + ["reframed.pico=qrtr", "service_locator.enable=1"])
+        self.assertEqual(enabled, plain + [
+            "reframed.pico=qrtr", "service_locator.enable=1", "cnss2.daemon_support=0"
+        ])
         self.assertNotIn("reframed.quest=usb-root", enabled)
         with self.assertRaisesRegex(ValueError, "one headset"):
             assembly.root_arguments("reframed-vr-root", quest_services=True, pico_services=True)

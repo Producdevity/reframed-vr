@@ -38,6 +38,11 @@ the existing device-tree policy. The single-client physical test advances throug
 firmware memory requests and target capabilities, then brings up WLAN when the
 independent firmware-loader delay below is removed.
 
+The Pico runtime assemblers now include `cnss2.daemon_support=0` in their shared
+Pico service arguments. Plain and Quest runtime arguments retain their existing
+policy. The matching kernel must include patch 0053; a boot argument alone
+cannot add the missing parameter to an older kernel.
+
 The driver and this policy use the pinned ByteDance Neo3 kernel; this is not a
 PICO 4 device-tree substitution. Source provenance is
 `profiles/kernel/pico-neo3.json` and the retained source/build receipts.
@@ -434,3 +439,41 @@ manifests and the following SHA-256 values:
 | v2 | 2,849,144 | `263b3ba23da717350f4c76d0f493bcec262f674aea79b473b13bf619d48f4d75` |
 | v3 | 2,849,192 | `bbe5c32917423d06a2ebd4ff214c8dcdb5ac03e17c88c2271a4bdff09fd1f3b0` |
 | v4 | 2,849,765 | `28b7689d1167d7a166b46872d8286ac05b00d8060ba61f27df525f726469cea8` |
+
+## Combined scheduler/radio kernel control (2026-10-27)
+
+The minimal replay in `output/pico-wireless-minimal-20261027-v1/` stops before
+starting Bluetooth: its precondition cannot read the CNSS `daemon_support`
+parameter. The retained scheduler-kernel build omits patch 0053 and its boot
+argument. This is a verified integration gap, not a reproduction of the HCI
+command timeout above. Its failed-precondition evidence and unchanged BOOT/DTBO
+readbacks are retained, and muted offline stock return verifies.
+
+`output/pico-radio-rttime-kernel-20261027-v1/` combines the existing blocked-wake
+scheduler correction with patch 0053 and the explicit native CNSS argument.
+Configuration and the complete exported module-CRC table match the previous
+kernel; the retained initramfs and DTB are unchanged. Two patch-record hash
+differences only relocate identical lockdep compatibility replacements between
+patches 0012/0013. Applying both recorded and current sequences, including patch
+0014, produces byte-identical `drm_syncobj.c`; the private
+`patch-order-equivalence.json` retains that proof. This remains a RAM-boot
+diagnostic, not an accepted installation image.
+
+The exact minimal radio sequence then passes in
+`output/pico-wireless-minimal-20261027-v2/`, without graphics, cameras, SLAM or MCU
+startup. The installed Bluetooth identity service writes the unit address and
+restarts without a second address write. Ten later management reads remain
+available and unpowered. Wi-Fi identity setup/restart and a passive scan pass,
+with 131 BSS observations. Native interface, rfkill and firmware-loader state
+restore; radio modules unload. Full BOOT/DTBO after-readbacks match, muted offline
+stock return verifies, and the owned USB host exits.
+
+The diagnostic boot image has SHA-256
+`d3607ed25e5d50533dc728f93fca22b50dd03f2a5c9402abcf5bd3f56f8c14e7`;
+kernel notes are
+`7e83359bb98ccbc7bb210a554ee1e074a498e87b5fafc7c417826b2b1471c2f5`.
+The verified archive has 11 data files, 144,695 bytes, SHA-256
+`baf94bfa18849dc05ac2c1031a65e643ffcd582c9d9f62c37f6da9317746f71f`.
+This restores a working minimal control on the scheduler-corrected kernel. The
+automatic UART owner, full graphics/tracking coexistence, Bluetooth pairing,
+Wi-Fi association/DHCP and active radio throughput remain unaccepted.
