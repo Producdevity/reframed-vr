@@ -645,9 +645,11 @@ The helper checks the native Neo3 compatible string, boot serial and UUID before
 changing the queue. It is not enabled automatically by the driver bundle.
 
 For the optional CPU-affinity experiment, add `--cpu-mask f0`, or pass
-`cpu_mask='f0'` to the same context owner. This selects CPUs 4–7 only after
+`cpu_mask='f0'` to the same context owner. This selects CPUs 4–7; `--cpu-mask 0f`
+selects CPUs 0–3 instead. Both require
 checking the native Neo3's MIDRs, relative capacities, maximum frequencies,
-online CPUs and global workqueue mask. It requires the original queue to have
+online CPUs and whether the global workqueue mask includes the selected cluster.
+The original queue must have
 nice 0 and mask `ff`. The receipt records intermediate pool mappings; each
 attempted attribute write is restored independently on exit, with boot/queue
 identity and final readback checks. Individual worker policies and IRQ handling
@@ -656,7 +658,10 @@ are outside this operation.
 The [native affinity experiment](pico-steamvr-verification.md#optional-callback-affinity-2026-10-26)
 verifies callback placement and zero steady-window missed vblanks in one run.
 Its p99 callback delay increases and startup-age faults remain, so this option
-is experimental and the default mask policy is unchanged.
+is experimental. A [fresh comparison](pico-steamvr-verification.md#callback-cluster-comparison-2026-10-27)
+records four missed presentations with `f0` and two with `0f`, with mixed callback
+latency tails. Neither mask is a verified pacing fix; the default mask policy
+is unchanged.
 
 ### Optional tracked left-controller input
 

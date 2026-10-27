@@ -96,11 +96,40 @@ class AffinityTests(unittest.TestCase):
         )
 
     def test_invalid_masks_before_mutation(self):
-        for mask in ["", "0", "0f", "ff", "f0\n", "100"]:
+        for mask in ["", "0", "f", "ff", "f0\n", "100"]:
             with self.assertRaises(ValueError):
                 with self.context(mask):
                     self.fail()
             self.restored()
+
+    def test_little_core_mask_changes_only_requested_attrs_and_restores(self):
+        with self.context("0f") as record:
+            self.assertEqual(
+                p.snapshot(), self.before | {"nice": "-20", "cpumask": "0f"}
+            )
+            self.assertEqual(record["experiment"], "queue-cpumask-0f")
+        self.restored()
+        self.assertEqual(
+            [x["attribute"] for x in record["restorations"]], ["cpumask", "nice"]
+        )
+
+    def test_global_mask_is_checked_against_the_selected_cluster(self):
+        for requested, available, accepted in [
+            ("0f", "0f", True),
+            ("f0", "f0", True),
+            ("0f", "f0", False),
+            ("0f", "07", False),
+        ]:
+            with self.subTest(requested=requested, available=available):
+                self.globalmask.write_text(available)
+                if accepted:
+                    with self.context(requested):
+                        pass
+                else:
+                    with self.assertRaises(ValueError):
+                        with self.context(requested):
+                            self.fail("Excluded CPUs accepted")
+                self.restored()
 
     def test_disjoint_or_partial_global_before_mutation(self):
         for mask in ["0", "0f", "70"]:

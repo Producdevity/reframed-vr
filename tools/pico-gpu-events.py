@@ -103,14 +103,15 @@ def mask_value(value):
 
 
 def native_preflight(boot_id, cpu_mask):
-    if cpu_mask != "f0":
-        raise ValueError("Only explicitly selected f0 experiment is supported")
+    if cpu_mask not in ("0f", "f0"):
+        raise ValueError("Only explicitly selected 0f/f0 experiments are supported")
     before_boot = bounded_text(BOOT)
     online, possible = bounded_text(CPU / "online"), bounded_text(CPU / "possible")
     global_mask = bounded_text(GLOBAL_MASK)
     if before_boot != boot_id or online != "0-7" or possible != "0-7":
         raise ValueError("Native boot/online/possible topology differs")
-    if mask_value(global_mask) & 0xF0 != 0xF0:
+    requested_mask = mask_value(cpu_mask)
+    if mask_value(global_mask) & requested_mask != requested_mask:
         raise ValueError("Global workqueue mask excludes requested CPUs")
     rows = []
     capacities = [351] * 4 + [871] * 3 + [1024]
@@ -204,7 +205,7 @@ def prioritize_events(boot_serial, boot_id, cpu_mask=None):
             raise ValueError("Invalid original queue policy")
         record = {
             "schema": 1,
-            "experiment": "queue-cpumask-f0",
+            "experiment": "queue-cpumask-" + cpu_mask,
             "generation": str(uuid.uuid4()),
             "boot_id": boot_id,
             "boot_serial": boot_serial,
@@ -328,7 +329,7 @@ def main():
     parser.add_argument("--seconds", type=int, required=True)
     parser.add_argument(
         "--cpu-mask",
-        choices=("f0",),
+        choices=("0f", "f0"),
         default=None,
         help="Opt-in callback-affinity experiment; requires the verified Neo3 CPU topology",
     )

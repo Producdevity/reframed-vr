@@ -4185,3 +4185,74 @@ its manifest, 45,663,452 bytes, SHA-256
 The private `analysis/` directory retains complete placement, pacing and
 rejected-v1 evidence; `maintained-core-proof.json` binds the published policy
 core to the native-tested source.
+
+### Callback cluster comparison (2026-10-27)
+
+A fresh `f0` control in `output/pico-frame-baseline-20261027-v2/` repeats the
+preceding carrier. It records 1/2/1 missed presentations across
+1,793/1,792/1,793 contained flip pairs. Thus the preceding run's zero misses do
+not establish a reliable pacing fix. Its first two CPU epochs pass complete
+source, grammar, numeric-bound, loss and workqueue-association checks. The third
+has a malformed record and is rejected wholly. Three qualified misses include
+callback-worker wake-to-run delays of 1.522/0.454/0.466 ms; commit-worker dispatch
+takes only 5/4/4 µs. The commit worker is already FIFO priority 99. Those traces
+support investigating callback dispatch rather than increasing commit priority.
+
+`output/pico-callback-little-20261027-v1/` changes only the callback queue's
+selected mask to `0f`, retaining nice −20, the compositor policy and the full
+tracking/UI workload. The maintained helper now accepts this second explicit
+experiment. Its preflight checks the requested cluster against the global mask;
+the default nice-only path, concurrency and restoration rules are unchanged.
+All 982 repository tests, shell syntax and Justfile formatting checks pass.
+
+| Measurement | Fresh `f0` control | `0f` experiment |
+| --- | --- | --- |
+| Missed presentations, on/off/on | 1 / 2 / 1 | 0 / 1 / 1 |
+| Contained flip pairs | 1,793 / 1,792 / 1,793 | 1,795 / 1,794 / 1,794 |
+| Startup overdue API ages, 500 samples | 0 | 0 |
+| Steady on-window overdue API ages, 2,000 samples each | 0 / 0 | 0 / 0 |
+| Off-window context-1 callback median / p99 / maximum, µs | 31 / 462 / 942 | 36 / 425 / 1,204 |
+
+These are single sequential, instrumented runs. The off window is the only
+matching phase with qualified CPU traces in both. Its callback p99 falls while
+its median and maximum rise. The candidate's startup and first-on CPU epochs
+contain an invalid scheduler record and an unknown event respectively; both are
+rejected wholly. Its remaining epochs pass all 21,315/22,086 workqueue execution
+pairs and 2,287/2,316 overlapping callback generations, with source-bound worker
+identities and actual execution on CPUs 0–3 in pool 18. Both complete DRM streams
+pass independently, so their missed-presentation counts remain usable despite
+the rejected CPU epochs.
+
+The candidate's two missed presents still consume callback headroom. Present
+7867 has a 520 µs queue-to-execution interval and 402 µs runnable delay; present
+9965 has 2.362 ms queue-to-execution and 2.288 ms runnable. Commit dispatch takes
+13/4 µs. Both kickoffs precede the recorded vblank marker by only 95/54 µs, yet
+the flip sequence advances an extra vblank. That marker is not a measured panel
+latch deadline; these traces do not establish its exact latch condition or
+separate IRQ time from scheduled-task time. The default queue mask is therefore
+unchanged, and neither experimental cluster is accepted as a pacing fix.
+
+Both 180-second workloads complete 4,499 head-camera sets, with
+184,583/184,538 head callbacks and zero bad results. Both deliver 4,445 owned
+controller image sets but publish zero optical poses. Controller motion ends
+with `-110` after 13,791/13,787 delivered samples. The earlier geometry/range
+rejection remains unresolved; no calibrated physical near-position reference,
+tracked pointing, loss/reacquisition or lens acceptance is obtained here.
+Passing sampled vsync-age calls also does not establish clean presentation.
+
+All exported members are rehashed, the queue attributes restore to their
+original values, and full BOOT/DTBO readbacks match the retained stock hashes.
+Both runs return to verified muted, offline stock with the updater disabled.
+The owned host wrapper joins with status 0; its underlying USB helper exits 1
+after reboot disconnect and is no longer running. The control/candidate archives
+contain 321 data files each and have these byte lengths and SHA-256 values:
+
+- 45,613,233:
+  `938fb179e7b58aacfba2adff06d389a3b6fe59954c849bb04d645ee0d82b114f`
+- 45,713,013:
+  `08a64fc12dffd657ce0b383d54977395ba32a0f33284f10bd2f0c044f9a44bb3`
+
+Their private `analysis/` directories retain full-stream qualification,
+individual frame chains and the source-pinned placement comparison. The
+candidate's `maintained-core-proof.json` binds its native-tested topology and
+queue metadata checks to the published helper.
