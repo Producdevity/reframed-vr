@@ -4313,3 +4313,48 @@ The verified v2 archive has 323 data files, 71,414,498 bytes, SHA-256
 The private `analysis/` directory retains strict epoch qualification, complete
 callback generations, CPU/interrupt intervals and the explicit camera-count
 boundary adaptation; no subset of the rejected first epoch is accepted.
+
+### Excluding CPU 0 does not establish a pacing fix (2026-10-27)
+
+`output/pico-callback-exclude0-20261027-v1/` compares mask `0f` with `fe` on
+the combined kernel using the earlier lighter tracing. Both carriers have the
+same member set and identical bytes except `run-test.sh`, whose requested mask
+and declared executor list differ. Both use the same private helper extension,
+recipes, cache and on/off/on observer sequence. Mask `fe` permits CPUs 1–7;
+its execution placement verifies across all three complete epochs. It remains
+a private experiment; the maintained helper and default policy are unchanged.
+
+| Measurement | Control `0f` | Candidate `fe` |
+| --- | --- | --- |
+| Missed presentations, on/off/on | 1 / 2 / 1 | 1 / 2 / 2 |
+| Contained flip pairs | 1,794 / 1,793 / 1,795 | 1,794 / 1,796 / 1,792 |
+| Queue-to-execution p99, on/off, µs | 368 / 331 | 301 / 379 |
+| Queue-to-execution maximum, on/off, µs | 1,555 / 2,419 | 1,064 / 2,757 |
+| Queue-to-work-end p99, on/off, µs | 945 / 1,013 | 730 / 838 |
+| Queue-to-work-end maximum, on/off, µs | 2,634 / 4,562 | 2,365 / 3,352 |
+
+The control's final CPU epoch has a malformed record and is rejected wholly;
+both full DRM streams pass independently. Work-end intervals include the whole
+joined item and preemption, rather than measuring hardware completion or one
+callback's CPU cost. The candidate's final queue-to-execution maximum is still
+3.362 ms. Both startup and steady API age checks pass, and both workloads
+complete 4,499 head sets with zero bad results. Optical pose publication stays
+zero. Callback tails improve in some measurements but missed presentations do
+not; these single sequential runs do not justify adopting `fe`.
+
+Controller history also differs. The control stops after 13,790 motion samples.
+The candidate recovers genuine input into a new generation after its first
+8,963-sample timeout, then the SDK consumer stops with `-71` after another
+6,273 delivered samples while the producer continues. That transition has a
+separate [controller analysis](pico-controller-protocol.md#consumer-rejection-after-genuine-resumption-2026-10-27).
+Neither its cause nor the extra missed presentation is attributed to the CPU
+mask from this comparison.
+
+Source, cache, restoration, full BOOT/DTBO readbacks, muted offline stock return
+and owned USB-host exit verify. The control archive has 321 data files,
+45,735,123 bytes, SHA-256
+`8c068b5aa6b816d48a855a1864e7e69c3ff014c2d51583607b77d689ced2ad57`.
+The candidate has 322 data files, 45,772,215 bytes, SHA-256
+`cde7cdda5d271c9740a3c6bc8af412d5db56578163861517851925815b3042e7`.
+`comparison.json` retains full generation counts, per-window placement,
+distributions, rejected epochs and the matched-payload proof.

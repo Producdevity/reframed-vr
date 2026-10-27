@@ -1937,3 +1937,35 @@ results. Its archive is 698,348 bytes, SHA-256
 `output/pico-controller-endpoints-20261026-v5/analysis/full-event.json` retains
 the complete payload, descriptor identities, required-field and CRC results;
 the accompanying findings retain source, cleanup and stock/host closure checks.
+
+### Consumer rejection after genuine resumption (2026-10-27)
+
+The candidate in `output/pico-callback-exclude0-20261027-v1/` records a live
+resumption without physical intervention. Generation 104 times out after 8,963
+delivered samples. The existing producer reports fresh post-timeout input at
+151.014019994 seconds; the owning session creates generation 105 and records
+its ready endpoint at 151.048447077 seconds. Worker output confirms that restart
+and the consumer then delivers another 6,273 samples.
+
+At 163.473871916 seconds the SDK-side consumer latches `-71` (`EPROTO`). The
+worker continues accepting motion in generation 105, reaching 20,003 samples
+before its later `-110` timeout. Thus this consumer stoppage occurs while the
+producer still supplies data; it cannot be explained solely by the final
+receive cutoff. The combined consumer total is 15,236 callbacks, with zero
+optical pose publications. Ownership still completes 4,445 controller image
+sets with no dropped sets.
+
+The retained logs do not identify the exact rejection branch or offending
+sample. Consumer-side channel validation, unexpected hands, non-increasing or
+over-limit sample gaps and the update callback can return protocol errors.
+The configured motion gap bound is 10 ms; no evidence here selects that branch.
+The saved raw acquisition carrier contains only its header, so an exact motion
+replay cannot be reconstructed from this run. Preserve the parser and freshness
+bounds until a rejection reason and its source values are captured.
+
+The archive and recovery checks are recorded in the corresponding
+[pacing comparison](pico-steamvr-verification.md#excluding-cpu-0-does-not-establish-a-pacing-fix-2026-10-27).
+This verifies one genuine automatic motion recovery, followed by a distinct
+consumer failure. Optical acquisition, stable reacquisition and tracked pointing
+remain open; the CPU-mask experiment does not establish the protocol error's
+cause.
