@@ -1,4 +1,5 @@
 #include <openvr.h>
+#include "pico-steamvr-probe-gate.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -171,6 +172,11 @@ int main(int argc,char **argv)
                     phase,static_cast<double>(now.tv_sec)+now.tv_nsec/1e9,value.m_nPid,
                     value.m_nNumFramePresents,value.m_nNumDroppedFrames,value.m_nNumReprojectedFrames);
     };
+    int gate=pico_steamvr_probe_gate(std::getenv("PICO_STEAMVR_PROBE_GATE"));
+    if (gate) {
+        std::fprintf(stderr,"PICO_STEAMVR_PROBE_GATE error=%d\n",gate);
+        shutdown();return 12;
+    }
     stats("begin");
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
     unsigned controller_samples=0,controller_connected=0,controller_states=0,controller_poses=0;

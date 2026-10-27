@@ -51,6 +51,7 @@ def main():
                'system/steamvr-pico/gamescope.conf',
                'system/steamvr-pico/vrserver',
                'tests/pico-steamvr-live.cpp',
+               'src/pico-steamvr-probe-gate.cpp', 'src/pico-steamvr-probe-gate.h',
                'tools/build-pico-steamvr.py']
     sources += [str(p.relative_to(ROOT)) for p in sorted(
         (ROOT / 'system/steamvr-pico/resources').rglob('*')) if p.is_file()
@@ -90,6 +91,7 @@ def main():
             probe = args.output / 'pico-steamvr-live'
             command = [args.cxx, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                        '-I', str(ROOT / 'src'), '-isystem', str(args.sdk), str(ROOT / 'tests/pico-steamvr-live.cpp'),
+                       str(ROOT / 'src/pico-steamvr-probe-gate.cpp'),
                        '-ldl', '-lm', '-o', str(probe)]
             commands.append(command)
             subprocess.run(command, check=True)

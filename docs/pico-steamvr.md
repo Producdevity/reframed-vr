@@ -766,3 +766,32 @@ one log. GPU time, presentation intervals and reported drops are software
 observations; none measures photon latency or proves legible text through the
 lenses. Resolution, pacing and controller-camera acceptance are recorded
 separately in the [hardware verification log](pico-steamvr-verification.md).
+
+### Holding the diagnostic probe before sampling
+
+`pico-steamvr-live` accepts the optional environment variable
+`PICO_STEAMVR_PROBE_GATE`, an absolute Unix stream-socket path. After OpenVR
+initialization and any dashboard request, the probe connects and waits for one
+byte, `G`, before its begin statistics and pose/vsync sampling loop. Without the
+variable, it starts sampling immediately. Missing, rejected, closed or timed-out
+gates fail the probe; they do not silently start an untraced sample window. The
+connection and release read each have a five-second socket timeout.
+
+The trace controller should own a private parent directory, grant the `vr` user
+access to its socket, accept the connection, and validate the actual peer PID
+and UID. While the probe is held, record its process/start identity and tasks,
+select the required client/server worker identities, enable tracing, then send
+`G`. Initialization before this barrier is outside that capture. The socket is
+an observation barrier, not a tracking-readiness or presentation-success signal.
+
+This supports investigating the publication gap seen in the October 26
+startup trace: API sample 405 returns counter 3122 even though the retained Mesa
+trace already returned 3124 about 122 microseconds earlier. It does not establish
+which publication stage delayed the value. The existing runtime-owned display
+timing remains the source; the probe does not publish vsync events.
+
+Real Unix-socket tests cover release, rejection, EOF, timeout, disabled operation
+and invalid paths on macOS and Linux ARM64. The complete updated probe compiles
+on Linux ARM64. Applying the barrier to a headset startup trace and qualifying
+its newly selected worker coverage remain the next experiment; the independent
+October 27 headset control used the preceding probe binary.
