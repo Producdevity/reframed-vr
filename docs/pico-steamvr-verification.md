@@ -4647,3 +4647,27 @@ KGSL waker can test that subset. Early-return paths omit the event, so absence
 would remain inconclusive. The source/format/overhead plan is retained in
 `wake-diagnostic.md` within that analysis folder. No scheduler feature toggle,
 priority change or claim of a specific WALT/lock/idle cause follows yet.
+
+### Head-camera startup failure before EAS capture (2026-10-28)
+
+`output/pico-eas-latency-20261028-v1/` stops before dashboard readiness and
+before enabling the proposed EAS capture. The head-camera producer refuses a
+publication at monotonic 159.715706552 s; final camera-ring counters are 884
+written and 876 consumed, filling its eight slots. The consumer reports 36,002
+IMU pairs, 876 image sets and zero bad head results. A subsequent runtime sample
+still observes the IMU producer active with its failure flag clear. Controller
+notifications drain 36,002/36,002 with no queue or notification error.
+
+The later feed error `-125` is cleanup cancellation. Its printed clock is the
+last time supplied to the feed, rather than the time cleanup observed failure.
+The controller's 642.936 ms maximum wait belongs to its separate worker. Neither
+value measures the main head-feed thread's sleep or SDK call. Its scheduler
+state was not captured, so this run does not distinguish a delayed wake,
+runnable delay or slow vendor call. No scheduler or pose-limit change follows
+from this evidence, and there is no compositor timing or optical acceptance.
+
+The received archive verifies all 265 data files: 11,414,703 bytes, SHA-256
+`3eb01805339a5b17034586448d7fb8ea303d07602a656382dffeb28024271c53`.
+DSP shutdown, complete BOOT/DTBO hash comparisons, muted offline stock return
+and owned USB-host termination verify. The next diagnostic brackets the main
+feed's operations and captures its verified TID before dashboard startup.
