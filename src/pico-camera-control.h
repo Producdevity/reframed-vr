@@ -109,5 +109,8 @@ struct pico_camera_event {
  * the V4L2 wrapper timestamp is not a calibrated camera timestamp. */
 int pico_camera_event_subscribe(int event_fd, uint32_t id, bool enabled);
 int pico_camera_event_dequeue(int event_fd, struct pico_camera_event *event);
+/* V4L2 events use POLLPRI. Returns 1 when either source is ready, 0 on
+ * timeout/interruption or negative errno; dequeue and validate events afterward. */
+int pico_camera_event_wait(int sync_fd, int crm_fd, int timeout_ms);
 
 #endif

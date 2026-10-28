@@ -1,6 +1,7 @@
 #include "pico-camera-control.h"
 #include "pico-camera-events.h"
 #include <errno.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/ioctl.h>
 
@@ -343,4 +344,22 @@ int pico_camera_event_dequeue(int fd, struct pico_camera_event *event)
     event->sequence = data.sequence; event->pending = data.pending;
     memcpy(event->data, data.data, sizeof(event->data));
     return 0;
+}
+
+int pico_camera_event_wait(int sync_fd, int crm_fd, int timeout_ms)
+{
+    if (sync_fd < 0 || crm_fd < 0 || sync_fd == crm_fd ||
+        timeout_ms < 0 || timeout_ms > 1000) return -EINVAL;
+    struct pollfd sources[2] = {{.fd = sync_fd, .events = POLLPRI},
+                                {.fd = crm_fd, .events = POLLPRI}};
+    int ready = poll(sources, 2, timeout_ms);
+    if (ready < 0) return errno == EINTR ? 0 : -errno;
+    if (!ready) return 0;
+    bool event = false;
+    for (unsigned i = 0; i < 2; ++i) {
+        if (sources[i].revents & POLLNVAL) return -EBADF;
+        if (sources[i].revents & (POLLERR | POLLHUP)) return -EIO;
+        if (sources[i].revents & POLLPRI) event = true;
+    }
+    return event ? 1 : -EIO;
 }

@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -91,7 +92,9 @@ class PicoCameraCaptureTests(unittest.TestCase):
                 "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                 "-I", str(root / "src"), str(root / "src" / (name + ".c")),
                 str(root / "tests" / ((test_name or name) + ".c")),
-                *[str(root / "src" / dependency) for dependency in dependencies], "-o", str(binary),
+                *[str(root / "src" / dependency) for dependency in dependencies],
+                *(["-Wl,--wrap=poll"] if sys.platform.startswith("linux") and test_name == "pico-camera-event-io" else []),
+                "-o", str(binary),
             ], check=True, capture_output=True, text=True, timeout=30)
             result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=30)
             self.assertIn(marker, result.stdout)

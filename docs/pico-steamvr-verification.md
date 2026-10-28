@@ -4737,3 +4737,58 @@ All 323 data files verify: 26,237,193 archive bytes, SHA-256
 FIFO ownership, trace/DSP cleanup, BOOT/DTBO hashes, muted offline stock return
 and owned host termination verify. Failed preflights remain separate; version 1
 also retains the corrected 34-step launcher receipt.
+
+### Camera event readiness and default-feature regression (2026-10-28)
+
+The head-notification run's complete CPU window 0 independently qualifies. Camera
+PID 1981 schedules out interruptibly at 192.296221 s, with no later wake or
+execution through 205.642216 s. Nineteen runtime samples report
+`hrtimer_nanosleep` and unchanged scheduling counters. Its preceding sleeps match
+the capture loop's 2 ms cadence. This establishes a second delayed polling wake;
+the camera freshness failure follows during that interval.
+
+[`pico_camera_event_wait`](../src/pico-camera-control.c) waits on the same owned,
+subscribed sync/CRM descriptors for `POLLPRI`. The existing alternating
+nonblocking drains, request scheduling and 2 ms timeout checks remain. Both
+vendor poll functions register their V4L2 waitqueues and report pending events;
+event arrival wakes those queues. Exact vendor sources are retained under
+`output/pico-eas-window0-20261028-v1/camera-source/`; the
+[V4L2 event contract](https://kernel.org/doc/html/v5.19/userspace-api/media/v4l/dev-event.html)
+also specifies `POLLPRI`. Focused readiness/error/interruption and existing
+control-ioctl fixtures pass with ASan/UBSan on macOS and ARM64 Linux.
+
+The first combined run reaches the Steam UI software-ready state, then resets
+before export. Its persistent kernel log records a watchdog bark at 200.192553 s,
+with the previous pet at 180.192110 s. The alive mask does not identify a hung
+CPU: this vendor driver may skip idle/isolated CPUs. No specific failed pet stage
+or HRTICK cause is established. Persistent logs and subsequent matching full
+BOOT/DTBO readbacks remain in `output/pico-camera-event-wait-20261028-v1/`.
+
+A fresh control in `output/pico-hrtick-default-control-20261028-v1/` retains the
+same kernel, native binaries, watchdog and idle settings. It makes no scheduler
+feature writes and verifies default `NO_HRTICK` before and after the workload.
+Routine regression stays at that default; HRTICK has no stability
+or performance acceptance from these observations.
+
+The complete workload lasts 181.023 seconds: 4,499 head image sets, 184,669 head
+callbacks, zero bad head results, 4,445 controller image sets and no notification
+or deferred-queue errors. The maximum observed head wait is 13.696 ms, including
+scheduling. All three CPU epochs and all 302,081 DRM rows qualify. The on/off/on
+windows contain 1,793 / 1,795 / 1,793 adjacent presentation pairs with 2 / 0 / 2
+software-sequence skips. All 4,500 vsync-age queries pass, but the four cadence
+gaps remain; this is not complete frame-pacing acceptance or a matched policy
+comparison. No EAS tuning follows from the earlier shortened window either:
+its 700 head-active callback joins have EAS p99/max 19.219/33.907 µs and do not
+reproduce the earlier 409–472 µs synchronous wake tail.
+
+Controller publication remains disabled. All 5,163 recorded result pairs have
+left state zero. The 125 sampled confidence-one results also have diagnostic
+`0x52 == 0`, matching the getter overwrite documented in
+`pico-controller-protocol.md`; they do not establish optical acquisition.
+
+All 357 data files verify: 50,824,806 archive bytes, SHA-256
+`857dafd978ba94fca91544f6132056146b2e931f4ba3645c002e30862995e9f7`.
+Deployed camera source/binary hashes, FIFO/trace/DSP cleanup, full BOOT/DTBO
+after-readbacks, muted offline stock return and owned host termination verify.
+Lens output, position scale, pointing and a permanent installed image retain
+their separate physical/integration acceptance requirements.

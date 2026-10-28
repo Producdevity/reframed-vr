@@ -1,6 +1,7 @@
 #include "pico-camera-control.h"
 #include <assert.h>
 #include <errno.h>
+#include <poll.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,19 @@
 static unsigned calls, failure;
 static uint32_t event_id;
 static bool enabled;
+static int poll_result, poll_error;
+static short poll_events[2];
+#ifdef __linux__
+#define poll __wrap_poll
+#endif
+int poll(struct pollfd *sources, nfds_t count, int timeout_ms)
+{
+    assert(count == 2 && sources[0].fd == 31 && sources[1].fd == 32 && timeout_ms == 2);
+    assert(sources[0].events == POLLPRI && sources[1].events == POLLPRI);
+    assert(!sources[0].revents && !sources[1].revents);
+    sources[0].revents = poll_events[0];sources[1].revents = poll_events[1];
+    errno = poll_error;return poll_result;
+}
 int ioctl(int fd, unsigned long request, ...)
 {
     va_list args; va_start(args, request); uint8_t *data = va_arg(args, void *); va_end(args);
@@ -59,5 +73,20 @@ int main(void)
     assert(pico_camera_event_dequeue(-1, &event) == -EINVAL);
     assert(pico_camera_event_dequeue(31, NULL) == -EINVAL);
     assert(calls == before);
+    assert(pico_camera_event_wait(31, 32, 2) == 0);
+    poll_result = -1;poll_error = EINTR;assert(pico_camera_event_wait(31, 32, 2) == 0);
+    poll_error = ENOMEM;assert(pico_camera_event_wait(31, 32, 2) == -ENOMEM);
+    poll_result = 1;poll_events[0] = POLLPRI;assert(pico_camera_event_wait(31, 32, 2) == 1);
+    poll_events[0] = 0;poll_events[1] = POLLPRI;assert(pico_camera_event_wait(31, 32, 2) == 1);
+    poll_result = 2;poll_events[0] = POLLPRI;assert(pico_camera_event_wait(31, 32, 2) == 1);
+    poll_events[1] = POLLNVAL;assert(pico_camera_event_wait(31, 32, 2) == -EBADF);
+    poll_events[1] = POLLERR;assert(pico_camera_event_wait(31, 32, 2) == -EIO);
+    poll_events[1] = POLLHUP;assert(pico_camera_event_wait(31, 32, 2) == -EIO);
+    poll_events[0] = 0;poll_events[1] = POLLIN;assert(pico_camera_event_wait(31, 32, 2) == -EIO);
+    assert(pico_camera_event_wait(-1, 32, 2) == -EINVAL);
+    assert(pico_camera_event_wait(31, -1, 2) == -EINVAL);
+    assert(pico_camera_event_wait(31, 31, 2) == -EINVAL);
+    assert(pico_camera_event_wait(31, 32, -1) == -EINVAL);
+    assert(pico_camera_event_wait(31, 32, 1001) == -EINVAL);
     printf("PICO_CAMERA_EVENT_IO_PASS calls=%u hardware=0\n", calls); return 0;
 }
