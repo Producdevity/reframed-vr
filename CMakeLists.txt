@@ -78,6 +78,26 @@ if(REFRAMED_PICO_BLUETOOTH_IDENTITY)
             DESTINATION lib/systemd/system COMPONENT PicoBluetoothIdentity)
 endif()
 
+option(REFRAMED_PICO_BLUETOOTH_TRANSPORT "Install native Pico Bluetooth UART ownership" OFF)
+if(REFRAMED_PICO_BLUETOOTH_TRANSPORT)
+    if(NOT REFRAMED_PICO_BLUETOOTH_IDENTITY)
+        message(FATAL_ERROR "Pico Bluetooth transport requires Pico Bluetooth identity startup")
+    endif()
+    install(PROGRAMS tools/pico-bluetooth-transport.py DESTINATION libexec/reframed-vr
+            COMPONENT PicoBluetoothTransport)
+    configure_file(system/pico/reframed-pico-bluetooth-transport.in
+                   reframed-pico-bluetooth-transport @ONLY)
+    install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-bluetooth-transport"
+            DESTINATION libexec/reframed-vr COMPONENT PicoBluetoothTransport)
+    configure_file(system/pico/reframed-pico-bluetooth-transport.service.in
+                   reframed-pico-bluetooth-transport.service @ONLY)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-bluetooth-transport.service"
+            DESTINATION lib/systemd/system COMPONENT PicoBluetoothTransport)
+    install(FILES system/pico/10-bluetooth-transport.conf
+            DESTINATION lib/systemd/system/reframed-pico-bluetooth-identity.service.d
+            COMPONENT PicoBluetoothTransport)
+endif()
+
 option(REFRAMED_PICO_DESKTOP_TEST "Build the opt-in physical Pico desktop-layer test" OFF)
 if(REFRAMED_PICO_DESKTOP_TEST)
     find_package(X11 REQUIRED)

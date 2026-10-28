@@ -1,0 +1,23 @@
+[Unit]
+Description=Own the Pico QCA6390 Bluetooth UART
+BindsTo=dev-ttyHS0.device
+After=dev-ttyHS0.device
+Before=reframed-pico-bluetooth-identity.service bluetooth.service
+PartOf=bluetooth.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart="@CMAKE_INSTALL_PREFIX@/libexec/reframed-vr/reframed-pico-bluetooth-transport" /run/reframed-pico-bluetooth-transport/result.json /etc/reframed-vr/pico-boot-serial
+RuntimeDirectory=reframed-pico-bluetooth-transport
+RuntimeDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=45
+TimeoutStopSec=20
+KillMode=mixed
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_SYS_MODULE CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_UNIX AF_BLUETOOTH AF_NETLINK

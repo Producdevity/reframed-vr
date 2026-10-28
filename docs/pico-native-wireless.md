@@ -477,3 +477,50 @@ The verified archive has 11 data files, 144,695 bytes, SHA-256
 This restores a working minimal control on the scheduler-corrected kernel. The
 automatic UART owner, full graphics/tracking coexistence, Bluetooth pairing,
 Wi-Fi association/DHCP and active radio throughput remain unaccepted.
+
+## Optional UART owner and BlueZ lifecycle (2026-10-28)
+
+`REFRAMED_PICO_BLUETOOTH_TRANSPORT=ON` now installs the tested native UART owner,
+its wrapper and service, and the identity-service dependency drop-in. It is off
+by default and requires `REFRAMED_PICO_BLUETOOTH_IDENTITY=ON`. The owner validates
+the native Pico/boot binding before loading the QCA transport, refuses an
+existing adapter or active BlueZ daemon, and signals readiness only after the
+bound UART and management endpoint are initialized. Identity provisioning still
+requires the verified unpowered adapter. Enabling the identity unit makes BlueZ
+require that sequence; stopping BlueZ propagates to both owned units.
+
+The native control uses the combined scheduler/CNSS RAM kernel. It performs
+three automatic UART starts and three verified stops, including explicit
+identity-only ownership, a real BlueZ start/stop, and an unpowered owner held
+through the 180-second graphics/tracking workload. Every stopped owner records
+adapter detachment and restoration of its original rfkill state. Head tracking
+completes 4,499 camera sets and 184,595 callbacks with zero bad results; controller
+images continue through 4,445 sets, with no confident optical controller poses.
+This is coexistence with an unpowered Bluetooth adapter, not active radio-traffic
+or controller-pointing acceptance.
+
+Two preceding diagnostics isolate test-lifecycle assumptions. In the first,
+identity provisioning succeeds but stopping an inactive BlueZ unit does not
+stop manually started ownership. The next explicitly stops manual ownership,
+then observes a real BlueZ stop complete while its dependent UART unit remains
+`deactivating`. The completed test waits up to 25 seconds for that already
+propagated teardown to finish before checking HCI removal/rfkill or restarting;
+the observed dependent wait is about 0.296 seconds. Active, failed or indefinitely
+deactivating owners are rejected. Cleanup is registered before setup. These
+harness corrections do not reclassify the earlier failures as passes or prove
+the cause of the older HCI command timeouts.
+
+Twenty-one maintained host Bluetooth tests, eight native transport fixtures,
+four host teardown-wait cases and fresh component-only installation checks
+pass. Installed files match all seven native-deployed assets byte-for-byte;
+configuration refuses transport without identity support. The unit owner is
+available as a component, while inclusion in a complete installed root image
+remains a separate integration step.
+
+Evidence is `output/pico-wireless-session-20261028-v3/`: 335 data files,
+45,637,576 bytes, archive SHA-256
+`0d8f96fb24671b88466d445b753a578a4779ea8e0a6c18a3f982eab8a16043c4`.
+Service/module/rfkill/source cleanup, full BOOT/DTBO after-readbacks, muted offline
+stock return and the owned USB-host exit verify. Pairing, Bluetooth audio,
+active traffic, Wi-Fi association/DHCP/throughput and complete installed-image
+acceptance remain open; the earlier passive Wi-Fi control is unchanged.

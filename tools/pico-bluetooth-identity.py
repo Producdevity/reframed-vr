@@ -53,7 +53,7 @@ def load_identity(path, boot_serial):
     return address.lower(), hashlib.sha256(raw).hexdigest()
 
 
-def validate_device(boot_serial, boot_id):
+def validate_device(boot_serial, boot_id, *, require_uart=True):
     if (platform.system() != 'Linux' or platform.machine() != 'aarch64' or os.geteuid() != 0 or
             not re.fullmatch(r'[A-Za-z0-9]{1,32}', boot_serial) or
             'androidboot.serialno='+boot_serial not in Path('/proc/cmdline').read_text().split() or
@@ -62,7 +62,7 @@ def validate_device(boot_serial, boot_id):
         raise ValueError('Requires the selected native Linux Pico Neo3 as root')
     if str(uuid.UUID(boot_id)) != boot_id or Path('/proc/sys/kernel/random/boot_id').read_text().strip() != boot_id:
         raise ValueError('Native boot identity changed')
-    if Path('/sys/module/hci_uart/parameters/qca6390_tty').read_text().strip() != 'Y':
+    if require_uart and Path('/sys/module/hci_uart/parameters/qca6390_tty').read_text().strip() != 'Y':
         raise ValueError('Requires the verified QCA6390 TTY transport')
 
 
