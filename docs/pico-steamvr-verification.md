@@ -4380,3 +4380,45 @@ ownership are described in `pico-controller-protocol.md`. The 324-file archive,
 full BOOT/DTBO after-readbacks, callback-policy restoration, muted offline stock
 return and owned host exit verify. The v1 stale-binary-pin failure is retained
 separately and supplies no SteamVR timing result.
+
+### HRTICK mechanism experiment remains negative (2026-10-28)
+
+`output/pico-cfs-hrtick-20261028-v1/` enables only the existing `HRTICK`
+scheduler feature around the three post-UI observer windows. The kernel,
+callback mask `0f`, nice −20 policy, workload and rebuilt motion diagnostics
+match the preceding control. The private context manager verifies the exact
+feature-set change and restores `NO_HRTICK`; no maintained default changes.
+
+All three complete CPU epochs and the full DRM stream qualify. Missed
+presentations are 0 / 1 / 3 over 1,795 / 1,794 / 1,792 contained flip pairs,
+versus the control's 3 / 1 / 1. The candidate's queue-to-execution p99 values
+are 322 / 359 / 368 µs, with maxima 973 / 4,214 / 1,655 µs. Valid startup
+and steady API ages still do not establish presentation acceptance. These
+single sequential runs do not demonstrate a pacing fix.
+
+One qualified missed presentation retains a callback worker runnable on CPU 2
+for 4.154 ms before selection. After the RT KGSL dispatcher sleeps, a normal
+priority foreground task is selected for the next recorded interval. The
+role-filtered trace cannot prove uninterrupted occupancy by that task or
+account for all intermediate CPU activity. It therefore does not establish a
+scheduler defect, a missing high-resolution interrupt or a failed HRTICK arm.
+The next diagnostic must capture the actual slice decisions and timer lifecycle.
+
+Head tracking completes 4,499 sets and 184,609 callbacks with zero bad results.
+Controller images complete 4,445 sets, but optical pose publication remains
+zero. The motion consumer delivers 13,793 updates before its freshness guard
+stops it. Full BOOT/DTBO after-readbacks, policy/feature restoration, muted
+offline stock return and owned host exit verify. The 326-file archive is
+45,752,557 bytes, SHA-256
+`de38efb2bfc03db69d129c3a8fc7b78848774c88428482ea65c8bcc494c472ea`.
+The private `analysis/` directory retains complete epoch qualification and
+source-pinned workqueue/presentation associations.
+
+A separate fresh RAM-shell check in
+`output/pico-clockevents-20261028-v1/` reads two `/proc/timer_list` snapshots.
+Both report `hres_active=1` on all eight online CPUs, with `NO_HRTICK` retained.
+This establishes the runtime prerequisite in that boot; it cannot retroactively
+prove that a timer was armed during the earlier graphics run. Before/after
+firmware hashes, muted offline stock return and owned host exit verify. The
+4,936-byte compressed observation has SHA-256
+`f7ec5e88b3bef2341b68907aed73480edb72f7208921b05e3048efd11ac97a20`.
