@@ -524,3 +524,39 @@ Service/module/rfkill/source cleanup, full BOOT/DTBO after-readbacks, muted offl
 stock return and the owned USB-host exit verify. Pairing, Bluetooth audio,
 active traffic, Wi-Fi association/DHCP/throughput and complete installed-image
 acceptance remain open; the earlier passive Wi-Fi control is unchanged.
+
+## Powered adapter boundary (2026-10-28)
+
+The guarded test in `output/pico-bluetooth-power-20261028-v2/` uses the maintained
+UART/identity services and the corrected scheduler/CNSS kernel. BlueZ has no peer
+objects, and discovery/pairing remain disabled. The first D-Bus power-on succeeds:
+BlueZ and management information both report powered, retaining this unit's
+verified address. Power-off also succeeds with matching unpowered readbacks.
+This establishes one cold powered/unpowered transition, rather than repeatable
+warm power cycling or radio traffic acceptance.
+
+The second power-on exceeds the diagnostic subprocess's 10-second bound. The
+kernel reports opcode `0x0c56` timing out; the retained vendor HCI header identifies
+it as Write SSP Mode. An unexpected event for that opcode follows. The attempted
+D-Bus power-off during failure handling also returns an error. Source and logs do
+not identify the first delay boundary, establish an IBS-state bug or justify a
+longer kernel timeout. Capture command timestamps and HCI/transport state before
+changing the driver. No pairing was attempted.
+
+The first diagnostic version fails before power-on because its private parser
+expects one HCI header, while `btmgmt info` also prints this same adapter's
+configuration-options header. Version 2 accepts the recorded primary/configuration
+headers for HCI0 and uses that actual output as a fixture. It retains strict unit
+identity checks; the three host/native lifecycle fixtures pass. This parser
+correction is separate from the subsequent real power-cycle failure.
+
+Both attempts stop before the graphics workload. Both verify the existing
+service/module/rfkill cleanup, complete BOOT/DTBO after-readbacks, muted offline
+stock return and owned USB-host exit. The earlier unpowered-coexistence acceptance
+is unchanged. Powered coexistence, repeatable power cycling, pairing, Bluetooth
+audio and Wi-Fi association remain unaccepted.
+
+| Attempt | Data files | Bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| Parser preflight v1 | 99 | 2,962,376 | `1e125902b8146dd14a6e1c1ba2fcaa27ff7e5234141ca3225da7b37ebbcfdbfa` |
+| Power-cycle v2 | 99 | 2,963,275 | `875742ec8f2efb18b1f2abb93bb36d07b3f70315de505cd0b0e7bad5489d955e` |
