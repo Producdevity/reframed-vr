@@ -4383,8 +4383,10 @@ separately and supplies no SteamVR timing result.
 
 ### HRTICK mechanism experiment remains negative (2026-10-28)
 
-`output/pico-cfs-hrtick-20261028-v1/` enables only the existing `HRTICK`
-scheduler feature around the three post-UI observer windows. The kernel,
+`output/pico-cfs-hrtick-20261028-v1/` requests only the existing `HRTICK`
+scheduler feature around the three post-UI observer windows and verifies its
+reported flag. The later diagnostic below establishes that this readback did
+not activate the scheduler mechanism on that kernel. The kernel,
 callback mask `0f`, nice −20 policy, workload and rebuilt motion diagnostics
 match the preceding control. The private context manager verifies the exact
 feature-set change and restores `NO_HRTICK`; no maintained default changes.
@@ -4422,3 +4424,66 @@ prove that a timer was armed during the earlier graphics run. Before/after
 firmware hashes, muted offline stock return and owned host exit verify. The
 4,936-byte compressed observation has SHA-256
 `f7ec5e88b3bef2341b68907aed73480edb72f7208921b05e3048efd11ac97a20`.
+
+### Scheduler feature control backport (2026-10-28)
+
+`output/pico-hrtick-lifecycle-20261028-v3/` adds disabled-by-default, bounded
+scheduler diagnostics to the same kernel. The complete final CPU epoch passes
+source, grammar, hash and loss checks and its workqueue associations qualify.
+It records 281,265 fair-selection decisions taking the HRTICK-disabled branch,
+with no timer lifecycle events, while the reported feature flag is enabled.
+The first epoch's callback association is rejected for an unmatched work end;
+the middle CPU epoch is rejected wholly for one invalid numeric payload. Neither
+supplies callback-tail evidence. The independent complete DRM stream qualifies.
+
+The exact vendor source has `CONFIG_SCHED_DEBUG=y`, `CONFIG_JUMP_LABEL=n` and
+separate `sysctl_sched_features` copies in scheduler translation units. A write
+to the debug interface changes its reported copy without changing the copy used
+by fair scheduling. This matches upstream
+[`a73f863af4ce`](https://github.com/torvalds/linux/commit/a73f863af4ce9730795eab7097fb2102e6854365).
+Patch `0016-scheduler-feature-runtime-bits.patch` backports Juri Lelli and Daniel
+Bristot de Oliveira's conditional-declaration fix, preserving the upstream
+changed lines and author attribution. It leaves the default feature bits,
+including `NO_HRTICK`, unchanged.
+
+Eight separate-translation-unit host checks reproduce the old disconnected
+reader/writer and verify the correction across debug/jump-label configurations.
+The full kernel build passes with unchanged configuration and exported module
+CRCs; initramfs and DTB are unchanged. Source restoration and image layout verify.
+Build and fixture receipts are in
+`output/pico-sched-features-kernel-20261028-v1/`.
+
+The diagnostic RAM run in `output/pico-sched-features-20261028-v1/` verifies
+real timer requests, starts and expirations in two complete CPU epochs, with
+valid whole-epoch grammar/loss/source checks and complete callback associations.
+It does not complete the 180-second workload: `vrserver` records a 10.927078 s
+`server_main` watchdog timeout in `WaitNextEvent`, and its Steam webhelper IPC
+process disappears before the third window. The retained evidence does not
+attribute that failure to HRTICK, tracing or a particular scheduler operation.
+Feature/policy restoration, full BOOT/DTBO readbacks, muted offline stock return
+and owned host exit verify. This is mechanism verification, not pacing acceptance
+or a reason to enable HRTICK by default.
+
+The lighter follow-up in `output/pico-effective-hrtick-20261028-v1/` completes
+the original 180-second tracking/SteamVR workload on the corrected kernel. Its
+member set matches the earlier light carrier; only kernel identity and dependent
+artifact pins change. All three complete CPU epochs, callback associations and
+the full DRM stream qualify. The on/off/on observer windows have zero missed
+presentations across 1,795 / 1,794 / 1,794 contained flip pairs. Queue-to-execution
+p99 values are 316 / 359 / 376 µs and maxima are 989 / 655 / 971 µs.
+
+Both steady 2,000-query API windows pass. One of the 500 startup queries still
+reports overdue age: 22.450052 ms at 168.016332434 s, before HRTICK becomes active
+at 177.605997743 s. Thus overall timing acceptance remains open. One sequential
+candidate with no missed presentations does not establish repeatability or
+justify changing the default policy. The earlier heavy run's watchdog failure
+also remains unisolated.
+
+Head tracking completes 4,499 sets and 184,521 callbacks with zero bad results.
+Controller images complete 4,445 sets, but confident optical publication remains
+zero; the motion consumer stops at its unchanged freshness guard after 13,751
+updates. These results do not establish tracked pointing or lens acceptance.
+Feature and scheduling policies restore exactly, full BOOT/DTBO after-readbacks
+match, muted offline stock return verifies and the owned USB host exits. The
+326-file archive is 45,710,139 bytes, SHA-256
+`29fee3a47117bcb6593f3f0e3d46fab9e3128f83006ca42c9387ceb79e75808d`.
