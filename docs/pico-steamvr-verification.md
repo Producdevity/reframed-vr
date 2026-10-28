@@ -4792,3 +4792,35 @@ Deployed camera source/binary hashes, FIFO/trace/DSP cleanup, full BOOT/DTBO
 after-readbacks, muted offline stock return and owned host termination verify.
 Lens output, position scale, pointing and a permanent installed image retain
 their separate physical/integration acceptance requirements.
+
+### KGSL waker placement diagnostic (2026-10-28)
+
+The complete default-feature recording supplies 5,381 unique frame/fence/callback
+joins, including 5,377 on-time controls. For skipped presents 4,678 and 6,093,
+the real-time KGSL waker remains the scheduled task on the callback CPU for
+454 and 328 µs after waking the callback worker. The switch filters explicitly
+select both directions of `kgsl_worker_thr` transitions. This is elapsed
+scheduled context, including unmeasured interrupts, rather than IRQ-excluded
+execution. EAS selection takes only 25.885 and 6.041 µs in those cases.
+The waker's policy 1 denotes `SCHED_FIFO`; its actual priority is 25.
+
+`output/pico-kgsl-waker-placement-20261028-v1/` tests disjoint placement: KGSL
+waker CPUs 4–7 and the existing callback queue CPUs 0–3. A boot/task-identity
+guard preserves class/priority/nice and restores the original all-eight-CPU
+affinity. Kernel, native binaries, default `NO_HRTICK` and quality limits remain
+unchanged. Placement also changes retirement speed, remote-wake locality and
+competition with other big-core tasks. The owner powers the right controller
+before this run, so input conditions also differ from the preceding control.
+
+The full head/camera workload completes and all three CPU epochs and 301,869 DRM
+rows qualify. On/off/on windows contain 1,793 / 1,799 / 1,794 adjacent pairs with
+2 / 1 / 1 sequence skips. One of the 4,500 vsync-age queries is overdue. This
+does not establish an accepted pacing improvement; the placement remains a
+diagnostic and is not adopted as the routine policy. Original affinity and
+all other owned settings restore before the verified muted stock return.
+
+The export has 358 verified data files, 50,297,795 archive bytes, SHA-256
+`04f03e4c55601d63f7d1d3e471a8f2d35b9c2fb932a4e534dab38b751069a7c9`.
+Full BOOT/DTBO after-readbacks, trace/DSP cleanup and owned host termination
+verify. Detailed default-control joins and source caveats remain in
+`output/pico-default-eas-firewake-20261028-v1/`.
