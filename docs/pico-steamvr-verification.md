@@ -4487,3 +4487,68 @@ Feature and scheduling policies restore exactly, full BOOT/DTBO after-readbacks
 match, muted offline stock return verifies and the owned USB host exits. The
 326-file archive is 45,710,139 bytes, SHA-256
 `29fee3a47117bcb6593f3f0e3d46fab9e3128f83006ca42c9387ceb79e75808d`.
+
+### Pacing repeat and startup dispatch boundary (2026-10-28)
+
+An exact-payload repeat, `output/pico-effective-hrtick-20261028-v2/`, does not
+repeat the first run's zero missed presentations. The complete DRM stream
+qualifies independently of CPU tracing. All startup and steady API-age queries
+pass, but there is one missed presentation in each observer window. CPU epochs
+0/1 and their complete callback associations qualify; epoch 2 is rejected wholly
+for one invalid scheduler payload. No callback latency is accepted from that
+rejected epoch.
+
+| Run | Contained flip pairs, on/off/on | Missed presentations | Invalid startup / steady API ages |
+| --- | --- | --- | --- |
+| Effective HRTICK v1 | 1,795 / 1,794 / 1,794 | 0 / 0 / 0 | 1 / 0 / 0 |
+| Identical repeat v2 | 1,795 / 1,793 / 1,793 | 1 / 1 / 1 | 0 / 0 / 0 |
+| HRTICK covering startup | 1,799 / 1,796 / 1,794 | 1 / 0 / 1 | 0 / 0 / 0 |
+
+The repeat's two qualified missed presentations retain complete fence/callback
+associations. Callback queue-to-execution is 29 µs and 429 µs respectively;
+fire-to-commit-wake is 23 µs and 28 µs. Fence return to encoder kickoff takes
+188 µs and 206 µs while the commit worker stays scheduled. Kickoff precedes the
+vblank trace marker by only 49 µs and 51 µs, yet the flip advances one sequence.
+These software markers do not identify the physical flush/latch deadline. There
+is no multi-millisecond renderer scheduling gap at these two presentations.
+`output/pico-repeat-deadlines-20261028-v1/` retains the qualified boundaries and
+source analysis; no further priority change follows from these measurements.
+
+The original startup fault has a different preceding boundary. The selected CFS
+render thread is runnable for 3.408 ms before its next submission. The following
+GPU job's calibrated start-to-retirement estimate is 7.689 ms, ending about
+374 µs after the next recorded vblank. Its callback dispatch is only 42 µs.
+After the later delivered flip, the already-RR/2 event thread takes 203 µs to run;
+the API query precedes the compositor's next paired-counter query. Exact compiled
+Mesa source directly calls `drmCrtcGetSequence` for that pair. The custom headset
+driver has no independent `VsyncEvent` publisher. This evidence supports testing
+startup render dispatch; it does not establish an additional API-cache defect
+or justify adding another vsync publisher. CPU occupancy outside the selected
+roles remains incomplete.
+
+`output/pico-startup-dispatch-20261028-v1/` retains those source pins and within-
+epoch GPU calibration gates. Recipe 31 installs the executed geometry probe,
+SHA-256 `462e78e82157430ba2a1670f83d6920dac2994b62ed21ea3dc1dd8d5c0415e41`;
+the earlier nested driver probe is overwritten. The retained geometry build
+receipt names its source hash, but an exact matching source snapshot is not
+established. Clock/query values above are retained execution output rather than
+an assertion that current probe source is identical to that binary.
+
+`output/pico-startup-hrtick-20261028-v1/` moves the same guarded feature context
+before graphics launch and restores it after cleanup. Only `run-test.sh` changes;
+the observer loop is AST-identical and all binaries, kernel, cache, priorities,
+affinities and acceptance thresholds are unchanged. HRTICK is active before the
+startup probe. The 180-second workload completes, all three complete CPU epochs
+and callback associations qualify, and all 4,500 startup/steady API queries pass.
+Callback queue-to-execution maxima are 763 / 639 / 670 µs. Two missed
+presentations remain. These sequential samples do not establish a repeatable
+pacing fix or change the default `NO_HRTICK` policy. Optical controller confidence
+remains zero.
+
+Both new runs verify feature/policy restoration, full BOOT/DTBO readbacks, muted
+offline stock return and owned USB-host exit. Their archive receipts are:
+
+| Run | Data files | Bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| Identical repeat | 326 | 45,783,390 | `75ede042f4561456886b427848e24e1403db633e8ef2de82846ec4b123fa168e` |
+| Startup-wide context | 327 | 45,711,392 | `b165580e67130d1a099366d11656d871a73790cc766db341ecb75c0513706c1e` |
