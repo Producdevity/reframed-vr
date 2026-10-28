@@ -2003,3 +2003,28 @@ Full BOOT/DTBO after-readbacks, muted offline stock return and owned USB-host ex
 verify. The corresponding pacing qualification is recorded in
 `pico-steamvr-verification.md`; this diagnostic does not change scheduling policy
 or relax controller validity.
+
+### Deferred head-queue stop during graphics startup (2026-10-28)
+
+The completed head/camera/SteamVR run in
+`output/pico-sde-consumption-20261028-v2/` does not establish controller coexistence
+for its full duration. Motion freshness expires at 152.847536086 seconds, with
+stage 6 (`EXPIRED`) and 13,788 delivered updates. Independently, the controller
+thread reports `PICO_CONTROLLER_HEAD_HISTORY_STOP rc=-1` at 172.482889412 seconds.
+Only 1,064 controller image sets are delivered, with zero public confident poses.
+The head path continues through all 4,499 camera sets without bad results.
+
+In the exact retained consumer source, `controller_drain_heads` returns `-1`
+when `head_queue.failed` is latched. The producer latches that flag for either
+`written < read` or `written - read >= 512`. The maintained head-history push
+returns different errno values for its own failures. Thus this stop selects the
+deferred-queue invariant/capacity branch, independently of the earlier radio
+expiration; it does not identify which queue condition occurred or what delayed
+the drain. Exact indices, first-failure time and active consumer operation were
+not retained. No scheduler trace selects this controller worker at that boundary.
+
+Capture that first-failure context and the worker's execution before changing
+queue size, freshness limits or scheduling. A larger queue alone cannot establish
+freshness after a delayed drain. Controller pointing, optical acquisition and
+loss/reacquisition remain unaccepted. The archive and recovery checks are in the
+corresponding SDE section of `pico-steamvr-verification.md`.
