@@ -131,7 +131,8 @@ int main(int argc, char **argv)
     alarm(20);
     int fd = -1;
     bool active = false, success = false;
-    uint32_t framebuffer = 0, crtc = 0;
+    uint32_t framebuffer = 0, crtc = 0, connector_id = 0, encoder_id = 0;
+    int crtc_index = -1;
     void *pixels = MAP_FAILED;
     drmModeRes *resources = NULL;
     drmVersionPtr version = NULL;
@@ -168,6 +169,11 @@ int main(int argc, char **argv)
     for (int i = 0; !crtc && i < resources->count_crtcs; i++)
         if (encoder->possible_crtcs & (UINT32_C(1) << i)) crtc = resources->crtcs[i];
     REQUIRE(crtc);
+    for (int i = 0; i < resources->count_crtcs; i++)
+        if (resources->crtcs[i] == crtc) crtc_index = i;
+    REQUIRE(crtc_index >= 0);
+    connector_id = connector->connector_id;
+    encoder_id = encoder->encoder_id;
     initial = drmModeGetCrtc(fd, crtc);
     REQUIRE(initial);
     if (initial->mode_valid) {
@@ -226,10 +232,12 @@ done:
     if (fd >= 0 && close(fd)) { perror("close DRM"); success = false; }
     if (!success) return 1;
     printf("PICO_DISPLAY_HANDOFF_READY {\"boot_serial\":\"%s\",\"boot_id\":\"%s\","
-           "\"mode_hz\":120,\"initial_mode_valid\":%s,\"crtc\":%u,\"vblank_events\":5,\"period_ns\":%" PRIu64 ","
+           "\"mode_hz\":120,\"initial_mode_valid\":%s,\"connector\":%u,\"encoder\":%u,"
+           "\"crtc\":%u,\"crtc_index\":%d,\"vblank_events\":5,\"period_ns\":%" PRIu64 ","
            "\"first_sequence\":%" PRIu64 ",\"last_sequence\":%" PRIu64 ","
            "\"first_ns\":%" PRIu64 ",\"last_ns\":%" PRIu64 ",\"released\":true}\n",
-           serial, boot, initial_mode_valid ? "true" : "false", crtc, period,
+           serial, boot, initial_mode_valid ? "true" : "false", connector_id, encoder_id,
+           crtc, crtc_index, period,
            events[0].sequence, events[4].sequence, events[0].ns, events[4].ns);
     return 0;
 }

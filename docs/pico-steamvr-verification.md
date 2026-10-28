@@ -4552,3 +4552,66 @@ offline stock return and owned USB-host exit. Their archive receipts are:
 | --- | ---: | ---: | --- |
 | Identical repeat | 326 | 45,783,390 | `75ede042f4561456886b427848e24e1403db633e8ef2de82846ec4b123fa168e` |
 | Startup-wide context | 327 | 45,711,392 | `b165580e67130d1a099366d11656d871a73790cc766db341ecb75c0513706c1e` |
+
+### SDE flush decisions and startup readiness (2026-10-28)
+
+`output/pico-sde-consumption-20261028-v2/` records the existing filtered
+`sde/sde_evtlog` video-IRQ and flush-trigger events. The runtime format and
+source-line schemas match the retained vendor sources and target preprocessing.
+The existing logger mask stays 11; its configuration is not changed. Event
+filters and enables restore after the joined reader. No kernel, render policy,
+binary or quality threshold changes from the preceding startup-wide control.
+
+The first attempt stops before compositor launch: its initial head observer
+has 300 invalid poses, while later retained head records become confident.
+Version 2 adds a separate startup barrier requiring one second of fresh,
+progressing channel poses, bounded to 20 seconds. It waits 16.376 seconds in
+this run, then the unchanged three-second OpenVR probe returns 300 valid and
+zero invalid poses. Eight host fixtures cover the additional barrier. A missing
+monitor log no longer masks an initial-observer failure. This barrier does not
+exclude faults from any subsequent timing measurement.
+
+The full 180-second head/camera/SteamVR workload completes: 4,499 head camera
+sets, 184,571 callbacks and zero bad head results. All 274,501 DRM trace rows
+qualify with complete hashes and zero recorded loss. CPU window 0 contains a
+malformed row and is rejected wholly; windows 1 and 2 independently qualify.
+The on/off/on windows contain 1,792 / 1,795 / 1,795 adjacent presentation pairs
+with 2 / 0 / 6 software-sequence skips. One of 4,500 sampled vsync queries is
+overdue in the last window. Thus neither cadence nor API acceptance passes.
+Accepted-window callback queue-to-execution maxima are 748 and 721 µs.
+
+All 13,917 video IRQ and 13,704 trigger records use observed encoder 28/interface
+1. Source-order, same-CPU/TID candidates associate six skipped sequences with
+kickoffs after their expected handler candidate; one kickoff overlaps that
+candidate's decision. The remaining candidate records old pending 1, hardware
+flush `0x30200c0` and no completion, followed by zero flush/completion `0x19`
+on the next candidate. That nonconsumption decision is direct driver evidence.
+None of the eight expected candidates selects completion. These observations
+support investigating readiness before the display deadline; they do not select
+a delayed-metadata-only fix or justify changing timestamps.
+
+Exact handler boundaries and encoder-object-to-CRTC mapping remain unproven:
+the capture lacks `vblank_irq` B/E markers, and its display state has only the
+encoder mask. The consistent hardware-counter correlation corroborates the
+candidate joins, without proving physical latch timing or pixels. The qualified
+source/report is `output/pico-sde-joins-20261028-v1/`. Rejected CPU window 0
+supplies no CPU/GPU inference. Controller processing stops earlier, as documented
+in `pico-controller-protocol.md`; this is not complete controller coexistence
+acceptance.
+
+The handoff receipt now also records its selected connector/encoder object IDs
+and CRTC index, retaining the IDs already queried during handoff. Its ARM64 build,
+wrong-board refusal and existing display-shutdown fixture pass; this additive
+receipt change is not yet deployed or hardware-tested. The initial handoff
+mapping alone cannot attest a later active mapping. A fresh capture should retain
+the active mapping and the existing IRQ B/E markers before assigning exact
+handler/present causality. The current-source OpenVR probe also builds separately
+under `output/pico-openvr-probe-20261028-v1/`; it is not yet hardware-tested and
+does not retroactively close the retained binary's source-provenance gap.
+
+The completed v2 export contains 330 data files, 45,423,517 bytes, SHA-256
+`5c91428f5105163a0963506865552e1671cbda1266b8331b503c0f7523fc695d`.
+Complete BOOT/DTBO after-readbacks, muted offline stock return and owned USB-host
+exit verify. The failed preflight v1 remains separate: 168 files, 3,223,454 bytes,
+SHA-256 `909092fb7e63347cdb54e683517099218bf020e82ba6bb5761adce4873273625`;
+its recovery also verifies and it supplies no compositor timing acceptance.
