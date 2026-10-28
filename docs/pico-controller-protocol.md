@@ -2028,3 +2028,58 @@ queue size, freshness limits or scheduling. A larger queue alone cannot establis
 freshness after a delayed drain. Controller pointing, optical acquisition and
 loss/reacquisition remain unaccepted. The archive and recovery checks are in the
 corresponding SDE section of `pico-steamvr-verification.md`.
+
+### Wake the deferred consumer on head publication (2026-10-28)
+
+`output/pico-head-queue-20261028-v1/` captures the first queue failure with exact
+indices and an operation snapshot. Written 1,868/read 1,356 selects capacity,
+with all 512 slots occupied. The worker is inside `usleep(500)`: its sleeping
+schedule-out at 125.048141 seconds is followed by waking at 126.986168 and
+execution at 126.988215. The complete 8,813-row dedicated scheduler stream
+qualifies. This establishes a delayed polling wake; timer expiry, timer slack
+and CPU-idle state were not captured in that control, so their underlying role
+remains unknown.
+
+[`pico-controller-notify.c`](../src/pico-controller-notify.c) provides a Linux
+nonblocking `eventfd` notification. The native consumer signals after publishing
+head queue data and waits on that descriptor instead of its polling sleep. A
+1 ms empty timeout permits startup/stop processing. The queue remains the data
+authority; its capacity, ordering, generation and freshness checks are unchanged.
+The descriptor remains owned until the producer callbacks and consumer stop.
+Linux ARM64 ASan/UBSan fixtures cover concurrent publication, coalescing, full
+counters, descriptor flags, timeouts and closed descriptors.
+
+The full native regression in `output/pico-controller-notify-20261028-v2/`
+completes 180 seconds with 184,496 head callbacks/notifications, all consumed,
+zero queue/notification errors, 4,499 head camera sets and 4,445 controller image
+sets. Head output has no bad results. Motion delivers 13,706 updates before its
+separate freshness timeout; all decoded controller results still lack public
+optical confidence. The queue fix does not establish tracked pointing.
+Notification-call wall time peaks at 10.485 ms and worker wait wall time at
+19.492 ms, including preemption; these are observed maxima, not latency bounds
+or a matched performance comparison.
+
+The startup reader also retries up to 64 inconsistent channel snapshots.
+Previously, concurrent writes reset its one-second readiness interval despite
+fresh decoded poses; the rejected v1 notification run has 1,562 fresh samples
+and 294 busy copies. Nine host fixtures preserve the existing freshness and
+stability limits. The corrected native reader retries 18 copies, accepts in
+1.010 seconds and then passes the unchanged 300-sample OpenVR head check.
+
+The vendor kernel shares `nop_trace.ref` across tracing instances. Removal must
+follow closure of every owned reader, including the identity/DRM readers. The
+corrected order removes the dedicated instance with restored filters/enables
+and no removal retries. Its separate 64 MiB scheduler collector exhausts its
+budget, however, so that entire dedicated stream is rejected for latency or
+occupancy inference. The independently qualified main DRM/CPU results are in
+`pico-steamvr-verification.md`; no prefix of the rejected stream is reused.
+
+The completed export contains 335 data files, 49,484,279 bytes, SHA-256
+`569211c7477b3bf9cd54513c6cd80ae8a6107bb4042d75173f8405bd82f9db8d`.
+Deployed consumer/source-closure hashes, complete BOOT/DTBO readbacks, muted
+offline stock return and owned host shutdown verify. The two startup-failed
+controls remain distinct: queue diagnostic SHA-256
+`968ecd369db8d91f8303de2e1caef91250d8333f100edc0233e6dd571dcb2a5d`,
+and notification v1 SHA-256
+`c4d63f1f17249b0abda5efd8a84b0c179c7a57975b619ad707a01f083a3fd48f`.
+Their stock recovery verifies; neither supplies graphics acceptance.
