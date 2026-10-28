@@ -107,7 +107,8 @@ int main(int argc,char **argv)
 {
     setvbuf(stdout,nullptr,_IOLBF,0);
     if ((argc!=4&&argc!=5&&argc!=6&&argc!=7) || !board(argv[2])) return 22;
-    bool controllers=argc==5&&!std::strcmp(argv[4],"--left-controller");
+    bool right_controller=argc==5&&!std::strcmp(argv[4],"--right-controller");
+    bool controllers=(argc==5&&!std::strcmp(argv[4],"--left-controller"))||right_controller;
     bool view_frames=argc==5&&!std::strcmp(argv[4],"--view-frames");
     bool models=argc==5&&!std::strcmp(argv[4],"--controller-models");
     bool frame_history=argc==7&&!std::strcmp(argv[6],"--frame-history");
@@ -181,7 +182,7 @@ int main(int argc,char **argv)
     unsigned valid=0,invalid=0;double first[3]={0},max_distance=0;
     unsigned controller_samples=0,controller_connected=0,controller_states=0,controller_poses=0;
     char expected_controller[80];
-    std::snprintf(expected_controller,sizeof(expected_controller),"%s-left",argv[2]);
+    std::snprintf(expected_controller,sizeof(expected_controller),"%s-%s",argv[2],right_controller?"right":"left");
     auto *input_debug=controllers?static_cast<vr::IVRDebug *>(get(vr::IVRDebug_Version,&error)):nullptr;
     if (controllers&&(!input_debug||error!=vr::VRInitError_None)) {shutdown();return 10;}
     unsigned vsync_samples=0,vsync_invalid=0;
@@ -367,7 +368,7 @@ int main(int argc,char **argv)
     }
     shutdown();dlclose(library);
     std::printf("PICO_STEAMVR_LIVE_RESULT valid=%u invalid=%u max_position_delta_m=%.6f physical_motion_acceptance=0\n",valid,invalid,max_distance);
-    if (controllers) std::printf("PICO_STEAMVR_CONTROLLER_RESULT samples=%u connected=%u states=%u valid_poses=%u physical_input_acceptance=0\n",
-        controller_samples,controller_connected,controller_states,controller_poses);
+    if (controllers) std::printf("PICO_STEAMVR_CONTROLLER_RESULT samples=%u connected=%u states=%u valid_poses=%u physical_input_acceptance=0 hand=%u\n",
+        controller_samples,controller_connected,controller_states,controller_poses,right_controller?2u:1u);
     return controllers&&!controller_states?10:valid<100||invalid?8:dashboard_visible?0:9;
 }

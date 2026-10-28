@@ -93,7 +93,7 @@ Provide all of:
 
 ## Optional controller input
 
-The physical driver can register a left Neo3 controller when both
+The physical driver registers separate left and right Neo3 controllers when both
 `PICO_STEAMVR_CONTROLLER_CHANNEL` and `PICO_STEAMVR_CONTROLLER_INSTANCE` are
 provided. The instance is a nonzero 16-digit lowercase hex identifier. Without
 these variables, the driver retains its HMD-only behaviour.
@@ -663,14 +663,17 @@ records four missed presentations with `f0` and two with `0f`, with mixed callba
 latency tails. Neither mask is a verified pacing fix; the default mask policy
 is unchanged.
 
-### Optional tracked left-controller input
+### Optional tracked controller input
 
 The physical driver accepts `PICO_STEAMVR_LEFT_POSE_CHANNEL` and
-`PICO_STEAMVR_LEFT_POSE_INSTANCE` alongside the existing digital-controller
-settings. Both are required together. The absolute path must name a regular,
+`PICO_STEAMVR_LEFT_POSE_INSTANCE`, with corresponding `RIGHT` variables for the
+other hand, alongside the existing digital-controller settings. Each hand's
+path/instance pair is optional independently and must be complete if supplied.
+The absolute path must name a regular,
 trusted-owner ABI-2 SLAM channel with no group/world write permissions; the
 instance is a nonzero 16-digit lowercase hexadecimal identifier distinct from
-the HMD instance. The HMD channel's inode is refused. The controller reader binds
+the HMD and other selected controller instances. The HMD channel's inode and
+aliases between controller pose files are refused. Each controller reader binds
 the HMD generation and universe, with the same maximum pose age (at most 100 ms).
 
 The producer must supply the controller origin in metres in the current HMD
@@ -678,7 +681,7 @@ world. The reader applies no head/eye extrinsic, arm model, prediction or defaul
 position. Both the digital input and pose must be current. Tracking loss,
 disconnect, stop or a generation mismatch publishes an invalid pose; `GetPose`
 and the debug query recheck freshness instead of reviving a cached result.
-Without these optional settings, the controller retains digital-only operation
+Without a hand's optional settings, that controller retains digital-only operation
 and an invalid pose.
 
 The seven host SteamVR test suites pass, and the updated driver builds on the

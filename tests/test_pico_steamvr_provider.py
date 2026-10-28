@@ -18,7 +18,7 @@ CJSON = ROOT / 'output/pico-steamvr-deps/cjson'
                      shutil.which('cc') and shutil.which('c++'),
                      'requires pinned OpenVR, cJSON and host compilers')
 class PicoSteamvrProviderTests(unittest.TestCase):
-    def test_controller_registration_failure_preserves_hmd_and_board_identity_is_unique(self):
+    def test_two_hand_bindings_registration_failures_and_board_identity(self):
         sdk = json.loads((ROOT / 'profiles/openvr.json').read_text())
         self.assertEqual(hashlib.sha256((SDK / 'openvr_driver.h').read_bytes()).hexdigest(),
                          sdk['files']['headers/openvr_driver.h'])

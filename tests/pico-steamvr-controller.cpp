@@ -135,17 +135,26 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
     DriverPose_t pose{};
     unsigned calls = 0;
     bool reject_controller = false;
+    bool register_controllers = false;
+    unsigned reject_hand = 0;
+    std::map<std::string, ITrackedDeviceServerDriver *> controllers;
+    std::map<uint32_t, DriverPose_t> device_poses;
     ITrackedDeviceServerDriver *registered_hmd = nullptr;
     bool TrackedDeviceAdded(const char *pchDeviceSerialNumber, ETrackedDeviceClass eDeviceClass,
                             ITrackedDeviceServerDriver *pDriver) override
     {
-        if (reject_controller) {
+        if (reject_controller || register_controllers) {
             if (eDeviceClass == TrackedDeviceClass_HMD) {
                 registered_hmd = pDriver;
                 return true;
             }
             assert(eDeviceClass == TrackedDeviceClass_Controller);
-            return false;
+            if (reject_controller) return false;
+            const char *hand=std::strrchr(pchDeviceSerialNumber,'-');assert(hand);
+            assert(!std::strcmp(hand,"-left") || !std::strcmp(hand,"-right"));
+            if (reject_hand==(!std::strcmp(hand,"-left")?1u:2u)) return false;
+            assert(controllers.emplace(hand,pDriver).second);
+            return true;
         }
         assert(false);
         return {};
@@ -153,7 +162,9 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
     void TrackedDevicePoseUpdated(uint32_t unWhichDevice, const DriverPose_t &newPose,
                                   uint32_t unPoseStructSize) override
     {
-        assert(unWhichDevice == 3 && unPoseStructSize == sizeof(DriverPose_t));
+        assert((unWhichDevice == 3 || (register_controllers && unWhichDevice == 4)) &&
+               unPoseStructSize == sizeof(DriverPose_t));
+        device_poses[unWhichDevice]=newPose;
         pose = newPose;
         calls++;
     }
@@ -170,7 +181,7 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
     }
     bool PollNextEvent(VREvent_t *pEvent, uint32_t uncbVREvent) override
     {
-        if (reject_controller) return false;
+        if (reject_controller || register_controllers) return false;
         assert(false);
         return {};
     }
