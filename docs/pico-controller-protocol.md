@@ -179,6 +179,25 @@ validated connected input, followed by [SteamVR digital-input tests](pico-steamv
 Analog calibration and controller poses remain unverified. Digital defaults are
 described in [SteamVR bindings](pico-steamvr.md#digital-default-bindings).
 
+On 2026-10-28, after the owner powered both controllers, the native receiver
+records 13,382 left and 13,377 right reports during the placement diagnostic in
+`output/pico-kgsl-waker-placement-20261028-v1/`. Reception does not establish
+optical tracking, button mappings or the right-hand estimator binding.
+
+The subsequent read-only stock collector verifies both hands connected in
+repeated status snapshots, with revision byte 53, double-scale 0 and
+axis-reversal-bypass 0 for each hand. It separately reads each complete factory
+calibration twice and constructs its 85-float tracker vector. This establishes
+the right-hand settings without copying left-hand calibration. Evidence is
+`output/pico-both-controller-config-20261028-v1/`; the right calibration's raw
+CV3 SHA-256 is
+`1275f884f261709819c30d8e03efa84773eb0b72a777a6a5ada5cb54472ace96`,
+and its vector SHA-256 is
+`b99e25219f403a491099b272ed6f42d44edb23e074d9a7cba5763e62ab014ad7`.
+The temporary stock wake is restored to sleep. The tested native SDK binding
+remains left-only; right-hand estimator routing and positive optical acquisition
+are separate work. Downward desk placement has no verified optical visibility.
+
 ### Cached controller tracking calibration
 
 The optional `--calibration-hand left|right` collector reads stock station
