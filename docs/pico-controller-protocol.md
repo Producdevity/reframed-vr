@@ -194,9 +194,38 @@ CV3 SHA-256 is
 `1275f884f261709819c30d8e03efa84773eb0b72a777a6a5ada5cb54472ace96`,
 and its vector SHA-256 is
 `b99e25219f403a491099b272ed6f42d44edb23e074d9a7cba5763e62ab014ad7`.
-The temporary stock wake is restored to sleep. The tested native SDK binding
-remains left-only; right-hand estimator routing and positive optical acquisition
-are separate work. Downward desk placement has no verified optical visibility.
+The temporary stock wake is restored to sleep. At this point the native SDK
+binding is left-only; the subsequent dual-hand test below verifies right-hand
+estimator routing. Downward desk placement has no verified optical visibility.
+
+The RAM-only run in `output/pico-both-tracker-20261028-v1/` initializes both
+per-hand estimators using their distinct factory vectors and serials from
+the repeated stock status records. Both calibration calls return zero. Motion
+mask 3 routes each event to its matching left/right SDK entry point, with
+13,813 left and 13,694 right updates delivered. The source routes generation
+reset/recalibration through both selected estimators; no resumed motion
+generation occurs in this run. The existing acquisition
+recording format lacks a hand field, so this diagnostic refuses to enable that
+left-only recording mode with both hands active.
+
+The feed still stops at its unchanged freshness boundary: 27,507 updates reach
+the SDK before `-ETIMEDOUT`. Both radio counts subsequently stabilize at
+13,402 left / 13,387 right; stationary desk placement does not establish why
+reports stopped. All 3,438 recorded result pairs have state zero for both
+hands, including the confidence-3/diagnostic-3 samples. Successful calibration,
+IMU calls and image ownership therefore establish routing, not optical
+acquisition. Pose publication stays disabled; tracked pointing remains open.
+
+The independent 181.023-second head/render workload completes 4,499 head image
+sets, 4,445 controller image sets and zero bad head results. All three CPU epochs
+and the complete DRM stream qualify. On/off/on windows contain
+1,793 / 1,794 / 1,794 adjacent presentation pairs and 2 / 0 / 0 sequence skips.
+One startup vsync-age query is overdue; all 4,000 steady queries pass. This is
+not pacing acceptance or a matched performance comparison. The 356-file export
+is 50,941,994 bytes, SHA-256
+`bf7e0a577828e7c12ca302e6859d5ce477c7e4e57ecdcbc015c628a9571302d1`.
+Consumer binary/source closure, trace/FIFO/DSP cleanup, complete BOOT/DTBO
+readbacks, muted offline stock return and owned host termination verify.
 
 ### Cached controller tracking calibration
 
