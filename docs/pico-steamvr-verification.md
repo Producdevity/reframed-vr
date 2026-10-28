@@ -4824,3 +4824,46 @@ The export has 358 verified data files, 50,297,795 archive bytes, SHA-256
 Full BOOT/DTBO after-readbacks, trace/DSP cleanup and owned host termination
 verify. Detailed default-control joins and source caveats remain in
 `output/pico-default-eas-firewake-20261028-v1/`.
+
+### Driver consumption and upstream readiness (2026-10-28)
+
+The same default-feature recording already contains 30,371 selected SDE event
+records. No additional device capture is needed for this boundary. The complete
+302,081-row DRM stream, archive members, monotonic clock, eight CPU loss counters,
+source line IDs, logger gate and restoration verify again.
+[`pico-sde-events.py`](../tools/pico-sde-events.py) validates the complete runtime
+field layout and print-argument order, then decodes the source-specific payloads.
+Its fixtures reject swapped flush/completion fields, unknown source lines,
+truncation, overflow and nonzero padding.
+
+All 15,287 video-handler records associate with the preceding same-CPU/task
+hardirq DRM record; the selected encoder/interface is consistently 28/1. There
+is one trigger per skipped present. This association uses complete ordering and
+context, not an IRQ invocation ID, which the event does not contain. Source
+places the flush/pending sample before the DRM callback and log emission;
+cross-CPU triggers can interleave between those operations.
+
+| Present | Expected handler's sampled state | Following handler |
+|---:|---|---|
+| 4,678 | Flush `0x30200c0` still pending; no completion | Flush zero; completion `0x19` |
+| 6,093 | No pending kickoff; trigger logged 75 µs after the DRM record | Completes the new frame |
+| 8,715 | No pending kickoff; trigger logged 960 µs after the DRM record | Completes the new frame |
+| 9,495 | Sampled pending zero; pending becomes one by log emission | Completes the new frame |
+
+For 9,495, the trigger precedes the DRM record by 28 µs, yet follows the
+handler's earlier sampled state. For 4,678, a trigger 40 µs before that record
+still leaves hardware flush bits pending at the sample. The software vblank log
+therefore cannot serve as the hardware-consumption deadline. None of these
+events identifies a physical latch or photon timestamp. Exact rows, source pins
+and sentinel checks remain in `output/pico-sde-handler-20261028-v1/`.
+
+Present 8,715 separately qualifies through all 1,793 window-2 frame/GPU chains and
+the original GPU clock-calibration gates. The renderer remains in an earlier
+futex wait after delivery of the preceding flip. A `vrserver` wake is followed
+by 309 µs runnable time; entry to the WSI present wait is 2.469 ms after that
+flip. The WSI wait itself takes only 34.896 µs. GPU elapsed time is 7.294 ms,
+within the on-time range; estimated completion is already late before callback
+dispatch. This selects an upstream readiness boundary, not a proven server bug
+or a scheduling fix. The futex's user-space object/callsite and server condition
+remain unidentified. Reproduced source/calibration/trace receipts are in
+`output/pico-gpu-readiness-20261028-v1/`.
