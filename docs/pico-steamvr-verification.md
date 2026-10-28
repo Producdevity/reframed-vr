@@ -4615,3 +4615,35 @@ Complete BOOT/DTBO after-readbacks, muted offline stock return and owned USB-hos
 exit verify. The failed preflight v1 remains separate: 168 files, 3,223,454 bytes,
 SHA-256 `909092fb7e63347cdb54e683517099218bf020e82ba6bb5761adce4873273625`;
 its recovery also verifies and it supplies no compositor timing acceptance.
+
+### Controller notification regression and wake-path boundary (2026-10-28)
+
+The 180-second notification regression in
+`output/pico-controller-notify-20261028-v2/` preserves the kernel, pixels,
+priorities and pose limits. Its main complete DRM stream qualifies. The
+on/off/on windows contain 1,796 / 1,791 / 1,793 adjacent presentation pairs and
+0 / 3 / 2 software-sequence skips. All 4,500 startup/steady vsync samples pass.
+CPU window 0 has a malformed row and is rejected wholly; windows 1 and 2
+independently qualify. The separate controller-worker trace exhausts its budget
+and is rejected wholly. These observations do not establish a pacing fix or a
+clean performance comparison. Head/controller feed completion and archive/stock
+recovery are recorded in `pico-controller-protocol.md`.
+
+Further analysis of the earlier accepted SDE windows 1/2 is retained in
+`output/pico-sde-readiness-20261028-v1/`. The unchanged GPU calibration gates pass
+for 4,321 samples. Six skipped-sequence cases and 3,583 on-time controls show
+longer renderer/GPU intervals around the misses. Three cases additionally spend
+409–472 µs between `sched_waking` and `sched_wakeup`, followed by only 8–73 µs
+runnable delay. Their paired wake events stay in the same waker/CPU context;
+the long interval is inside synchronous wake processing, not established as
+remote-IPI delay or worker runqueue contention. For present 10,103, preceding
+event-thread runnable delay is 317 µs, renderer interval 1.741 ms and estimated
+GPU elapsed 8.065 ms. The late API query overlaps the next Mesa counter query
+before its new counter returns; it does not show discarded fresh results.
+
+The pinned scheduler already exposes `sched/sched_task_util` latency for the
+EAS-selection subset of this path. A bounded capture filtered to the verified
+KGSL waker can test that subset. Early-return paths omit the event, so absence
+would remain inconclusive. The source/format/overhead plan is retained in
+`wake-diagnostic.md` within that analysis folder. No scheduler feature toggle,
+priority change or claim of a specific WALT/lock/idle cause follows yet.
