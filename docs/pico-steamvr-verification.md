@@ -4671,3 +4671,69 @@ The received archive verifies all 265 data files: 11,414,703 bytes, SHA-256
 DSP shutdown, complete BOOT/DTBO hash comparisons, muted offline stock return
 and owned USB-host termination verify. The next diagnostic brackets the main
 feed's operations and captures its verified TID before dashboard startup.
+
+### Head-feed polling wake captured (2026-10-28)
+
+The subsequent `output/pico-head-startup-20261028-v2/` diagnostic qualifies its
+entire 288,497-row main-thread scheduler/syscall stream: 34,413,065 source bytes,
+SHA-256 `6cbaaa4d368d6b80a199a0e006e5113e0fb4ba310ab0e3ef4d38c63ef472bbe2`,
+with zero recorded loss. PID/start-time/executable checks and a unique process
+exit followed by its final zombie-state switch bind the captured interval to
+that process.
+
+Source and disassembly select the main feed's `usleep(500)` branch. Its matched
+`nanosleep` syscall enters at 150.919708 s and returns zero at 159.793264 s:
+8.873556 seconds. It schedules out interruptibly at 150.919720 s, with no
+intervening selected events until waking at 159.793229 s. Wakeup follows 17 µs
+later, execution another 9 µs later and syscall return another 9 µs later.
+The camera producer refuses publication at 151.237466659 s, during that sleep.
+IMU capacity also fills before the consumer resumes. This selects delayed polling
+resumption as the starvation boundary, rather than long runnable dispatch or a
+vendor feed call. The recorded waker has hardirq flags; its current task name
+does not identify a userspace component responsible for the wake.
+
+The initial timer slack is 50,000 ns and no captured main-thread syscall changes
+it. The requested timespec, timer deadline, expiry and CPU-idle state are absent;
+the underlying timer mechanism and HRTICK causality remain unproven. No timer,
+idle or scheduler-feature change is selected. The fix under test replaces the
+empty-input sleep with publication-driven wake hints, retaining all ring sizes,
+ABI, freshness limits and SDK ordering.
+
+All 273 exported data files verify: 13,559,331 archive bytes, SHA-256
+`7bed4245546bcb17cb6639d096f6813bd3c7c062910c1668bbd0f2d53b44970e`.
+Trace selection/instance cleanup, DSP shutdown, complete BOOT/DTBO hashes,
+muted offline stock return and owned host shutdown verify. This failed startup
+supplies no compositor pacing or controller-pointing acceptance.
+
+### Publication-driven head-feed wake hints (2026-10-28)
+
+[`pico-pipe-notify.c`](../src/pico-pipe-notify.c) provides coalescing wake hints
+through an owned nonblocking FIFO. The native IMU producer signals after release
+publication and invalidation; the head consumer waits only after observing empty
+inputs, then rereads the existing rings. A full FIFO already guarantees a pending
+hint. The parent retains both ends until publisher and reader join, verifies the
+FIFO inode, then closes/unlinks it. Explicit ring flags and process lifecycle
+remain authoritative for publisher failure. Ring ABI, capacities, freshness,
+SDK call ordering and scheduling remain unchanged.
+
+ARM64 Linux ASan/UBSan fixtures pass for a 20,000-record cross-process queue,
+publication between empty-check and wait, coalescing/full pipe and descriptor
+failures. The native setup also passes that fork/FIFO fixture. Producer source,
+compiler, library, binary and source-closure receipts bind the rebuilt executable;
+the maintained Bionic consumer has its own pinned closure. Evidence is in
+`output/pico-head-notify-20261028-v1/` and `v2/`.
+
+Version 2 processes 70,957 IMU pairs and 1,724 head image sets without a bad head
+result or notification error. Its 113,955 waits include 106,985 notifications;
+the observed maximum wait is 15.455 ms, including scheduling. The run then fails
+the unchanged 250 ms camera freshness check at 192.518702113 s, with last image
+time 192.268582180 s. Thus the former head polling sleep is removed and native
+waking works, while the full 180-second regression remains unaccepted. Controller
+optical confidence is still zero. No frame-pacing or tracked-pointing fix is
+claimed from this shortened workload.
+
+All 323 data files verify: 26,237,193 archive bytes, SHA-256
+`3648dbf4f606109aad230c151e5851f3368e196aedb59c0eb6cbfd3e0ddbd0ac`.
+FIFO ownership, trace/DSP cleanup, BOOT/DTBO hashes, muted offline stock return
+and owned host termination verify. Failed preflights remain separate; version 1
+also retains the corrected 34-step launcher receipt.
