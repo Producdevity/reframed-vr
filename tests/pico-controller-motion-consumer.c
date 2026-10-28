@@ -110,7 +110,7 @@ int main(void)
     assert(pico_controller_motion_consumer_poll(old) == -ESHUTDOWN && f->calls == 1);
     pico_controller_motion_consumer_destroy(old); free(fresh); cleanup(f);
 
-    for (unsigned fault=0; fault<9; ++fault) {
+    for (unsigned fault=0; fault<11; ++fault) {
         cfg = setup(f); assert(!pico_controller_motion_consumer_create(&cfg, &f->consumer));
         if (fault != 4 && fault != 5) publish(f, 0, 1020500000, 1);
         if (fault == 4) {
@@ -142,15 +142,45 @@ int main(void)
         case 7:
             assert(!pico_controller_motion_consumer_poll(f->consumer));
             --f->now; expected=-ETIME; break;
-        default:
+        case 8:
             f->now=1021200000; head(f,1021000000,true); f->call_ns=100000000;
             expected=-ETIMEDOUT; break;
+        case 9:
+            f->now=1021200000; head(f,1021000000,true);
+            assert(!pico_controller_motion_consumer_poll(f->consumer));
+            publish(f,1,1020600000,1);
+            f->channel.slots[1][1]=1020500;
+            f->channel.slots[1][2]=1020500000;
+            expected=-EPROTO; break;
+        default:
+            f->now=1021200000; head(f,1021000000,true); f->result=-EPROTO;
+            expected=-EPROTO; break;
         }
         assert(pico_controller_motion_consumer_poll(f->consumer) == expected);
         unsigned calls=f->calls;
         assert(pico_controller_motion_consumer_poll(f->consumer) == expected && f->calls == calls);
         pico_controller_motion_consumer_status(f->consumer,&s);
         assert(s.stopped && s.error == expected);
+        const enum pico_controller_motion_failure reason[] = {
+            PICO_CONTROLLER_MOTION_FAILURE_CHANNEL, PICO_CONTROLLER_MOTION_FAILURE_UPDATE,
+            PICO_CONTROLLER_MOTION_FAILURE_GAP, PICO_CONTROLLER_MOTION_FAILURE_EXPIRED,
+            PICO_CONTROLLER_MOTION_FAILURE_CHANNEL, PICO_CONTROLLER_MOTION_FAILURE_HAND,
+            PICO_CONTROLLER_MOTION_FAILURE_EXPIRED, PICO_CONTROLLER_MOTION_FAILURE_CLOCK,
+            PICO_CONTROLLER_MOTION_FAILURE_EXPIRED, PICO_CONTROLLER_MOTION_FAILURE_TIMESTAMP,
+            PICO_CONTROLLER_MOTION_FAILURE_UPDATE
+        };
+        assert(s.failure == reason[fault]);
+        if (fault == 2 || fault == 9) {
+            assert(s.rejected_hand == 1 && s.rejected_sequence == 1);
+            assert(s.previous_timestamp_ns == 1020500000);
+            assert(s.rejected_timestamp_ns == (fault == 2 ? 1031000001 : 1020500000));
+        }
+        struct pico_controller_motion_consumer_status again;
+        f->now += 200000000;
+        assert(pico_controller_motion_consumer_poll(f->consumer) == expected);
+        pico_controller_motion_consumer_status(f->consumer,&again);
+        assert(again.failure == s.failure && again.failure_now_ns == s.failure_now_ns);
+        assert(again.rejected_timestamp_ns == s.rejected_timestamp_ns);
         cleanup(f);
     }
     free(f); puts("PICO_CONTROLLER_MOTION_CONSUMER_PASS"); return 0;

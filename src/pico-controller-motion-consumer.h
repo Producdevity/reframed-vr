@@ -21,11 +21,27 @@ struct pico_controller_motion_consumer_config {
                   const uint8_t after[PICO_SLAM_RESULT_SIZE]);
 };
 
+enum pico_controller_motion_failure {
+    PICO_CONTROLLER_MOTION_FAILURE_NONE,
+    PICO_CONTROLLER_MOTION_FAILURE_CHANNEL,
+    PICO_CONTROLLER_MOTION_FAILURE_CLOCK,
+    PICO_CONTROLLER_MOTION_FAILURE_HAND,
+    PICO_CONTROLLER_MOTION_FAILURE_TIMESTAMP,
+    PICO_CONTROLLER_MOTION_FAILURE_GAP,
+    PICO_CONTROLLER_MOTION_FAILURE_EXPIRED,
+    PICO_CONTROLLER_MOTION_FAILURE_HEAD,
+    PICO_CONTROLLER_MOTION_FAILURE_UPDATE
+};
+
 struct pico_controller_motion_consumer_status {
     uint64_t read, delivered, head_waits;
     int64_t max_age_ns, max_head_wait_ns, max_call_ns;
     int error;
     bool pending, stopped;
+    enum pico_controller_motion_failure failure;
+    unsigned rejected_hand;
+    uint64_t rejected_sequence;
+    int64_t rejected_timestamp_ns, previous_timestamp_ns, failure_now_ns;
 };
 
 struct pico_controller_motion_consumer;
