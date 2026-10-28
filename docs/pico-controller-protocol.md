@@ -1969,3 +1969,37 @@ This verifies one genuine automatic motion recovery, followed by a distinct
 consumer failure. Optical acquisition, stable reacquisition and tracked pointing
 remain open; the CPU-mask experiment does not establish the protocol error's
 cause.
+
+### First motion-rejection context (2026-10-28)
+
+The maintained motion consumer now latches the first failure stage with the
+available hand, sequence, capture timestamp, preceding delivered timestamp and
+clock observation. Channel, clock, hand, timestamp, capture-gap, freshness,
+head-bracket and update-callback failures remain distinct. The parser, 10 ms
+capture-gap limit, 100 ms age limit and permanent-stop behaviour are unchanged;
+context is written only on failure. The serialized status retains that first
+context across later polls.
+
+The RAM-only control in `output/pico-motion-rejection-20261028-v2/` delivers
+13,745 motion updates before the per-hand history freshness check returns
+`-110`. Its retained diagnostic reports stage 6 (`EXPIRED`) at
+152.423399837 seconds. No rejected event is attached to that history check,
+so its sample fields are zero. This does not reproduce the earlier `EPROTO`
+after resumption or establish that failure's branch. Controller images continue
+through 4,445 sets, with zero confident optical pose publications. Head tracking
+independently completes 4,499 camera sets and 184,483 callbacks with no bad
+results. Tracked pointing remains open.
+
+Four host motion/channel/producer/consumer tests pass with ASan/UBSan, including
+latched gap, non-increasing timestamp and callback-error distinctions. The native
+consumer is rebuilt from a retained source closure and matches the deployed
+artifact pins. The v1 run stopped at a stale private-harness binary pin before the
+SteamVR workload; v2 updates both binary references and the dependent selector hash.
+That failure and its stock recovery remain separate from the completed run.
+
+The completed archive contains 324 data files, 45,965,731 bytes, SHA-256
+`d83641f88e8de64e9aef1f2d54c261d3a1d2a4f4bf3583a92b5b449fda54bb91`.
+Full BOOT/DTBO after-readbacks, muted offline stock return and owned USB-host exit
+verify. The corresponding pacing qualification is recorded in
+`pico-steamvr-verification.md`; this diagnostic does not change scheduling policy
+or relax controller validity.

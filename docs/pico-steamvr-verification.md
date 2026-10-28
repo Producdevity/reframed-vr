@@ -4358,3 +4358,25 @@ The candidate has 322 data files, 45,772,215 bytes, SHA-256
 `cde7cdda5d271c9740a3c6bc8af412d5db56578163861517851925815b3042e7`.
 `comparison.json` retains full generation counts, per-window placement,
 distributions, rejected epochs and the matched-payload proof.
+
+### Rebuilt controller diagnostic control (2026-10-28)
+
+`output/pico-motion-rejection-20261028-v2/` repeats the existing `0f`, nice −20
+callback policy with the combined scheduler/CNSS kernel. Only the rebuilt
+motion-rejection diagnostics and their artifact pins change; no new scheduling
+policy is adopted. All three complete CPU epochs and the complete DRM stream
+pass the retained grammar, hash, bounds and loss checks.
+
+The observer on/off/on windows contain 1,792 / 1,794 / 1,794 flip pairs and
+3 / 1 / 1 missed presentations. The 500 startup queries and both 2,000-query
+steady observation windows have no invalid vsync-age results. The unobserved
+window has no API-age acceptance claim. These results retain the distinction
+between valid API ages and missed presentation deadlines; they do not establish
+a pacing improvement.
+
+Head tracking completes 4,499 camera sets and 184,483 callbacks with zero bad
+results. The motion consumer's stale-history stop and continued controller image
+ownership are described in `pico-controller-protocol.md`. The 324-file archive,
+full BOOT/DTBO after-readbacks, callback-policy restoration, muted offline stock
+return and owned host exit verify. The v1 stale-binary-pin failure is retained
+separately and supplies no SteamVR timing result.
