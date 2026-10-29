@@ -452,6 +452,45 @@ class PicoControllerSessionTests(unittest.TestCase):
         self.assertTrue(worker.motion_recovery_pending)
         self.assertEqual(report['observed_ns'], 1101000000)
 
+    def test_latched_gap_and_expiration_require_a_new_motion_epoch(self):
+        for error, reason in [(-71, 5), (-110, 6)]:
+            with self.subTest(error=error, reason=reason):
+                worker, report, _ = self.consumer_fixture()
+                worker.restart_motion = Mock(side_effect=TimeoutError)
+                failure = report | {'error': error, 'reason': reason}
+                with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+                    with self.assertRaises(TimeoutError):
+                        worker.recover_motion(0, consumer_failure=failure)
+                worker.restart_motion.assert_called_once_with('0123456789abcdf0', 0)
+                self.assertTrue(worker.motion_recovery_pending)
+                self.assertEqual(failure, report | {'error': error, 'reason': reason})
+
+    def test_other_consumer_failures_cannot_restart_the_estimator(self):
+        worker, report, _ = self.consumer_fixture()
+        worker.restart_motion = Mock()
+        failure = report | {'error': -71, 'reason': 5}
+        invalid = [False, [], {}, report, failure | {'extra': 1}]
+        invalid += [failure | {'error': error, 'reason': reason}
+                    for error, reason in [(-71, 1), (-71, 4), (-71, 6), (-110, 5),
+                                          (-5, 8), (-62, 2), (-110, True), ('-71', 5)]]
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+            for value in invalid:
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    worker.recover_motion(0, consumer_failure=value)
+            with self.assertRaises(ValueError):
+                worker.recover_motion(0, consumer_timeout=report, consumer_failure=failure)
+        worker.restart_motion.assert_not_called()
+
+    def test_gap_recovery_keeps_freshness_and_generation_gates(self):
+        worker, report, _ = self.consumer_fixture(capture=1000000000, received=1020000000)
+        worker.restart_motion = Mock()
+        failure = report | {'error': -71, 'reason': 5}
+        with patch.object(session_module.time, 'monotonic_ns', return_value=1110000000):
+            self.assertIsNone(worker.recover_motion(0, consumer_failure=failure))
+            with self.assertRaises(ValueError):
+                worker.recover_motion(0, consumer_failure=failure | {'observed_ns': 1110000001})
+        worker.restart_motion.assert_not_called()
+
     def test_consumer_report_validation_and_stale_generation_never_restart(self):
         worker, report, _ = self.consumer_fixture()
         worker.restart_motion = Mock()

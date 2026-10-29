@@ -1268,6 +1268,18 @@ an unforced IMU-report gap while head tracking, cameras and SteamVR remain
 running. The physical reason for that gap is unclassified; digital activity
 alone does not trigger recovery.
 
+The owning session may also pass `consumer_failure` to `recover_motion`: a
+first-latched `{generation, observed_ns, error, reason}` receipt. Only input-gap
+`(-71, 5)` and expiration `(-110, 6)` failures are eligible. Fresh post-failure
+radio reception and the existing per-hand freshness checks must pass before
+the owner creates a new mapping. The consumer must reset its estimator before
+rebinding; its stopped instance remains stopped. Clock, parser, head-history and
+SDK-update failures do not gain a recovery path. The earlier two-field
+`consumer_timeout` argument remains supported; supplying both is rejected.
+Thirty-five host session tests pass, including rejection of other failure
+stages, stale input and conflicting reports. This API check alone does not
+establish native recovery or optical tracking.
+
 ### Bionic boundary and performance
 
 The controller estimator requires the stock Bionic ABI and executes native

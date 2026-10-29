@@ -349,7 +349,7 @@ class ControllerSession:
         if self.motion_ready:
             raise RuntimeError('Restarted motion generation did not initialize')
 
-    def recover_motion(self, timeout, *, consumer_timeout=None):
+    def recover_motion(self, timeout, *, consumer_timeout=None, consumer_failure=None):
         """Poll for fresh post-timeout IMU data and return a new, ready endpoint.
 
         The caller atomically publishes it to a consumer that resets its
@@ -361,9 +361,23 @@ class ControllerSession:
         generation and observed_ns (monotonic). Keep that first observation
         unchanged while polling. Only fresh input received after it permits a
         healthy producer to restart; the consumer must still bind a new epoch.
+
+        consumer_failure additionally accepts error/reason from the trusted
+        consumer's first latched failure. Only input gaps (-71/5) and expired
+        history (-110/6) permit recovery. Parser, clock, head and SDK failures
+        remain terminal. Recovery never reuses the failed consumer or mapping.
         """
         if not math.isfinite(timeout) or timeout < 0 or not self.motion:
             raise ValueError('Motion recovery requires enabled motion and a nonnegative timeout')
+        if consumer_failure is not None:
+            if (consumer_timeout is not None or not isinstance(consumer_failure, dict) or
+                    set(consumer_failure) != {'generation', 'observed_ns', 'error', 'reason'} or
+                    type(consumer_failure['error']) is not int or
+                    type(consumer_failure['reason']) is not int or
+                    (consumer_failure['error'], consumer_failure['reason']) not in
+                    ((-71, 5), (MOTION_RECEIVE_TIMEOUT, 6))):
+                raise ValueError('Consumer recovery requires a latched input gap or expiration')
+            consumer_timeout = {key: consumer_failure[key] for key in ('generation', 'observed_ns')}
         if consumer_timeout is not None:
             if (not isinstance(consumer_timeout, dict) or
                     set(consumer_timeout) != {'generation', 'observed_ns'} or
