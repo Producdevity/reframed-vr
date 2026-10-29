@@ -5109,3 +5109,31 @@ USB-host joins verify. Archive hashes are respectively
 `38279ec9bb6ef4f6c8e023bbedf2ecb7190465b41047781b5e412fd01b6efacb`.
 Qualification receipts and the separate controller outcomes are retained in
 `output/pico-kgsl-maintenance-analysis-20261029-v1/`.
+
+### Callback priority boundary (2026-10-29)
+
+The retained vendor `kgsl_events.c` emits `kgsl_fire_event` before calling
+`sched_save_priority_and_promote`, then invokes the callback and restores its
+previous policy. The scheduler helper requests `SCHED_FIFO` priority 40. The
+GPU devfreq notifier and immediate command-issue path also call that helper.
+Their exact sources and the unchanged helper-body comparison against the
+executed v3 kernel are retained in `output/pico-kgsl-promotion-20261029-v1/`.
+
+In accepted control window 0, callback worker 2743 is observed at normal
+priority 100, then effective priority 59, then 100 around one guarded event
+work item. Snapshots independently observe FIFO priority 40 before the window
+and normal scheduling afterward. A constant-CFS assumption for this pool is
+therefore invalid. Among the guarded display-context work items, the largest
+proven pre-fire runnable gap is 1,001 µs at normal priority, starting six
+microseconds after `workqueue_execute_start`.
+That tracepoint precedes the actual function call, so this does not establish
+which instruction was interrupted. The overlapping devfreq worker is sampled
+at priority 120; its promotion cannot be inferred for this interval. No
+millisecond normal-priority gap between fence fire and commit wake is found
+in this window. Moving the existing promotion is not yet a verified fix.
+
+The rejected placed occupancy row has header PID 1985 but body previous PID
+2813. Its independently recorded main-trace counterpart consistently names
+1985. This localizes the inconsistency to the additional recording; it does
+not establish a kernel-memory or scheduler fault. Both original streams are
+preserved without repair.
