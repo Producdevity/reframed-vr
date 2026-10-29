@@ -1,0 +1,24 @@
+Reframed paired optical diagnostic: exclude cached pre-arm camera callbacks
+only while ARMED; reject them after recording starts, without rearming.
+SDK inputs, timestamps, calibration and complete-file acceptance are unchanged.
+
+Baseline source SHA-256: 5e9dbc3a8d369f569089f386a2bac6689c5bfb836f8e17285ce6f79e8b57bc9b
+Result source SHA-256: 6b6ec944b19f005fb322b6d02b830584e8684ba8bca965fffdb3a4141d345bf3
+
+--- a/paired-capture.c
++++ b/paired-capture.c
+@@ -126,6 +126,14 @@
+ int pair_camera(struct pair_capture *c,uint64_t number,int64_t sof,int64_t center,int64_t now,unsigned physical,const uint8_t *pixels) {
+     pair_tick(c,now);uint64_t state=pair_value(c,PW_STATE);
+     if(state!=PS_ARMED&&state!=PS_RECORDING)return 0;
++    if((uint64_t)now<pair_value(c,PW_ARM_NS)) {
++        uint64_t expected=PS_ARMED;
++        if(atomic_compare_exchange_strong_explicit(&c->shared->word[PW_STATE],&expected,PS_ARMED,
++                                                   memory_order_acq_rel,memory_order_acquire))return 0;
++        if(expected==PS_RECORDING)pair_fail(c,PE_EPOCH,now);
++        pair_tick(c,now);
++        return expected==PS_RECORDING?-1:0;
++    }
+     struct pico_camera_metadata m;
+     if(!number||physical>3||!pixels||sof<=0||center<=0||center>sof||
+        !pico_camera_metadata_raw8(pixels,640,&m)||m.classification!=0) {pair_fail(c,PE_METADATA,now);return -1;}

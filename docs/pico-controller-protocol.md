@@ -2434,3 +2434,36 @@ do not establish optical correction. Stock observations are retained in
 continues publishing digital inputs only. SteamVR's optional per-hand pose
 channels still require a validated optical source and the corresponding world
 conversion; a plausible host stereo hypothesis cannot enable that path.
+
+The owner's later estimate, approximately 70 cm or more, is not a measured
+reference. An independent retained-data audit finds the current factory camera
+parameters equal to the retained SDK snapshots and the left LED vector equal
+to stock exports. Independent ray triangulation reproduces the eight clouds.
+Conditional on those components being the calibrated LEDs, the model's
+85.46 mm maximum origin radius bounds the controller origin to
+`|body Z| >= 1.00358 m`, regardless of LED identities or orientation. The
+historical gate uses this body coordinate, not world Z or radial distance;
+its execution in the current capture remains unobserved. These checks establish
+no calibration-use defect. A measured ring displacement with the headset fixed
+is needed to distinguish cluster identity, physical mapping and placement.
+Source pins and the reproducer are retained in
+`output/pico-optical-geometry-audit-20261029-v1/`.
+
+### Arm-boundary fix verified on the Pico (2026-10-29)
+
+`patches/pico-controller/0002-paired-recorder-arm-boundary.patch` preserves
+the verified guard with exact input/result source hashes. Zero-fuzz application
+reproduces the tested helper; reapplication is refused. The maintained patch
+also passes the retained ASan/UBSan boundary fixtures.
+
+The corrected recorder's first hardware run,
+`output/pico-optical-paired-native-20261029-v3/`, passes the unchanged complete
+paired decoder: 32 raw planes, eight SDK image sets, 141 real left IMU records
+and 149 successful dispatches in generation 105/mask 1. Both writers close
+with error zero. The 527-file archive hashes to
+`77a5df18fb28f58f85bae674e84afc63a9e45f60d152b84ca7739ed1ee2e4c05`.
+The full run completes 4,499 head-camera sets with zero bad results and
+returns to muted offline stock with unchanged BOOT/DTBO hashes and the owned
+USB host joined. This validates the recorder fix; it neither accepts the old
+failed recording nor establishes optical tracking or a pacing improvement.
+The live controller path still publishes digital inputs only.
