@@ -46,6 +46,23 @@ the fence wait returns 1.405 ms after that trace. These are software boundaries,
 not physical panel-latch measurements. The private worker does not eliminate
 interrupt interference, late GPU completion or late upstream submission.
 
+Exact timeline/sequence matching associates those misses with private ctx1
+timestamps 7491 and 8622. Their dispatch envelopes are only 35.625 and
+35.313 µs. The latter event is already queued 1.340 ms after software vblank;
+its userspace queue also follows the previous present's wait end by 4.700 ms,
+versus an on-time median of 0.997 ms and p99 of 1.745 ms in the same window.
+The other callback completes 273 µs before vblank. Neither miss justifies
+another private-worker priority or affinity change.
+
+The enabled middle CPU recording fails its original whole-epoch scheduler
+validation on one invalid priority. It remains rejected; no selected GPU or
+scheduler rows were salvaged. Accepted DRM/WSI and sparse data locate lateness
+relative to the private worker, but do not identify the upstream blocking owner
+or split GPU execution from retirement observation. Identity matching also
+does not prove exclusive signal origin: this kernel has an inline
+already-retired timeline path. The detailed follow-up is
+`output/pico-kgsl-fence-misses-20261030-v1/`.
+
 ## Evidence and qualification
 
 The compiled kernel's 41 retained headset/audio/WLAN/Bluetooth module imports
