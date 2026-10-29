@@ -5186,3 +5186,52 @@ complete-file gates, exact joins and uncertainty limits are retained in
 `output/pico-kgsl-phase-analysis-20261029-v2/`. Full trace-option and trigger
 snapshots were not collected, so no claim covers those unrecorded settings.
 No scheduling-policy change is adopted.
+
+### Dispatch attribution and CPU-observer control (2026-10-29)
+
+Complete CPU windows 0/1 from the preceding phase run localize two separate
+delays. Across 1,793/1,796 display callbacks, the eventual worker's preceding
+work has ended before queueing, its last switch-out is `TASK_IDLE`, and each
+queued generation activates within 11/18 µs. This shows an available sleeping
+executor, not pool exhaustion or a previous callback's restoration blocking it.
+Exact pool idle-list counts were not recorded. The worst dispatch takes
+1,177 µs, including 1,151 µs from runnable wakeup to the first switch selecting
+that worker; only 8 µs follows that switch.
+
+The two missed window-0 presents differ. Present 4914 queues its callback
+2,093 µs after the expected vblank, then dispatches in 30 µs; its earlier
+upstream lateness remains unexplained. Present 5470 queues 702 µs before that
+boundary but executes after 842 µs. Its 697 µs selecting-switch-to-execute
+interval contains interrupt-context activity. The scheduler tracepoint precedes
+the actual context switch, and no handler duration is recorded; that interval
+cannot be assigned entirely to CFS waiting or callback CPU work. Printed deltas
+have the existing conservative ±999 ns envelope. Rejected CPU window 2 remains
+excluded. Source pins and exact event chains are in
+`output/pico-kgsl-queue-cause-20261029-v1/`.
+
+The subsequent `output/pico-cpu-observer-native-20261029-v1/` tests CPU trace
+events on/off/on across three 20-second windows. Kernel, workload, worker
+policy, affinity and continuous DRM capture are unchanged; API observation and
+phase records are disabled throughout. Each arm settles for one second.
+Control arms make zero tracefs writes. The middle arm disables the owned event
+registrations and exact existing stack trigger, verifies the selected events
+disabled across the root and five instances, then restores every journaled
+change. It is intentionally unmeasured and ineligible for CPU attribution,
+even where the original structural parser accepts it. Other perf/BPF
+registrations were not inventoried.
+
+The whole 298,688-row DRM recording qualifies, with 0/1,797, 0/1,795 and
+0/1,795 missed/contained presents. Queue-to-flip p99 is respectively
+10.446/10.510/10.464 ms. These sequential short windows show no consistent
+off-arm improvement; zero misses do not establish equivalence or resolve the
+earlier rare faults. Other logging, DRM capture and polling remain present.
+No scheduling-policy fix follows from this control.
+
+All 540 exported data members rehash; the archive SHA-256 is
+`42e7dbdd657de25e222201c03716bc1cefc4ef1a26836845e5421feb33bd36e9`.
+The 180-second workload, complete control CPU epochs, restoration, firmware
+readbacks, muted offline stock return and owned USB-host join verify.
+Analysis and exact source-equivalence checks are in
+`output/pico-cpu-observer-analysis-20261029-v1/`. Neither this control nor
+the queue analysis validates optical controller tracking or physical display
+latch timing.
