@@ -52,3 +52,35 @@ values at offset 24 and head results at offset 96. Its motion capacity is at
 most 4,096. Version-2 image records have the same size as version 3. Mixing
 versions is rejected. Existing image-geometry analysis can read either image
 version through the shared record validator.
+
+### Native recorder check (2026-10-29)
+
+`output/pico-acquisition-v3-20261029-v1/` validates the deployed writer with
+1,583 left-hand motion records and 78 four-camera sets. Both files retain
+estimator generation 104 and contiguous shared dispatch order 1–1,661. The
+writer reports no errors and stops both streams at its duration limit. The
+6.5-second bound includes post-initialization readiness waiting; the retained
+input span is shorter. Right-hand radio is outside this control, although both
+SDK estimators are calibrated. Mixed-hand ordering is covered by fixtures.
+
+The full native workload completes 4,499 head-camera sets and 184,610 head
+callbacks with zero bad results. All three CPU windows and 300,587 DRM rows
+qualify. Observer-free flip-sequence skips are 1 / 0 / 2; steady API timing is
+unmeasured. Optical controller publication remains disabled. Input-recording
+writes and diagnostic captures preclude a clean performance comparison.
+
+All 494 exported data files rehash, as do both complete input streams. The
+63,010,848-byte archive has SHA-256
+`fa8b57131b049a32fed88bf3500f54ae28b3124e377a2b98def61fa910f1c62e`.
+Full BOOT/DTBO readbacks, trace/FIFO/DSP cleanup, muted offline stock return and
+owned USB-host termination verify. `acceptance.json` and the complete analyses
+remain beside the ignored evidence.
+
+The scheduler-context collector used in this run performs one raw read and
+retains only the 762-byte `sched_debug` header. Its reported completeness flag
+is invalid for effective CFS-group analysis. Per-task getters remain observations;
+they do not supply the missing group hierarchy. The corrected reader must read
+through EOF, enforce its byte bound, and validate every online CPU section and
+selected task/group before accepting scheduler context. Thirty-three offline
+fixtures include the actual short-read regression, overflow and missing-context
+cases; native validation of that correction is separate from this recording.
