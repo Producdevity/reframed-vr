@@ -2383,3 +2383,54 @@ physical camera/calibration interpretation remain unresolved. A controlled
 capture with an unobstructed ring facing the headset is needed before changing
 acquisition parameters. The bounded analysis and pinned inputs are in
 `output/pico-optical-paired-capture-20261029-v1/analysis-native-v1/`.
+
+### Controller-in-view repeat and recorder boundary (2026-10-29)
+
+After the owner reported the awake left ring in view, native repeat
+`output/pico-optical-paired-native-20261029-v2/` completes 4,499 head-camera
+sets with zero bad results and returns to muted offline stock with unchanged
+BOOT/DTBO hashes. Its 527-file archive hashes to
+`9c3038263a3a2586f4d3fbdee3b4857f357928ddf9480bdd2d6fff13173051b2`.
+No controller optical pose is validated.
+
+The complete, separate V3 files pass their unchanged structural checks:
+eight image sets, 145 real left IMU rows and 153 successful SDK dispatches.
+The full raw-paired recording remains rejected. One extra, unreferenced raw
+plane carries the camera callback's timestamp 3,659,636 ns before arming,
+although the recording hook runs afterward. All 32 SDK-submitted planes match
+their in-interval raw counterparts. This narrower observation does not repair
+or accept the failed paired recording.
+
+The private v2 recorder guard omits pre-arm callbacks only before the first
+window starts; such a callback after recording begins fails the diagnostic.
+Atomic state checks prevent a concurrent start from bypassing that rule.
+The original camera/SDK calls and strict decoder are unchanged. Sanitized
+fixtures reproduce the old rejection and verify the corrected eight-set window,
+sticky failure and no rearm. The retained NDK build and parent ARM64 glibc
+compile/link pass; the corrected recorder has not yet been tested on hardware.
+Sources, patch, fixtures and exact pins are retained in
+`output/pico-optical-paired-capture-20261029-v2/`.
+
+At threshold 80, each new image set yields six/five components and one stereo
+hypothesis under the existing host diagnostic, unlike the prior placement.
+The conditional centroids are approximately Z = -1.09 m and 1.19 m radially.
+These are not measured controller positions: LED identity and physical camera
+mapping remain assumptions. A measured headset-to-ring distance is needed
+before attributing rejection to the SDK's initialization volume or changing
+calibration. The complete-file analysis and rejected raw-record audit are in
+`output/pico-optical-paired-capture-20261029-v1/analysis-native-v2/`.
+
+Full recorded getter series also place the initial flag loss about 119–120 ms
+before the stopped stream is first observed, and before estimator reset.
+The SDK has a retained-IMU-count branch consistent with the early flags, but its
+exact execution was not traced. No reset defect follows from this evidence.
+The boundary matrix and source pins are retained in
+`output/pico-controller-reset-audit-20261029-v1/`.
+
+The first stock comparison is asleep and stale. After an ordinary wake command,
+271 of 300 left observations are fresh against QTimer; the flags alone still
+do not establish optical correction. Stock observations are retained in
+`output/pico-optical-paired-stock-awake-20261029-v2/`. The current native harness
+continues publishing digital inputs only. SteamVR's optional per-hand pose
+channels still require a validated optical source and the corresponding world
+conversion; a plausible host stereo hypothesis cannot enable that path.
