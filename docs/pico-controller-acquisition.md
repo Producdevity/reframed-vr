@@ -141,3 +141,25 @@ Twenty audit-parser fixtures cover short reads, overflow, bounds and deadlines.
 The private execution/analysis receipts retain complete inputs, commands and
 result hashes. These controls require no additional device session and do not
 change SDK thresholds, calibration or pose publication.
+
+### Mixed-hand acquisition gates (2026-10-29)
+
+The separate offline observers in `output/pico-optical-gates-20261029-v1/` and
+`v2/` replay the same 4,042 mixed-hand calls on the exact SDK. All 98 image calls
+complete with the existing 784 image adoptions and zero getter errors. Observed
+factory-camera readiness flags are all one; both calibrated-controller flags
+are one, and both IMU-ready flags become one by image call two. Initialization
+flags remain zero through image call 98. These SDK-specific snapshots are
+readiness observations, not optical acceptance.
+
+Version 2 additionally enables only the process-local verbose-log property.
+Its six periodic brute-correspondence log records all report false. The exact
+SDK forwards that same boolean to the following branch at `0xb9ac4`; this
+narrows those observed failures to matching before the later position gate.
+The logs do not cover every attempted candidate or establish why the model
+correspondences fail. Positions, orientations and state bytes remain identical
+to the uninstrumented replay at all 1,985 left and 1,959 right positive result
+timestamps. No SDK byte, detector threshold, pixel, calibration or pose validity
+rule changes. Introspection/logging changes timing and is not a performance
+comparison. The physical visibility, correspondence and coordinate cause remains
+unverified; it would be incorrect to treat initialized inputs as tracked pointing.

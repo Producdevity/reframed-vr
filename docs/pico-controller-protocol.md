@@ -2251,3 +2251,17 @@ consumer also rejects a resumed hand's capture gap, and owner recovery/reset
 currently uses a shared estimator epoch. Hand-independent recovery requires
 coordinated endpoint, consumer and estimator ownership; this diagnostic does
 not relax those contracts or establish optical tracking.
+
+The first direct native receipt, in
+`output/pico-callback-occupancy-native-20261029-v1/`, confirms reason 7
+(`STARTUP_TIMEOUT`), hand 2, mask 3, generation 104, after 2.000129218 seconds.
+Right's accepted receipt/capture fields are zero; left's last receipt is only
+2.295 ms old. The worker compiled from all four maintained source/test inputs
+and publishes the exact new diagnostic line. Its head workload still completes
+4,499 camera sets with zero bad results. This directly establishes the shared
+stream's timeout branch, without diagnosing right-radio absence or accepting
+independent hand recovery or optical tracking. All 503 archive data files,
+firmware readbacks and muted offline stock recovery verify; archive SHA-256 is
+`dac24311b30d6b49e0a51edfa1e02b216491aec7c7d0218fad352b66ef3b13dc`.
+The added occupancy epoch hits its deadline and is wholly rejected; only main
+CPU window 0 qualifies, while windows 1/2 retain malformed wakeup rows.
