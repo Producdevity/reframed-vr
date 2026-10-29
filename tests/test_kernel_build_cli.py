@@ -32,6 +32,7 @@ fi
             for profile, variant, expected in (
                 ('pico-neo3', 'vendor', []),
                 ('pico-neo3', 'linux-userspace', ['--linux-userspace']),
+                ('pico-neo3', 'fence-rt', ['--linux-userspace', '--pico-fence-rt']),
                 ('pico-neo3', 'qemu-abi', ['--linux-userspace', '--qemu-abi']),
                 ('quest3', 'vendor', []),
                 ('quest3', 'linux-userspace', ['--linux-userspace']),
@@ -58,6 +59,20 @@ fi
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(result.stderr.strip(), 'RAM USB requires quest3')
+            self.assertFalse(output.exists())
+
+    def test_fence_rt_rejects_quest_before_starting_the_container_engine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            output = work / 'output'
+            result = subprocess.run(
+                ['bash', str(ROOT / 'tools/build-kernel.sh'),
+                 'quest3', str(output), 'fence-rt', 'configure'],
+                env=os.environ | {'CONTAINER_ENGINE': str(work / 'missing-engine')},
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stderr.strip(), 'Fence RT requires pico-neo3')
             self.assertFalse(output.exists())
 
 

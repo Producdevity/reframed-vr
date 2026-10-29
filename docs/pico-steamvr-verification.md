@@ -5235,3 +5235,11 @@ Analysis and exact source-equivalence checks are in
 `output/pico-cpu-observer-analysis-20261029-v1/`. Neither this control nor
 the queue analysis validates optical controller tracking or physical display
 latch timing.
+
+### Private fence worker comparison (2026-10-30)
+
+The [fence-dispatch record](pico-kgsl-fence-dispatch.md) contains the matched
+kernel control, complete capture qualifications and route-specific timings.
+The private worker lowers the observed dispatch tails; two presentation misses
+remain. It stays opt-in and disabled by default. This does not close steady API,
+physical motion or optical controller acceptance.

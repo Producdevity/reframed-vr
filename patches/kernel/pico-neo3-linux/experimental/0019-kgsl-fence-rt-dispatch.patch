@@ -1,0 +1,329 @@
+--- a/drivers/gpu/msm/kgsl.c
++++ b/drivers/gpu/msm/kgsl.c
+@@ -599,7 +599,7 @@
+ 		 * detached contexts waiting to finish
+ 		 */
+ 
+-		flush_workqueue(device->events_wq);
++		kgsl_event_workers_flush(device);
+ 		id = _kgsl_get_context_id(device);
+ 	}
+ 
+@@ -5240,6 +5240,16 @@
+ 
+ 	device->events_wq = alloc_workqueue("kgsl-events",
+ 		WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS, 0);
++	if (!device->events_wq) {
++		status = -ENOMEM;
++		goto error_event_resources;
++	}
++
++	status = kgsl_fence_worker_init(device);
++	if (status) {
++		destroy_workqueue(device->events_wq);
++		goto error_event_resources;
++	}
+ 
+ 	/* Initialize the snapshot engine */
+ 	kgsl_device_snapshot_init(device);
+@@ -5249,6 +5259,11 @@
+ 
+ 	return 0;
+ 
++error_event_resources:
++	pm_qos_remove_request(&device->pwrctrl.pm_qos_req_dma);
++	if (device->pwrctrl.l2pc_cpus_mask)
++		pm_qos_remove_request(&device->pwrctrl.l2pc_cpus_qos);
++	kgsl_exit_page_pools();
+ error_close_mmu:
+ 	kgsl_mmu_close(device);
+ error_pwrctrl_close:
+@@ -5262,7 +5277,7 @@
+ 
+ void kgsl_device_platform_remove(struct kgsl_device *device)
+ {
+-	destroy_workqueue(device->events_wq);
++	kgsl_event_workers_close(device);
+ 
+ 	kgsl_device_snapshot_close(device);
+ 
+--- a/drivers/gpu/msm/kgsl.h
++++ b/drivers/gpu/msm/kgsl.h
+@@ -318,6 +318,11 @@
+ 	struct list_head node;
+ 	unsigned int created;
+ 	struct work_struct work;
++	struct kthread_work fence_work;
++	bool rt_dispatch;
++	u64 dispatch_marks[2];
++	int dispatch_policy;
++	int dispatch_prio;
+ 	int result;
+ 	struct kgsl_event_group *group;
+ };
+--- a/drivers/gpu/msm/kgsl_device.h
++++ b/drivers/gpu/msm/kgsl_device.h
+@@ -309,6 +309,8 @@
+ 
+ 	int reset_counter; /* Track how many GPU core resets have occurred */
+ 	struct workqueue_struct *events_wq;
++	struct kthread_worker *fence_worker;
++	spinlock_t fence_worker_lock;
+ 
+ 	struct device *busmondev; /* pseudo dev for GPU BW voting governor */
+ 
+@@ -684,6 +686,17 @@
+ bool kgsl_event_pending(struct kgsl_device *device,
+ 		struct kgsl_event_group *group, unsigned int timestamp,
+ 		kgsl_event_func func, void *priv);
++int kgsl_fence_worker_init(struct kgsl_device *device);
++void kgsl_event_workers_flush(struct kgsl_device *device);
++void kgsl_event_workers_close(struct kgsl_device *device);
++#ifdef CONFIG_SYNC_FILE
++bool kgsl_sync_is_fence_event(kgsl_event_func func);
++#else
++static inline bool kgsl_sync_is_fence_event(kgsl_event_func func)
++{
++	return false;
++}
++#endif
+ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
+ 		unsigned int timestamp, kgsl_event_func func, void *priv);
+ void kgsl_process_event_group(struct kgsl_device *device,
+--- a/drivers/gpu/msm/kgsl_events.c
++++ b/drivers/gpu/msm/kgsl_events.c
+@@ -5,6 +5,7 @@
+ 
+ #include <linux/debugfs.h>
+ #include <linux/ktime.h>
++#include <linux/module.h>
+ #include <uapi/linux/sched/types.h>
+ 
+ #include "kgsl_debugfs.h"
+@@ -18,12 +19,132 @@
+ static struct kmem_cache *events_cache;
+ static struct dentry *events_dentry;
+ 
++static bool fence_rt;
++module_param_named(fence_rt, fence_rt, bool, 0444);
++MODULE_PARM_DESC(fence_rt, "Experimental FIFO40 GPU timestamp fence dispatch");
++
++int kgsl_fence_worker_init(struct kgsl_device *device)
++{
++	struct kthread_worker *worker;
++	struct sched_param param = { .sched_priority = 40 };
++	int ret;
++
++	spin_lock_init(&device->fence_worker_lock);
++	device->fence_worker = NULL;
++	if (!fence_rt)
++		return 0;
++
++	worker = kthread_create_worker(0, "kgsl-fence");
++	if (IS_ERR(worker))
++		return PTR_ERR(worker);
++
++	ret = sched_setscheduler_nocheck(worker->task, SCHED_FIFO, &param);
++	if (ret) {
++		kthread_destroy_worker(worker);
++		return ret;
++	}
++
++	device->fence_worker = worker;
++	dev_info(device->dev, "experimental fence dispatch: FIFO40 pid=%d\n",
++		task_pid_nr(worker->task));
++	return 0;
++}
++
++void kgsl_event_workers_flush(struct kgsl_device *device)
++{
++	if (device->fence_worker)
++		kthread_flush_worker(device->fence_worker);
++	flush_workqueue(device->events_wq);
++}
++
++void kgsl_event_workers_close(struct kgsl_device *device)
++{
++	struct kthread_worker *worker;
++	unsigned long flags;
++
++	/* Close RT submission before draining either execution domain. */
++	spin_lock_irqsave(&device->fence_worker_lock, flags);
++	worker = device->fence_worker;
++	device->fence_worker = NULL;
++	spin_unlock_irqrestore(&device->fence_worker_lock, flags);
++	if (worker)
++		kthread_destroy_worker(worker);
++	destroy_workqueue(device->events_wq);
++}
++
++static void _kgsl_event_worker(struct work_struct *work);
++
++static void _kgsl_event_cleanup(struct work_struct *work)
++{
++	struct kgsl_event *event = container_of(work, struct kgsl_event, work);
++
++	kgsl_context_put(event->context);
++	kmem_cache_free(events_cache, event);
++}
++
++static void _kgsl_fence_worker(struct kthread_work *work)
++{
++	struct kgsl_event *event = container_of(work, struct kgsl_event,
++		fence_work);
++
++	if (event->dispatch_marks[0]) {
++		if (trace_kgsl_fence_dispatch_enabled()) {
++			event->dispatch_marks[1] = ktime_get_ns();
++			event->dispatch_policy = READ_ONCE(current->policy);
++			event->dispatch_prio = READ_ONCE(current->prio);
++		} else {
++			event->dispatch_marks[0] = 0;
++		}
++	}
++	_kgsl_event_worker(&event->work);
++}
++
++static void finish_event(struct kgsl_event *event)
++{
++	if (event->dispatch_marks[0] && trace_kgsl_fence_dispatch_enabled())
++		trace_kgsl_fence_dispatch(&event->work,
++			KGSL_CONTEXT_ID(event->context), event->timestamp,
++			event->result, event->dispatch_marks, ktime_get_ns(),
++			event->dispatch_policy, event->dispatch_prio);
++
++	/* Final context destruction stays in the reclaim-capable CFS queue. */
++	if (event->rt_dispatch)
++		queue_work(event->device->events_wq, &event->work);
++	else
++		_kgsl_event_cleanup(&event->work);
++}
++
++static void queue_event(struct kgsl_device *device, struct kgsl_event *event)
++{
++	unsigned long flags;
++
++	if (!kgsl_sync_is_fence_event(event->func) ||
++		!READ_ONCE(device->fence_worker)) {
++		queue_work(device->events_wq, &event->work);
++		return;
++	}
++
++	spin_lock_irqsave(&device->fence_worker_lock, flags);
++	if (device->fence_worker) {
++		event->rt_dispatch = true;
++		INIT_WORK(&event->work, _kgsl_event_cleanup);
++		kthread_init_work(&event->fence_work, _kgsl_fence_worker);
++		if (trace_kgsl_fence_dispatch_enabled())
++			event->dispatch_marks[0] = ktime_get_ns();
++		WARN_ON_ONCE(!kthread_queue_work(device->fence_worker,
++			&event->fence_work));
++	} else {
++		queue_work(device->events_wq, &event->work);
++	}
++	spin_unlock_irqrestore(&device->fence_worker_lock, flags);
++}
++
+ static inline void signal_event(struct kgsl_device *device,
+ 		struct kgsl_event *event, int result)
+ {
+ 	list_del(&event->node);
+ 	event->result = result;
+-	queue_work(device->events_wq, &event->work);
++	queue_event(device, event);
+ }
+ 
+ static noinline void _kgsl_event_worker_phases(struct work_struct *work,
+@@ -59,8 +180,7 @@
+ 
+ 	trace_kgsl_event_phases(work, id, timestamp, result, marks,
+ 		policies, results);
+-	kgsl_context_put(event->context);
+-	kmem_cache_free(events_cache, event);
++	finish_event(event);
+ }
+ 
+ /**
+@@ -92,8 +212,7 @@
+ 	event->func(event->device, event->group, event->priv, event->result);
+ 	sched_restore_priority(&sched_attr);
+ 
+-	kgsl_context_put(event->context);
+-	kmem_cache_free(events_cache, event);
++	finish_event(event);
+ }
+ 
+ /* return true if the group needs to be processed */
+@@ -323,6 +442,8 @@
+ 	event->func = func;
+ 	event->created = jiffies;
+ 	event->group = group;
++	event->rt_dispatch = false;
++	event->dispatch_marks[0] = 0;
+ 
+ 	INIT_WORK(&event->work, _kgsl_event_worker);
+ 
+@@ -339,7 +460,7 @@
+ 
+ 	if (timestamp_cmp(retired, timestamp) >= 0) {
+ 		event->result = KGSL_EVENT_RETIRED;
+-		queue_work(device->events_wq, &event->work);
++		queue_event(device, event);
+ 		spin_unlock(&group->lock);
+ 		return 0;
+ 	}
+--- a/drivers/gpu/msm/kgsl_sync.c
++++ b/drivers/gpu/msm/kgsl_sync.c
+@@ -106,6 +106,11 @@
+ 	kgsl_sync_timeline_signal(ev->context->ktimeline, ev->timestamp);
+ 	kgsl_context_put(ev->context);
+ 	kfree(ev);
++}
++
++bool kgsl_sync_is_fence_event(kgsl_event_func func)
++{
++	return func == kgsl_sync_fence_event_cb;
+ }
+ 
+ static int _add_fence_event(struct kgsl_device *device,
+--- a/drivers/gpu/msm/kgsl_trace.h
++++ b/drivers/gpu/msm/kgsl_trace.h
+@@ -981,6 +981,38 @@
+ 			__entry->age, __entry->func)
+ );
+ 
++TRACE_EVENT(kgsl_fence_dispatch,
++	TP_PROTO(void *work, unsigned int id, unsigned int timestamp, int result,
++		const u64 *marks, u64 done_ns, int policy, int prio),
++	TP_ARGS(work, id, timestamp, result, marks, done_ns, policy, prio),
++	TP_STRUCT__entry(
++		__field(void *, work)
++		__field(unsigned int, id)
++		__field(unsigned int, timestamp)
++		__field(int, result)
++		__field(u64, queued_ns)
++		__field(u64, start_ns)
++		__field(u64, done_ns)
++		__field(int, policy)
++		__field(int, prio)
++	),
++	TP_fast_assign(
++		__entry->work = work;
++		__entry->id = id;
++		__entry->timestamp = timestamp;
++		__entry->result = result;
++		__entry->queued_ns = marks[0];
++		__entry->start_ns = marks[1];
++		__entry->done_ns = done_ns;
++		__entry->policy = policy;
++		__entry->prio = prio;
++	),
++	TP_printk("work=%p ctx=%u ts=%u result=%d queued_ns=%llu start_ns=%llu done_ns=%llu policy=%d prio=%d",
++		__entry->work, __entry->id, __entry->timestamp, __entry->result,
++		__entry->queued_ns, __entry->start_ns, __entry->done_ns,
++		__entry->policy, __entry->prio)
++);
++
+ TRACE_EVENT(kgsl_event_phases,
+ 	TP_PROTO(struct work_struct *work, unsigned int id, unsigned int ts,
+ 		int result, const u64 *marks, const int *policies,

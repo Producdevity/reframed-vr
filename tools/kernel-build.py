@@ -176,7 +176,10 @@ def prepare_pico_audio(source, cache):
     return directory
 
 
-def build_inputs(profile, linux_userspace, qemu_abi, ram_usb=False):
+def build_inputs(profile, linux_userspace, qemu_abi, ram_usb=False, pico_fence_rt=False):
+    if pico_fence_rt and (profile["repository"] != "bytedance/neo3-kernel"
+                          or not linux_userspace or qemu_abi or ram_usb):
+        raise ValueError("Fence RT requires the physical Pico Linux userspace configuration")
     if ram_usb:
         if profile["repository"] != "facebookincubator/oculus-linux-kernel" or linux_userspace or qemu_abi:
             raise ValueError("RAM USB is a separate Quest kernel configuration")
@@ -202,6 +205,13 @@ def build_inputs(profile, linux_userspace, qemu_abi, ram_usb=False):
         if not selected:
             raise ValueError("Missing kernel source patches: " + name)
         patches.extend(selected)
+    if pico_fence_rt:
+        directory = sources.ROOT / "patches/kernel/pico-neo3-linux/experimental"
+        for name in ("0018-kgsl-delayed-callback-phases.patch", "0019-kgsl-fence-rt-dispatch.patch"):
+            path = directory / name
+            if not path.is_file():
+                raise ValueError("Missing fence dispatch prerequisite: " + name)
+            patches.append(path)
     return extensions, patches
 
 
@@ -222,12 +232,13 @@ def require_build_memory(profile, linux_userspace, configure_only, limit):
         raise ValueError("Quest Linux BTF generation requires at least 6 GiB of container memory")
 
 
-def build(profile, workspace, output, archive, linux_userspace=False, configure_only=False, qemu_abi=False, ram_usb=False):
+def build(profile, workspace, output, archive, linux_userspace=False, configure_only=False, qemu_abi=False, ram_usb=False,
+          pico_fence_rt=False):
     if sys.platform != "linux":
         raise ValueError("Use the Linux container workflow: just build-vendor-kernel")
     memory_limit = cgroup_memory_limit()
     require_build_memory(profile, linux_userspace, configure_only, memory_limit)
-    extensions, patches = build_inputs(profile, linux_userspace, qemu_abi, ram_usb)
+    extensions, patches = build_inputs(profile, linux_userspace, qemu_abi, ram_usb, pico_fence_rt)
     targets = ["Image"] if ram_usb else profile.get("build_targets", ["Image", "modules", "dtbs"])
     if targets not in (["Image"], ["Image", "modules"], ["Image", "modules", "dtbs"]):
         raise ValueError("Unsupported kernel build targets")
@@ -244,7 +255,8 @@ def build(profile, workspace, output, archive, linux_userspace=False, configure_
               "repository": profile["repository"], "commit": profile["commit"],
               "hardware_boot_verified": False, "flash_image": False,
               "stock_toolchain_reproduction": False, "status": "started", "commands": [], "artifacts": [],
-              "variant": "ram-usb" if ram_usb else "qemu-abi" if qemu_abi else "linux-userspace" if linux_userspace else "vendor",
+              "variant": "fence-rt" if pico_fence_rt else "ram-usb" if ram_usb else "qemu-abi" if qemu_abi else "linux-userspace" if linux_userspace else "vendor",
+              "experimental_fence_dispatch": {"compiled": pico_fence_rt, "runtime_default_enabled": False},
               "qemu_transports": qemu_abi,
               "build_targets": targets, "device_trees_compiled": False,
               "limits": {"memory": os.environ.get("KERNEL_BUILD_MEMORY", "external"), "cgroup_memory_bytes": memory_limit, "make_jobs": 2,
@@ -431,10 +443,13 @@ def main():
     parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--qemu-abi", action="store_true", help="Add virtual transports for userspace ABI tests")
     parser.add_argument("--ram-usb", action="store_true", help="Build the separate minimal Quest RAM-only USB kernel")
+    parser.add_argument("--pico-fence-rt", action="store_true",
+                        help="Include experimental Pico fence dispatch and its phase prerequisite; runtime remains off")
     args = parser.parse_args()
     try:
         result = build(sources.read_profile(args.profile), args.workspace.resolve(), args.output.resolve(), args.archive.resolve(),
-                       args.linux_userspace or args.qemu_abi, args.configure_only, args.qemu_abi, args.ram_usb)
+                       args.linux_userspace or args.qemu_abi, args.configure_only, args.qemu_abi, args.ram_usb,
+                       args.pico_fence_rt)
         print(f"Kernel baseline {result['status']}; no headset boot verified")
     except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as error:
         parser.exit(1, f"{error}\n")
