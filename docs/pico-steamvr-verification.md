@@ -5000,3 +5000,57 @@ The 497-data-file archive is 58,291,139 bytes, SHA-256
 `804d367bf75d6689709c33a2ecb36676363f5325495977247525d2a5b72a43b8`.
 Every member rehashes. Complete BOOT/DTBO readbacks, trace/FIFO/DSP cleanup,
 muted offline stock return and owned USB-host termination verify.
+
+### Complete callback occupancy recording (2026-10-29)
+
+`output/pico-callback-occupancy-native-20261029-v4/` adds an unfiltered,
+window-0-only scheduler recording on CPUs 0–3. Its 98,905,393 bytes contain
+559,345 switches; all four complete PID chains, event counts, zero-loss checks,
+measurement coverage, source/instance identities and restoration checks pass.
+The complete main CPU window 0 and whole DRM recording qualify independently.
+The original main window 1 remains wholly rejected for a malformed scheduler
+row at line 332,672; window 2 qualifies. No rejected prefix is used.
+
+All 175,416 main-window-0 switches on CPUs 0–3 have a unique, ordered, exact
+full-body correspondence in the added stream after applying the recorded main
+filter. The paired record timestamps differ by 0–593 microseconds; no timestamp
+tolerance, clock correction or fallback match is applied. Scheduled residency
+includes possible interrupts, and cross-stream boundary ordering still needs
+the corresponding event brackets. This is not exclusive task CPU time or proof
+of a CFS scheduling decision.
+
+Present 6,406's unique fence callback queues and starts only 34 microseconds
+apart, then is switched out runnable for 1,966 microseconds before firing fence
+6,424, 178 microseconds after the expected software-vblank record. Four ordered,
+closed CPU-2 intervals have printed durations 19 / 254 /
+1,648 / 45 microseconds: `qrtr_rx`, two workqueue workers, then
+`irq/366-smp2p`. The two workers' uniquely associated work spans execute
+`do_devfreq_notify` and `_deferred_destroy`. Those spans include off-CPU time;
+the scheduled intervals include interrupts. The retained KGSL source shows a
+priority-promotion helper around the devfreq notifier, but this recording does
+not trace that transition. Two different KGSL functions share the symbol
+`_deferred_destroy`, so its printed name cannot distinguish memory-entry from
+pagetable destruction. The CFS selection and any unrecorded migration remain
+unexplained. The separate maximum 3.802 ms runnable interruption occurs after
+its target fence fire and commit wake; it is excluded as that fence's delay.
+
+The added recorder's 24-second resource bound includes startup, the unchanged
+20-second measurement and shutdown. Earlier 22-second attempts expire during
+shutdown and remain wholly rejected. An early stop hook runs after the original
+main capture finishes, before wrapper restoration; all readers must join before
+any shared-nop instance removal. The original main capture, 256 MiB text cap,
+freshness limits, kernel, SDK and scheduling policy are unchanged. Thirty-three
+collector fixtures and thirteen stop-hook fixtures pass; the native added
+recorder joins in 22.487 seconds with no discarded bytes or cleanup errors.
+
+The full workload completes 4,499 head-camera sets and 184,498 callbacks with
+zero bad results. All 298,657 DRM rows qualify; observer-free sequence skips are
+4 / 0 / 2. Additional tracing precludes a clean performance comparison. These
+results establish recording completeness, not improved pacing, physical latch
+timing or optical controller tracking.
+
+All 504 exported data files rehash. The 56,106,052-byte archive has SHA-256
+`44b0f716419ad9efb10dc20ad8080afadd3b2a1902d25ed14c7bb0931152579f`.
+Complete BOOT/DTBO readbacks, trace/FIFO/DSP cleanup, muted offline stock return
+and owned USB-host termination verify. Strict qualification is retained in
+`output/pico-callback-occupancy-analysis-20261029-v1/`.

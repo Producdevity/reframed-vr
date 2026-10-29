@@ -2252,6 +2252,22 @@ currently uses a shared estimator epoch. Hand-independent recovery requires
 coordinated endpoint, consumer and estimator ownership; this diagnostic does
 not relax those contracts or establish optical tracking.
 
+The pinned SDK's reset wrappers select a hand-specific tracker, but ordinary
+reset also clears a shared image counter subsequently copied into both trackers.
+The trackers are cross-linked, and calibration writes shared mode flags.
+`alg_controller_init` replaces the process-wide pipeline; the live consumer
+calls it once. These entry points do not establish independent reset semantics.
+Source/binary evidence is retained in
+`output/pico-controller-hand-ownership-20261029-v1/`.
+
+The proposed narrower availability fix retains a shared SDK epoch and resets
+both estimators when its active hand subset changes. It requires a versioned
+worker offer/accept exchange proving fresh post-retirement captures, their
+uncertainty, mask and expiration before attaching a new channel/generation.
+The existing shared receipt timestamp cannot authorize that subset. This design
+is not implemented or validated by the diagnostic; age, gap and pose-validity
+rules remain unchanged.
+
 The first direct native receipt, in
 `output/pico-callback-occupancy-native-20261029-v1/`, confirms reason 7
 (`STARTUP_TIMEOUT`), hand 2, mask 3, generation 104, after 2.000129218 seconds.
