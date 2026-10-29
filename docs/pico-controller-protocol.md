@@ -2372,3 +2372,14 @@ archive SHA-256 is
 The private capture sources, 120-file consumer closure and paired verification
 are retained separately from the maintained runtime. Recording overhead
 precludes a pacing comparison with the earlier runs.
+
+The unchanged offline geometry diagnostic was applied to these exact eight
+sets at its existing 64/80/96 intensity settings and 0.5-pixel bound. Calibration
+views 0/1 contain no above-threshold pixels; views 2/3 yield 4–6 and 5–6
+components. None of the 48 stereo-pair/setting observations yields a compatible
+hypothesis. These are host diagnostic gates, not established SDK minimums or
+proof of its internal rejection branch. Visibility/occlusion, LED timing and
+physical camera/calibration interpretation remain unresolved. A controlled
+capture with an unobstructed ring facing the headset is needed before changing
+acquisition parameters. The bounded analysis and pinned inputs are in
+`output/pico-optical-paired-capture-20261029-v1/analysis-native-v1/`.
