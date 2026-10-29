@@ -2219,3 +2219,35 @@ but its recovery-loop module name is overwritten by an existing list. V3's
 so it supplies no GAP-recovery acceptance. V4 isolates the module import and
 uses the sanitizer-validated input-omission control. Its result does not
 reclassify those failures or relax the consumer's validity checks.
+
+### Latched motion-producer failure diagnostics (2026-10-29)
+
+The producer now retains the first failure reason, rejected hand, input
+microsecond timestamp and attempted receipt time. The worker emits these in a
+separate `PICO_CONTROLLER_MOTION_FAILURE` line with the generation, configured
+mask, startup time and each hand's last accepted receipt/capture. The existing
+STOP line and shared-channel protocol remain unchanged; the session parser
+ignores the additional diagnostic line. Invalid receipt times remain invalid
+observations, rather than being replaced by a prior poll time. Successful
+initialization/restart clears the diagnostic; later stop/error calls preserve it.
+
+`output/pico-controller-hand-lifecycle-20261029-v1/` replays 4,811 retained wire
+snapshots through baseline and diagnostic builds. Both produce 5,006 identical
+events. Sanitized fixtures cover either missing startup hand, one/both-hand
+silence, sample expiry, malformed input, clock errors, stale generations,
+latched failures and fresh-input restart. The existing two-second startup,
+100 ms age/receipt and consumer ten-millisecond capture-gap bounds are unchanged.
+
+In the earlier v3 native run, left's last accepted capture precedes the failing
+producer receipt by only 3.728 ms; all ten failing ring slots are left-hand
+samples, while the right publishes none. Source-bound exclusion selects the
+required-right startup timeout, but that recording lacks the new direct branch
+receipt. Replaying the retained left-only wire with both hands required also
+reproduces a right startup timeout while left receipts remain fresh. This is
+not a diagnosis of why right radio reports are absent.
+
+Removing that timeout alone would not create independent hand recovery: the
+consumer also rejects a resumed hand's capture gap, and owner recovery/reset
+currently uses a shared estimator epoch. Hand-independent recovery requires
+coordinated endpoint, consumer and estimator ownership; this diagnostic does
+not relax those contracts or establish optical tracking.

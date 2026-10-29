@@ -9,6 +9,20 @@
 extern "C" {
 #endif
 
+enum pico_controller_motion_producer_failure {
+    PICO_CONTROLLER_PRODUCER_FAILURE_NONE,
+    PICO_CONTROLLER_PRODUCER_FAILURE_ARGUMENT,
+    PICO_CONTROLLER_PRODUCER_FAILURE_CLOCK,
+    PICO_CONTROLLER_PRODUCER_FAILURE_RING,
+    PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_TIME,
+    PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_EXPIRED,
+    PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_VALUES,
+    PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT,
+    PICO_CONTROLLER_PRODUCER_FAILURE_RECEIVE_TIMEOUT,
+    PICO_CONTROLLER_PRODUCER_FAILURE_PUBLISH,
+    PICO_CONTROLLER_PRODUCER_FAILURE_STOP
+};
+
 struct pico_controller_motion_producer {
     struct pico_controller_motion_channel *channel;
     struct pico_controller_motion_ring ring;
@@ -18,6 +32,10 @@ struct pico_controller_motion_producer {
     int64_t started, now, received[2];
     unsigned mcu_type, radio_type, connected_mask;
     int error;
+    enum pico_controller_motion_producer_failure failure;
+    unsigned rejected_hand;
+    uint64_t rejected_timestamp_us;
+    int64_t failure_now_ns;
 };
 
 /* Serialized producer for one caller-verified connection/configuration. No
@@ -33,7 +51,9 @@ int pico_controller_motion_producer_init(struct pico_controller_motion_producer 
 /* Returns number of published samples or negative errno. Poll even when the
  * DMA ring is unchanged. Caller supplies two CPU-synchronized snapshots and
  * receipt time after the copy. Failure stops publication; stale generations
- * do not affect the current stream. No head matching or controller poses. */
+ * do not affect the current stream. The first failure reason, hand (0 if not
+ * attributable), input timestamp (0 if absent), and attempted receipt time
+ * remain latched until a successful init/restart. No head matching or poses. */
 int pico_controller_motion_producer_update(struct pico_controller_motion_producer *producer,
     uint64_t generation, const uint8_t first[PICO_CONTROLLER_RING_BYTES],
     const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);

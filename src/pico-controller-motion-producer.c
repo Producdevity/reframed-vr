@@ -3,9 +3,17 @@
 #include <errno.h>
 #include <string.h>
 
-static int fail(struct pico_controller_motion_producer *p, int error)
+static int fail(struct pico_controller_motion_producer *p, int error,
+    enum pico_controller_motion_producer_failure reason, unsigned hand,
+    uint64_t timestamp_us, int64_t now)
 {
-    if (!p->error) p->error = error;
+    if (!p->error) {
+        p->error = error;
+        p->failure = reason;
+        p->rejected_hand = hand;
+        p->rejected_timestamp_us = timestamp_us;
+        p->failure_now_ns = now;
+    }
     pico_controller_motion_channel_stop(p->channel);
     return p->error;
 }
@@ -39,14 +47,16 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
     if (!p || !p->channel) return -EINVAL;
     if (generation != p->generation) return -ESTALE;
     if (p->error) return p->error;
-    if (!first || !second) return fail(p, -EINVAL);
-    if (now <= 0 || now < p->now) return fail(p, -ETIME);
+    if (!first || !second)
+        return fail(p, -EINVAL, PICO_CONTROLLER_PRODUCER_FAILURE_ARGUMENT, 0, 0, now);
+    if (now <= 0 || now < p->now)
+        return fail(p, -ETIME, PICO_CONTROLLER_PRODUCER_FAILURE_CLOCK, 0, 0, now);
     p->now = now;
     struct pico_controller_motion_ring ring = p->ring;
     struct pico_controller_imu_sample samples[PICO_CONTROLLER_RING_MAX_IMU];
     int count = pico_controller_ring_read_motion(&ring, first, second,
         p->mcu_type, p->radio_type, p->connected_mask, samples);
-    if (count < 0) return fail(p, count);
+    if (count < 0) return fail(p, count, PICO_CONTROLLER_PRODUCER_FAILURE_RING, 0, 0, now);
     struct pico_controller_motion_event pending[PICO_CONTROLLER_RING_MAX_IMU];
     unsigned delivered = 0;
     for (int i = 0; i < count; ++i) {
@@ -59,18 +69,29 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
             struct ssc_timestamp diagnostic;
             bool expired = pico_controller_motion_time(&p->clock, s->timestamp_us,
                 now, INT64_MAX, &diagnostic);
-            return fail(p, expired ? -ETIMEDOUT : -EPROTO);
+            return fail(p, expired ? -ETIMEDOUT : -EPROTO,
+                expired ? PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_EXPIRED :
+                          PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_TIME,
+                s->hand, s->timestamp_us, now);
         }
-        if (!pico_controller_motion_values(s, &p->config[s->hand - 1], e->values)) return fail(p, -EPROTO);
+        if (!pico_controller_motion_values(s, &p->config[s->hand - 1], e->values))
+            return fail(p, -EPROTO, PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_VALUES,
+                        s->hand, s->timestamp_us, now);
         delivered |= 1U << (s->hand - 1);
     }
     for (unsigned hand = 0; hand < 2; ++hand)
-        if ((p->connected_mask & ~delivered) & (1U << hand))
-            if ((p->received[hand] && now - p->received[hand] > PICO_CONTROLLER_MOTION_MAX_AGE_NS) ||
-                (!p->received[hand] && now - p->started >= INT64_C(2000000000)))
-                return fail(p, -ETIMEDOUT);
+        if ((p->connected_mask & ~delivered) & (1U << hand)) {
+            if (p->received[hand] && now - p->received[hand] > PICO_CONTROLLER_MOTION_MAX_AGE_NS)
+                return fail(p, -ETIMEDOUT, PICO_CONTROLLER_PRODUCER_FAILURE_RECEIVE_TIMEOUT,
+                            hand + 1, 0, now);
+            if (!p->received[hand] && now - p->started >= INT64_C(2000000000))
+                return fail(p, -ETIMEDOUT, PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT,
+                            hand + 1, 0, now);
+        }
     for (int i = 0; i < count; ++i) {
-        if (!pico_controller_motion_channel_publish(p->channel, &pending[i])) return fail(p, -EPROTO);
+        if (!pico_controller_motion_channel_publish(p->channel, &pending[i]))
+            return fail(p, -EPROTO, PICO_CONTROLLER_PRODUCER_FAILURE_PUBLISH,
+                        pending[i].hand, pending[i].timestamp_us, now);
         p->received[pending[i].hand - 1] = now;
     }
     p->ring = ring;
@@ -79,7 +100,8 @@ int pico_controller_motion_producer_update(struct pico_controller_motion_produce
 
 void pico_controller_motion_producer_stop(struct pico_controller_motion_producer *p)
 {
-    if (p && p->channel) fail(p, -ESHUTDOWN);
+    if (p && p->channel)
+        fail(p, -ESHUTDOWN, PICO_CONTROLLER_PRODUCER_FAILURE_STOP, 0, 0, p->now);
 }
 
 int pico_controller_motion_producer_resumed(const struct pico_controller_motion_producer *p,

@@ -310,6 +310,16 @@ int main(int argc, char **argv)
                                                                first, second, received);
             if (count < 0) {
                 motion_error = count;
+                printf("PICO_CONTROLLER_MOTION_FAILURE generation=%016" PRIx64
+                       " mask=%u rc=%d reason=%u hand=%u now_ns=%" PRId64
+                       " started_ns=%" PRId64 " sample_us=%" PRIu64
+                       " received_left_ns=%" PRId64 " received_right_ns=%" PRId64
+                       " latest_left_us=%" PRIu64 " latest_right_us=%" PRIu64 "\n",
+                       motion.generation, motion.connected_mask, motion.error,
+                       (unsigned)motion.failure, motion.rejected_hand, motion.failure_now_ns,
+                       motion.started, motion.rejected_timestamp_us,
+                       motion.received[0], motion.received[1],
+                       motion.ring.latest[0].timestamp_us, motion.ring.latest[1].timestamp_us);
                 printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n", count, motion_samples);
             } else motion_samples += (unsigned)count;
         }

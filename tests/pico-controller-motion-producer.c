@@ -204,9 +204,147 @@ static void replay(const char *input, const char *output)
     printf("PICO_CONTROLLER_MOTION_REPLAY_PASS snapshots=%u samples=%u\n", snapshots, samples);
 }
 
+static const struct ssc_clock test_clock = {.counter_ticks=19200000, .counter_hz=19200000,
+    .host_ns=1000000000, .uncertainty_ns=2, .initialized=true};
+
+static void start_test(struct pico_controller_motion_producer *p,
+                       struct pico_controller_motion_channel *c, unsigned mask)
+{
+    assert(!pico_controller_motion_producer_init(p,c,1,2,&test_clock,config,1,2,mask,1000000000));
+    assert(!p->error && p->failure==PICO_CONTROLLER_PRODUCER_FAILURE_NONE &&
+           !p->rejected_hand && !p->rejected_timestamp_us && !p->failure_now_ns);
+}
+
+static int poll_test(struct pico_controller_motion_producer *p, uint8_t a[1000], int64_t now)
+{
+    return pico_controller_motion_producer_update(p,p->generation,a,a,now);
+}
+
+static void check_failure(struct pico_controller_motion_producer *p, int error,
+    enum pico_controller_motion_producer_failure reason, unsigned hand,
+    uint64_t timestamp, int64_t now)
+{
+    assert(p->error==error && p->failure==reason && p->rejected_hand==hand &&
+           p->rejected_timestamp_us==timestamp && p->failure_now_ns==now && !p->channel->active);
+    struct pico_controller_motion_producer saved=*p;
+    pico_controller_motion_producer_stop(p);
+    assert(pico_controller_motion_producer_update(p,p->generation,NULL,NULL,now+1)==error);
+    assert(!memcmp(p,&saved,sizeof(saved)));
+    assert(pico_controller_motion_producer_update(p,p->generation+1,NULL,NULL,now+1)==-ESTALE);
+    assert(!memcmp(p,&saved,sizeof(saved)));
+}
+
+static void startup_and_recovery(void)
+{
+    for (unsigned missing=1; missing<=2; ++missing) {
+        unsigned live=3-missing;
+        struct pico_controller_motion_channel *c=calloc(1,sizeof(*c)), *fresh=calloc(1,sizeof(*fresh));
+        assert(c && fresh);
+        struct pico_controller_motion_producer p={0}; start_test(&p,c,3);
+        uint8_t a[1000]={0};
+        for (int64_t now=1002000000; now<3000000000; now+=2000000) {
+            record(a,(uint64_t)(now-1000000)/1000,live);
+            assert(poll_test(&p,a,now)==1);
+        }
+        uint64_t accepted=c->sequence;
+        record(a,2999000,live);
+        assert(poll_test(&p,a,3000000000)==-ETIMEDOUT);
+        assert(c->sequence==accepted && p.received[live-1]==2998000000 && !p.received[missing-1]);
+        check_failure(&p,-ETIMEDOUT,PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT,missing,0,3000000000);
+        struct ssc_timestamp captures[2]={{17,19},{23,29}}, untouched[2];
+        memcpy(untouched,captures,sizeof(captures));
+        record(a,3001000,live); record(a+100,2999000,missing);
+        assert(!pico_controller_motion_producer_resumed(&p,a,a,3002000000,captures));
+        assert(!memcmp(captures,untouched,sizeof(captures)));
+        record(a+100,3001000,missing);
+        assert(pico_controller_motion_producer_resumed(&p,a,a,3002000000,captures)==1);
+        assert(!pico_controller_motion_producer_restart(&p,fresh,3,a,a,3002000000));
+        assert(!p.error && !p.failure && !p.failure_now_ns && !p.rejected_hand && !p.rejected_timestamp_us);
+        assert(!c->active && fresh->active && !fresh->sequence);
+        assert(!poll_test(&p,a,3002000000));
+        record(a,3003000,live); record(a+100,3003000,missing);
+        assert(poll_test(&p,a,3004000000)==2 && fresh->sequence==2);
+        pico_controller_motion_producer_stop(&p); free(c); free(fresh);
+    }
+    puts("PASS startup_missing_either_hand_first_failure_latched_fresh_both_restart");
+}
+
+static void dropouts(void)
+{
+    for (unsigned missing=1; missing<=2; ++missing) {
+        struct pico_controller_motion_channel *c=calloc(1,sizeof(*c));assert(c);
+        struct pico_controller_motion_producer p={0};start_test(&p,c,3);
+        uint8_t a[1000]={0};record(a,1001000,1);record(a+100,1001000,2);
+        assert(poll_test(&p,a,1002000000)==2);
+        for (int64_t now=1004000000;now<=1102000000;now+=2000000) {
+            record(a+100*(2-missing),(uint64_t)(now-1000000)/1000,3-missing);
+            assert(poll_test(&p,a,now)==1);
+        }
+        record(a+100*(2-missing),1103000,3-missing);
+        uint64_t accepted=c->sequence;
+        assert(poll_test(&p,a,1104000000)==-ETIMEDOUT && c->sequence==accepted);
+        check_failure(&p,-ETIMEDOUT,PICO_CONTROLLER_PRODUCER_FAILURE_RECEIVE_TIMEOUT,missing,0,1104000000);
+        struct ssc_timestamp captures[2]={{0}};
+        record(a+100*(2-missing),1105000,3-missing);
+        assert(!pico_controller_motion_producer_resumed(&p,a,a,1106000000,captures));
+        record(a+100*(missing-1),1105000,missing);
+        assert(pico_controller_motion_producer_resumed(&p,a,a,1106000000,captures)==1);
+        assert(!c->active);free(c);
+    }
+    struct pico_controller_motion_channel *c=calloc(1,sizeof(*c));assert(c);
+    struct pico_controller_motion_producer p={0};start_test(&p,c,3);
+    uint8_t a[1000]={0};record(a,1001000,1);record(a+100,1001000,2);
+    assert(poll_test(&p,a,1002000000)==2);
+    assert(!poll_test(&p,a,1102000000));
+    assert(poll_test(&p,a,1102000001)==-ETIMEDOUT);
+    check_failure(&p,-ETIMEDOUT,PICO_CONTROLLER_PRODUCER_FAILURE_RECEIVE_TIMEOUT,1,0,1102000001);
+    start_test(&p,c,3);memset(a,0,sizeof(a));assert(poll_test(&p,a,3000000000)==-ETIMEDOUT);
+    check_failure(&p,-ETIMEDOUT,PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT,1,0,3000000000);
+    for(unsigned hand=1;hand<=2;++hand) {
+        start_test(&p,c,1U<<(hand-1));memset(a,0,sizeof(a));
+        for(int64_t now=1002000000;now<=3100000000;now+=2000000) {
+            record(a,(uint64_t)(now-1000000)/1000,hand);assert(poll_test(&p,a,now)==1);
+        }
+        assert(c->active && !p.error);
+    }
+    free(c);puts("PASS receive_dropout_either_hand_both_dropout_unselected_hand_independent");
+}
+
+static void errors(void)
+{
+    struct pico_controller_motion_channel *c=calloc(1,sizeof(*c));assert(c);
+    struct pico_controller_motion_producer p={0};uint8_t a[1000]={0};
+    start_test(&p,c,3);struct pico_controller_motion_producer saved=p;
+    assert(pico_controller_motion_producer_update(&p,999,NULL,NULL,0)==-ESTALE && !memcmp(&p,&saved,sizeof(p)));
+    record(a,1001000,1);assert(poll_test(&p,a,3000000000)==-ETIMEDOUT);
+    check_failure(&p,-ETIMEDOUT,PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_EXPIRED,1,1001000,3000000000);
+    start_test(&p,c,3);record(a,4000000,2);assert(poll_test(&p,a,3000000000)==-EPROTO);
+    check_failure(&p,-EPROTO,PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_TIME,2,4000000,3000000000);
+    start_test(&p,c,3);assert(poll_test(&p,NULL,1001000000)==-EINVAL);
+    check_failure(&p,-EINVAL,PICO_CONTROLLER_PRODUCER_FAILURE_ARGUMENT,0,0,1001000000);
+    start_test(&p,c,3);assert(poll_test(&p,a,999999999)==-ETIME);
+    check_failure(&p,-ETIME,PICO_CONTROLLER_PRODUCER_FAILURE_CLOCK,0,0,999999999);
+    start_test(&p,c,3);record(a,1001000,2);assert(poll_test(&p,a,1002000000)==1);
+    a[33]^=1;checksum(a);assert(poll_test(&p,a,1003000000)==-EPROTO);
+    check_failure(&p,-EPROTO,PICO_CONTROLLER_PRODUCER_FAILURE_RING,0,0,1003000000);
+    struct ssc_timestamp captures[2]={{0}};
+    assert(pico_controller_motion_producer_resumed(&p,a,a,1004000000,captures)==-EPERM);
+    start_test(&p,c,3);p.config[1].mcu_type=0;record(a,1001000,2);assert(poll_test(&p,a,1002000000)==-EPROTO);
+    check_failure(&p,-EPROTO,PICO_CONTROLLER_PRODUCER_FAILURE_SAMPLE_VALUES,2,1001000,1002000000);
+    start_test(&p,c,3);pico_controller_motion_channel_stop(c);assert(poll_test(&p,a,1002000000)==-EPROTO);
+    check_failure(&p,-EPROTO,PICO_CONTROLLER_PRODUCER_FAILURE_PUBLISH,2,1001000,1002000000);
+    start_test(&p,c,3);pico_controller_motion_producer_stop(&p);
+    check_failure(&p,-ESHUTDOWN,PICO_CONTROLLER_PRODUCER_FAILURE_STOP,0,0,1000000000);
+    start_test(&p,c,3);a[99]^=1;assert(!poll_test(&p,a,1002000000));
+    assert(poll_test(&p,a,3000000000)==-ETIMEDOUT);
+    check_failure(&p,-ETIMEDOUT,PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT,1,0,3000000000);
+    free(c);puts("PASS wrong_generation_malformed_clock_stale_age_publish_first_failure_precedence");
+}
+
 int main(int argc, char **argv)
 {
     alarm(20);
     if (argc == 4 && !strcmp(argv[1], "--replay")) { replay(argv[2], argv[3]); return 0; }
-    assert(argc == 1); boundaries(); puts("PICO_CONTROLLER_MOTION_PRODUCER_PASS");
+    assert(argc == 1); boundaries(); startup_and_recovery(); dropouts(); errors();
+    puts("PICO_CONTROLLER_MOTION_PRODUCER_PASS");
 }
