@@ -2341,3 +2341,34 @@ not establish a tracked controller or SteamVR pointer. The complete head
 workload, source/payload hashes, firmware readbacks and muted offline stock
 return verify. The independent graphics and controller qualifications are
 retained in `output/pico-kgsl-maintenance-analysis-20261029-v1/`.
+
+### Paired raw-camera and SDK-input window (2026-10-29)
+
+`output/pico-optical-paired-native-20261029-v1/` records eight consecutive
+actual SDK image submissions after the verified epoch-105/mask-1 recovery.
+All 32 untouched raw camera planes pair by frame number, physical/calibration
+ID, timing and exposure/gain. Replacing only raw row 0 with row 1 reproduces
+every SDK-submitted plane byte-for-byte. The V3 carriers retain 142 real
+left-hand IMU/head-bracket records and all 150 successful image/motion SDK
+returns in dispatch order. No right-hand motion is synthesized.
+
+The separate 4 KiB control and watchdog agree on token, instance, epoch and
+mask; both writers close with zero error. The eight-image window lasts about
+284 ms and finishes within its two-second arm deadline. Host verification
+covers 120 sanitized synthetic scenarios; the actual consumer builds with
+NDK27 and the camera producer links under native ARM64 glibc with strict
+warnings. A five-second watchdog escalation requests the existing owned SDK
+unit's stop; its existing systemd stop grace remains in force.
+
+This establishes transfer integrity for this window, not physical camera
+mapping, LED synchronization, optical geometry or acquisition. It is a window
+after estimator recovery, not the complete history since SDK initialization;
+it cannot be treated as a faithful fresh-process replay. Public controller
+confidence and optical publication remain zero. The head workload completes
+4,499 camera sets with zero bad results. All 541 archive data files, full
+BOOT/DTBO readbacks, DSP cleanup and muted offline stock/host recovery verify;
+archive SHA-256 is
+`5dd0282a9a6a7ae977f0d42c458da1a6fa35c3185f592502ae4a040919a22ad3`.
+The private capture sources, 120-file consumer closure and paired verification
+are retained separately from the maintained runtime. Recording overhead
+precludes a pacing comparison with the earlier runs.
