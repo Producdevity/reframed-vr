@@ -397,6 +397,83 @@ non-Pico Linux environment and invalid argument counts. This does not establish
 pairing, Bluetooth audio, active radio throughput, suspend/resume or complete
 installed-image acceptance.
 
+## Optional Wi-Fi module owner (2026-10-29)
+
+`REFRAMED_PICO_WIFI_TRANSPORT=ON` installs the `PicoWifiTransport` component and
+requires `REFRAMED_PICO_WIFI_IDENTITY=ON`. Both remain off by default; installing
+them does not enable a service or configure a network. The component adds
+[`pico-wifi-transport.py`](../tools/pico-wifi-transport.py), its launcher/service
+and a dependency drop-in for `reframed-pico-wifi-identity@wlan0.service`.
+
+The owner fills the startup gap before identity provisioning: it checks the
+native board/boot, QCA6390 PCI device, disabled CNSS daemon support, absent WLAN
+module and stopped network managers. It verifies the installed module's kernel
+release and records its hash. Required b1977 firmware/configuration files must
+match the accepted private bundle, including the equivalent basename copies
+used by CNSS's firmware fallback. Firmware search follows the existing kernel
+path and normal `/lib/firmware` locations; the helper neither installs firmware
+nor changes that search path. No regulatory file or calibration is generated.
+
+It temporarily sets `kernel.firmware_config.ignore_sysfs_fallback=1`, loads
+`wlan` once and waits for the down, unassociated managed `wlan0`, the installed
+link policy and its active device unit. Only then does it signal readiness for
+the existing identity service. The module owner has no dependency on the network
+device it creates, avoiding a startup cycle. Enabling the identity instance
+continues to make NetworkManager require successful identity provisioning.
+
+The owner holds the firmware fallback setting throughout the WLAN lifetime,
+including possible firmware recovery. This setting affects the kernel firmware
+loader globally while owned. NetworkManager stop propagates through identity
+and transport; failed identity startup or an explicitly stopped identity leaves
+the owner unneeded and triggers teardown. A normal stop unloads only the module
+it successfully loaded, then restores and reads back the previous fallback
+setting. An existing/replaced module is never adopted or forcibly removed.
+Failed or ambiguous module commands report incomplete cleanup; a remaining
+module retains its required fallback policy. Boot or control-file changes
+prevent restoration writes. SIGTERM/SIGINT request cleanup without interrupting
+an in-flight module command; the service stop bound allows its load and unload
+deadlines to finish. The helper never starts a scan or associates.
+
+The successful minimal reference is
+`output/pico-wireless-minimal-20261027-v2/native/identity-template.txt`, with
+archive `baf94bfa18849dc05ac2c1031a65e643ffcd582c9d9f62c37f6da9317746f71f`.
+Its authentic Qorvo board file is `qca6390/bdwlanq.elf`; the earlier spelling
+`bdwlan.q.elf` in private notes is not the retained filename. The new component
+uses those existing inputs and startup order, without additional settling delays.
+
+Twenty-one host Wi-Fi tests pass, including firmware search precedence,
+preflight guards, failed load/readiness/notification, cancellation, changed
+ownership, unload failure and fallback restoration. Component-only CMake tests
+install all nine identity/transport assets, reject missing identity support and
+non-Linux configuration, verify default-off behavior and exercise installed
+launcher guards.
+
+The installed owner now passes the native RAM smoke in
+`output/pico-radio-startup-native-20261029-v2/`: boot
+`bfc9561f-db27-444b-b778-a2b5ed67464f`, archive
+`2c48bc9bdb19cb7cb03d0c1fba66ba3d52f9a01a1376a99996590dca03d1284d`
+(173 verified data members). Startup creates the managed interface and applies
+the unit identity. Restarting identity reuses the same owner without a second
+MAC write. The passive scan reports 171 BSS entries while remaining
+unassociated. Stopping identity makes the owner unneeded, unloads its WLAN
+module and restores the original firmware fallback setting; the firmware search
+path is unchanged. Source and installed assets match all nine staged component
+pins, and all 21 maintained Wi-Fi tests pass against the same sources.
+
+The first run reached owner startup and identity restart, then stopped because
+the private smoke called an absent `ip` executable. V2 changes only that smoke
+to the previously verified `SIOCSIFFLAGS` ioctl and restores the exact original
+flags in `finally`; the maintained driver and component are unchanged. Complete
+export/source checks, radio cleanup, DSP/MCU quiescence, unchanged BOOT/DTBO,
+muted offline stock return and USB host join pass. The later Bluetooth power
+exercise fails separately and does not invalidate this completed Wi-Fi smoke.
+
+This accepts the installed Wi-Fi owner/identity lifecycle and passive scan in
+the prepared RAM environment. A full image must still stage the matching signed
+module, authentic private firmware, runtime packages and private unit-identity
+files. NetworkManager activation, association, DHCP, active traffic,
+suspend/resume and complete installed-image operation remain unverified.
+
 ## UART startup integration remains blocked (2026-10-27)
 
 The four diagnostics in `output/pico-wireless-session-20261027-v{1,2,3,4}/`

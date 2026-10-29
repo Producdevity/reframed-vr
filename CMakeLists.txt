@@ -61,6 +61,26 @@ if(REFRAMED_PICO_WIFI_IDENTITY)
             DESTINATION lib/systemd/network COMPONENT PicoWifiIdentity)
 endif()
 
+option(REFRAMED_PICO_WIFI_TRANSPORT "Install native Pico WLAN module ownership" OFF)
+if(REFRAMED_PICO_WIFI_TRANSPORT)
+    if(NOT REFRAMED_PICO_WIFI_IDENTITY)
+        message(FATAL_ERROR "Pico Wi-Fi transport requires Pico Wi-Fi identity startup")
+    endif()
+    install(PROGRAMS tools/pico-wifi-transport.py DESTINATION libexec/reframed-vr
+            COMPONENT PicoWifiTransport)
+    configure_file(system/pico/reframed-pico-wifi-transport.in
+                   reframed-pico-wifi-transport @ONLY)
+    install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-wifi-transport"
+            DESTINATION libexec/reframed-vr COMPONENT PicoWifiTransport)
+    configure_file(system/pico/reframed-pico-wifi-transport.service.in
+                   reframed-pico-wifi-transport.service @ONLY)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-wifi-transport.service"
+            DESTINATION lib/systemd/system COMPONENT PicoWifiTransport)
+    install(FILES system/pico/10-wifi-transport.conf
+            DESTINATION lib/systemd/system/reframed-pico-wifi-identity@wlan0.service.d
+            COMPONENT PicoWifiTransport)
+endif()
+
 option(REFRAMED_PICO_BLUETOOTH_IDENTITY "Install native Pico Bluetooth identity startup" OFF)
 if(REFRAMED_PICO_BLUETOOTH_IDENTITY)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")

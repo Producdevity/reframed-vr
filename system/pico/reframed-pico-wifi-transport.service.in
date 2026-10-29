@@ -1,0 +1,23 @@
+[Unit]
+Description=Own the Pico QCA6390 WLAN module
+After=systemd-udevd.service
+Before=reframed-pico-wifi-identity@wlan0.service NetworkManager.service wpa_supplicant.service
+PartOf=NetworkManager.service
+StopWhenUnneeded=yes
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart="@CMAKE_INSTALL_PREFIX@/libexec/reframed-vr/reframed-pico-wifi-transport" /run/reframed-pico-wifi-transport/result.json /etc/reframed-vr/pico-boot-serial
+RuntimeDirectory=reframed-pico-wifi-transport
+RuntimeDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=150
+TimeoutStopSec=130
+KillMode=mixed
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_SYS_MODULE CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
