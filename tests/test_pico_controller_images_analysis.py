@@ -30,7 +30,7 @@ def yaml(transform):
 
 
 class ControllerImageAnalysisTests(unittest.TestCase):
-    def fixture(self, root, flip=False):
+    def fixture(self, root, flip=False, version=2):
         cameras = []
         for i, x in enumerate((-.06, .06)):
             transform = np.eye(4)
@@ -44,7 +44,7 @@ class ControllerImageAnalysisTests(unittest.TestCase):
                                         np.zeros(16), np.zeros(16))).flatten()
         tracker = root / 'tracker.bin'
         tracker.write_bytes(vector.tobytes())
-        raw = bytearray(struct.pack('<4Q', acquisition.IMAGE_MAGIC, 2, acquisition.IMAGE_SIZE, 150))
+        raw = bytearray(struct.pack('<4Q', acquisition.IMAGE_MAGIC, version, acquisition.IMAGE_SIZE, 150))
         raw += struct.pack('<3Q', 200, 7, 1) + head(199) + head(201)
         locations = [(300, 220), (306, 224), (312, 228), (318, 224), (310, 232)]
         for i in range(4):
@@ -97,6 +97,17 @@ class ControllerImageAnalysisTests(unittest.TestCase):
             result = analysis.hypotheses(cameras, pixels, .12, 1e-5)
             self.assertEqual(result['total_hypotheses'], 1)
             np.testing.assert_allclose(result['hypotheses'][0]['points_body_m'], points, atol=1e-9)
+
+    def test_version_three_images_keep_the_same_geometry_interpretation(self):
+        observations = []
+        for version in (2, 3):
+            with tempfile.TemporaryDirectory() as tmp:
+                paths = self.fixture(Path(tmp), version=version)
+                self.assertEqual(acquisition.records(paths[0], 'images')[0]['format_version'], version)
+                report = self.run_fixture(paths)
+                observations.append(report['observations'])
+                self.assertFalse(report['optical_tracking_verified'])
+        self.assertEqual(observations[0], observations[1])
 
     def test_explicit_camera_mapping_and_pixel_transform_are_not_inferred(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -10,19 +10,23 @@ import struct
 MOTION_MAGIC = 0x52564354494D0001
 IMAGE_MAGIC = 0x5256435443410002
 MOTION_SIZE = 832
+MOTION_V3_SIZE = 840
 PIXELS = 640 * 480
 IMAGE_SIZE = 24 + 2 * 368 + 4 * (64 + PIXELS)
 FRAME = struct.Struct('<B3x7I2qQ2I')
 
 
-def header(stream, magic, size, maximum):
+def header(stream, magic, formats):
     raw = stream.read(32)
     if len(raw) != 32:
         raise ValueError('Incomplete acquisition header')
     value, version, stride, capacity = struct.unpack('<4Q', raw)
-    if (value, version, stride) != (magic, 2, size) or not 1 <= capacity <= maximum:
-        raise ValueError('Requires bounded version-2 inputs with recorded dispatch order')
-    return capacity
+    if value != magic or version not in formats:
+        raise ValueError('Requires bounded version-2 or version-3 inputs with recorded dispatch order')
+    size, maximum = formats[version]
+    if stride != size or not 1 <= capacity <= maximum:
+        raise ValueError('Invalid acquisition stride or capacity')
+    return version, size, capacity
 
 
 def bracket(raw, timestamp):
@@ -40,26 +44,37 @@ def bracket(raw, timestamp):
 
 
 def records(path, kind):
-    size, magic, maximum = ((MOTION_SIZE, MOTION_MAGIC, 4096) if kind == 'motion'
-                            else (IMAGE_SIZE, IMAGE_MAGIC, 150))
+    if kind not in ('motion', 'images'):
+        raise ValueError('Unknown acquisition input kind')
+    magic, formats = ((MOTION_MAGIC, {2: (MOTION_SIZE, 4096), 3: (MOTION_V3_SIZE, 16384)})
+                      if kind == 'motion' else
+                      (IMAGE_MAGIC, {2: (IMAGE_SIZE, 150), 3: (IMAGE_SIZE, 150)}))
     with path.open('rb') as stream:
-        capacity = header(stream, magic, size, maximum)
+        version, size, capacity = header(stream, magic, formats)
         length = path.stat().st_size - 32
         if length % size or not 1 <= length // size <= capacity:
             raise ValueError('Incomplete or empty acquisition records')
-        previous_time, previous_order = 0, 0
+        previous_times, previous_order = {}, 0
         events = []
         for index in range(length // size):
             row = stream.read(size)
             if len(row) != size:
                 raise ValueError('Acquisition changed while reading')
             timestamp, generation, order = struct.unpack_from('<3Q', row)
-            if not generation or not previous_time < timestamp <= (1 << 63)-1 or order <= previous_order:
+            hand = None
+            values_offset = 24
+            if kind == 'motion' and version == 3:
+                hand, reserved = struct.unpack_from('<2I', row, 24)
+                if hand not in (1, 2) or reserved:
+                    raise ValueError('Invalid motion hand or reserved field')
+                values_offset = 32
+            if (not generation or not previous_times.get(hand, 0) < timestamp <= (1 << 63)-1 or
+                    order <= previous_order):
                 raise ValueError('Regressing capture time, dispatch order or missing generation')
             if kind == 'motion':
-                if not all(math.isfinite(x) for x in struct.unpack_from('<9d', row, 24)):
+                if not all(math.isfinite(x) for x in struct.unpack_from('<9d', row, values_offset)):
                     raise ValueError('Nonfinite controller IMU input')
-                bracket(row[96:], timestamp)
+                bracket(row[values_offset + 72:], timestamp)
             else:
                 bracket(row[24:760], timestamp)
                 numbers = set()
@@ -75,9 +90,13 @@ def records(path, kind):
                     numbers.add(number)
                 if len(numbers) != 1:
                     raise ValueError('Mixed camera frame numbers')
-            events.append({'kind': kind, 'dispatch_order': order, 'timestamp_ns': timestamp,
-                           'generation': generation, 'offset': 32 + index * size, 'bytes': size})
-            previous_time, previous_order = timestamp, order
+            event = {'kind': kind, 'dispatch_order': order, 'timestamp_ns': timestamp,
+                     'generation': generation, 'offset': 32 + index * size, 'bytes': size,
+                     'format_version': version}
+            if kind == 'motion':
+                event['hand'] = hand
+            events.append(event)
+            previous_times[hand], previous_order = timestamp, order
     return events
 
 
@@ -92,13 +111,21 @@ def analyze(motion, images):
         raise ValueError('Missing or duplicate cross-stream dispatch order')
     if len({e['generation'] for e in events}) != 1:
         raise ValueError('Mixed estimator generations')
+    versions = {e['format_version'] for e in events}
+    if len(versions) != 1:
+        raise ValueError('Mixed acquisition format versions')
+    version = versions.pop()
     for kind, path in [('motion', motion), ('images', images)]:
         with path.open('rb') as stream:
             if hashlib.file_digest(stream, 'sha256').hexdigest() != inputs[kind]:
                 raise ValueError('Acquisition changed during analysis')
     return {'scope': 'Retained SDK input subset ordering and head brackets; no complete live input, optical or timing acceptance',
-            'format_version': 2, 'source_sha256': inputs, 'events': events,
+            'format_version': version, 'source_sha256': inputs, 'events': events,
             'motion_records': sum(e['kind'] == 'motion' for e in events),
+            'motion_hands_recorded': version == 3,
+            'motion_records_per_hand': {str(hand): sum(e['kind'] == 'motion' and e['hand'] == hand
+                                                       for e in events)
+                                        for hand in (1, 2)} if version == 3 else None,
             'image_sets': sum(e['kind'] == 'images' for e in events),
             'dispatch_order_recorded': True, 'original_wall_timing_reproduced': False,
             'complete_live_input_coverage_verified': False,
