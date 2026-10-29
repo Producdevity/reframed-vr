@@ -4941,3 +4941,28 @@ Complete source/archive checks, trace/FIFO/DSP cleanup, full BOOT/DTBO readbacks
 muted offline stock return and owned USB-host termination verify. Optical
 controller publication remains disabled; the independently recorded right-hand
 IMU gap is described in `pico-controller-protocol.md`.
+
+### Renderer baseline readiness (2026-10-29)
+
+`output/pico-acquisition-cfs-20261029-v2/` refuses the initial renderer scheduler
+check after observing `(SCHED_FIFO, 40)` instead of `(SCHED_OTHER, 0)`. The pinned
+vendor `sched_save_priority_and_promote`/`sched_restore_priority` path can change
+the stored class to FIFO40 during GPU submission. The observation is consistent
+with that path; this failed run does not trace the transition or establish its
+caller. It supplies no steady timing or CFS hierarchy acceptance.
+
+`wait_cfs_baseline` in `tools/pico-steamvr-render-priority.py` adds a read-only
+readiness gate for the owning diagnostic. Within 500 ms it requires two
+consecutive OTHER0 observations with unchanged process/thread identity,
+executable, affinity, nice−20 and resource limits. Separate policy/parameter
+getters can straddle promotion/restoration; their intermediate values never
+qualify as the baseline. Unknown classes/priorities, attribute drift, exhausted
+observation budget or a read completed after the deadline fail. The caller
+retains the record on success and failure. Timeout return can exceed the bound
+by sleep/dispatch latency; successful acceptance cannot.
+
+Twenty-six renderer tests pass on macOS and Linux ARM64, including eight
+readiness fixtures. The existing priority setter, RR2 checks and restoration
+contract remain unchanged and can reject a later transient. This gate avoids
+refusing a supported temporary observation; it does not prevent a subsequent
+kernel transition, fix a CFS scheduling decision or establish improved pacing.

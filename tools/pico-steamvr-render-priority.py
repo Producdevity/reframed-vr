@@ -95,6 +95,55 @@ def stable_fields(state):
     return {k: v for k, v in state.items() if k not in ('policy', 'rt_priority')}
 
 
+def wait_cfs_baseline(pid, tid, record):
+    """Observe a restored CFS baseline across the vendor GPU's temporary FIFO40.
+
+    Readbacks are non-atomic. Two matching CFS samples are a readiness check,
+    not a guarantee against a later in-kernel policy transition. No setters run.
+    The caller retains record on failure as well as success.
+    """
+    if record:
+        raise ValueError('Expected a new baseline record')
+    started = time.monotonic_ns()
+    record.update(started_ns=started, accepted=False, samples=[])
+    baseline = None
+    consecutive = 0
+    try:
+        for _ in range(128):
+            now = time.monotonic_ns()
+            if now-started > 500000000:
+                raise TimeoutError('Renderer did not restore its CFS baseline within500ms')
+            current = snapshot(pid, tid)
+            ended = time.monotonic_ns()
+            record['samples'].append({'ns': now, 'end_ns': ended, 'policy': current['policy'],
+                                      'rt_priority': current['rt_priority']})
+            if ended-started > 500000000:
+                raise TimeoutError('Renderer baseline read exceeded500ms')
+            if (current['nice'] != -20 or current['limits'] != LIMITS or
+                    not current['affinity']):
+                raise ValueError('Renderer baseline nice, limits or affinity is invalid')
+            if baseline is None:
+                baseline = stable_fields(current)
+                record['identity'] = baseline
+            if stable_fields(current) != baseline:
+                raise ValueError('Renderer baseline identity or attributes changed')
+            # Separate policy/parameter getters can straddle promotion or restore.
+            if current['policy'] not in (os.SCHED_OTHER, os.SCHED_FIFO) or current['rt_priority'] not in (0, 40):
+                raise ValueError('Unexpected renderer baseline scheduler state')
+            target = (current['policy'], current['rt_priority']) == (os.SCHED_OTHER, 0)
+            consecutive = consecutive+1 if target else 0
+            if consecutive == 2:
+                record.update(accepted=True, baseline=current)
+                return current
+            time.sleep(.005)
+        raise TimeoutError('Renderer baseline observation budget exhausted')
+    except Exception as error:
+        record['error'] = repr(error)
+        raise
+    finally:
+        record['ended_ns'] = time.monotonic_ns()
+
+
 def is_rr2(state):
     return (state['policy'] in (os.SCHED_RR, os.SCHED_RR | os.SCHED_RESET_ON_FORK) and
             state['rt_priority'] == 2)
