@@ -2475,3 +2475,62 @@ be assigned to these different observations; five features is the host
 diagnostic's requirement, not an established SDK minimum. Source closure,
 all 32 raw/submitted-plane joins and the comparison are retained in
 `output/pico-optical-geometry-audit-20261029-v2/`.
+
+### Bounded SDK logging and the stationary-acquisition gate (2026-10-29)
+
+[`pico-controller-verbose-property.c`](../src/pico-controller-verbose-property.c)
+is an opt-in, process-local diagnostic for controller SDK SHA-256
+`9b9ba5484fc5df8f629fff0f9a1d5b130ae4929860252429614dad64c6a45c4a`.
+With exactly `PICO_CONTROLLER_VERBOSE=1`, it overrides only
+`persist.pxr.picoController.log`: queries return `1` for six seconds after
+the first query, then `0`. The SDK refreshes this property every 30 ordinary
+images, so its logging can remain enabled past that deadline. All other
+properties, and all queries without that explicit opt-in, delegate to the next
+property implementation. It writes no Android property, SDK state, calibration
+or algorithm parameter. Preserve the existing preload chain when adding it.
+
+Build the Bionic library with the pinned NDK compiler:
+
+```sh
+"$PICO_NDK_CC" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -fvisibility=hidden \
+  -shared src/pico-controller-verbose-property.c -ldl \
+  -o /tmp/libpico-controller-verbose.so
+```
+
+Here `PICO_NDK_CC` is NDK 27.1.12297006's
+`aarch64-linux-android29-clang`. Linux loader fixtures cover exact opt-in,
+delegation including failed reads, return length/NUL behavior, concurrent reads
+and expiry. The identical source passes the strict NDK build and the closed
+Pico run in `output/pico-controller-verbose-native-20261029-v1/`. Its archive
+SHA-256 is
+`8745416cd0a9f2aa0fbe18fcda7288ff54409143e127dbed3a481894fe7711db`;
+all 543 exported data members and the complete 6,081,014-byte SDK log rehash.
+Logging stays active for 6.952916039 seconds including SDK refresh latency.
+This perturbed run is not pacing evidence.
+
+The log separates two acquisition boundaries. Early generation 104 makes
+46 initialization attempts: all 92 P5P fits fail; brute matching reports
+59 successes and 33 failures. Forty attempts have at least one successful
+inner brute fit, but all 46 fail overall initialization. The later rejection
+is unobserved. The two logged brute scalars are not the XYZ tested by the
+subsequent initialization-volume checks; the final init-fail number is a retry
+counter, not a rejection code.
+
+Detection and fitting messages stop before the subset reset, when the
+stillness counter first becomes positive at IMU sample 951. Source at
+`0xc95bc–0xc95c8` returns before detection when tracker bytes `+0x1354` and
+`+0x1352` are both set. The live state satisfies that guard, including the
+later accepted generation 105 paired recording: eight image sets, 32 raw
+planes, 143 real left IMU records and 151 successful dispatches. Per-image
+branch execution was not traced. Normal real motion can clear the stillness
+condition; this establishes no irreversible reset defect and does not justify
+bypassing either byte. A further stationary late recording cannot explain the
+earlier successful candidate's rejection.
+
+The complete workload finishes 4,499 camera sets with zero bad results,
+publishes no optical controller pose, joins the owned USB host and returns to
+muted offline stock with unchanged BOOT/DTBO hashes. Candidate XYZ and its
+later branch outcome remain the missing measurement before changing acquisition
+behavior. The exact offsets, chronology, source pins and unchanged decoder
+checks are retained in
+`output/pico-controller-acquisition-live-analysis-20261029-v1/`.
