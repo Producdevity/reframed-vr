@@ -4867,3 +4867,40 @@ dispatch. This selects an upstream readiness boundary, not a proven server bug
 or a scheduling fix. The futex's user-space object/callsite and server condition
 remain unidentified. Reproduced source/calibration/trace receipts are in
 `output/pico-gpu-readiness-20261028-v1/`.
+
+### Dual-hand registration and IPC callsite capture (2026-10-29)
+
+`output/pico-dual-driver-20261029-v2/` completes 181 seconds, 4,499 head camera
+sets and 184,698 head callbacks with zero bad results. All CPU epochs and the
+complete DRM stream qualify. On/off/on windows have 1,794 / 1,795 / 1,794
+adjacent flip pairs and 1 / 0 / 1 sequence skips. One startup query is overdue;
+all 4,000 steady queries pass. Both controllers register and load their models;
+the right-hand input probe passes. Optical publication remains disabled.
+
+A guarded 90-second perf capture accepts 35,696 futex entries without loss or
+ABI errors; 697 shared-IPC waits identify the `vrclient.so` robust-mutex call at
+LR `0x241dc0`. Whole ordered syscall joins identify present 5,462's 9.549 ms wait:
+its owner/waker is the API observer, which remains runnable for 9.449 ms.
+This establishes priority inversion at that observed lock, with incomplete
+whole-CPU occupancy coverage. Present 9,695 has no such wait before queue;
+its 1.728 ms renderer scheduled elapsed time includes unmeasured interrupts.
+No priority change or general pacing fix follows. Exact source/format/rounding
+gates, fixtures and joins are in `output/pico-ipc-callsite-20261029-v1/`.
+
+The overdue startup query takes 1.406 µs while the kernel vblank timestamp is
+only 118.959 µs old. API publication remains a separate boundary; API/DRM counter
+equivalence and physical timing are unproven. Query/event anchors are in the
+run's `startup-vsync-boundary.json`. Instrumentation overhead precludes treating
+this recording as a clean performance comparison.
+
+The 372-file archive is 51,236,412 bytes, SHA-256
+`78511ff6f1254bba2588e548f5ef2254766df80971340b1e680015ed49bcc760`.
+Trace/FIFO/DSP cleanup, full BOOT/DTBO readbacks, muted offline stock return and
+owned host termination verify. Version 1's final recipe reinstalls a legacy
+probe; version 2 corrects that artifact. The failed run supplies no pacing result.
+
+The observer-free control in `output/pico-no-api-observer-20261029-v1/` stops
+before measurement at the scheduler-state check. RR2 activation, CFS restoration
+and stock recovery verify, but the failed check's actual tuple was not saved.
+Its shortened perf stream is unqualified. No observer-free pacing comparison or
+transition cause is established; the scheduler check remains strict.

@@ -684,6 +684,15 @@ and the debug query recheck freshness instead of reviving a cached result.
 Without a hand's optional settings, that controller retains digital-only operation
 and an invalid pose.
 
+The 2026-10-29 RAM test registers both hands in the real server, loads both
+models and reads fresh right-hand input through the per-hand probe. Fourteen
+focused host tests and four ARM64 Linux sanitizer suites pass, including
+independent pose bindings, cross-hand alias refusal and one-hand disconnection.
+These do not validate optical acquisition: all 3,319 sampled SDK result pairs
+still have state zero, and pose publication remains disabled. The full native
+regression and its separate timing limits are recorded in
+[`pico-steamvr-verification.md`](pico-steamvr-verification.md).
+
 The seven host SteamVR test suites pass, and the updated driver builds on the
 Pico's native ARM64 Linux userspace. Its native controller harness passes under
 UBSan, including fresh pose values, stale poses with still-connected input,
