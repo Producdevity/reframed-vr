@@ -5137,3 +5137,52 @@ The rejected placed occupancy row has header PID 1985 but body previous PID
 1985. This localizes the inconsistency to the additional recording; it does
 not establish a kernel-memory or scheduler fault. Both original streams are
 preserved without repair.
+
+### Callback phase boundaries and collector fixes (2026-10-29)
+
+The opt-in `experimental/0018-kgsl-delayed-callback-phases.patch` separates
+worker entry, the existing fire trace, promotion, callback and restoration.
+It emits one record after restoration and preserves the callback's operational
+order. Generated AArch64 code confirms that disabling the event skips the new
+clock/scheduler samples. Configuration, DTB, initramfs and module CRCs remain
+unchanged. This diagnostic is excluded from the default kernel profile.
+
+Two diagnostic defects are fixed and covered by focused fixtures. First,
+instances share the vendor kernel's `nop` tracer reader reference count:
+removing the phase instance before the separate DRM reader joins returns
+`EBUSY`. Cleanup now disables/drains its reader; removal follows the common
+all-readers-joined gate. A no-event Pico probe reproduces the failure and then
+removes both instances after closing the reader. The first failed cleanup
+receipt remains rejected. Second, `ns2usecs()` rounds rather than truncates:
+printed timestamps represent `[printed-500, printed+499]` ns. The analyzer now
+uses that interval when joining exact samples, including a verified boundary
+where the fire marker prints 31 ns after the sampled trace-call return.
+No captured timestamps or rows are rewritten.
+
+The corrected run `output/pico-kgsl-phase-native-20261029-v2/` completes 4,499
+head-camera sets with zero bad results, removes its phase instance, joins the
+owned USB host and returns to muted offline stock with unchanged BOOT/DTBO.
+The complete sparse recording and middle CPU epoch qualify independently:
+2,499 phase rows, with 39 before and 171 after the measured interval explicitly
+excluded from the join. All 2,289 contained work generations match exactly,
+including 1,796 display-context callbacks. Promotion/restoration return zero,
+with observed priority 100 → 59 → 100 throughout that measured population.
+
+No millisecond execute-to-entry, fire-trace, promotion or callback envelope
+reproduces in this middle window. Its largest display-context restoration
+interval is 2.572084 ms, after the callback, with an enclosed 2.551 ms runnable
+gap. This does not establish a cause for earlier pre-fire delays. The whole
+DRM stream independently records 2/0/2 missed presentations in the three
+20-second windows; no performance improvement or observer neutrality follows.
+CPU window 2 is wholly rejected for one malformed scheduler payload. Its
+prefix and CPU comparisons remain excluded; the malformed row's origin is
+unresolved.
+
+The maintained analyzer and collector are `tools/pico-kgsl-phases.py` and
+`tools/pico-kgsl-phase-capture.py`. Thirty focused fixtures cover structural,
+source-bound timestamp, generation-join, CLI and reader-lifecycle rules.
+Build/generated-code evidence is in `output/pico-kgsl-phase-kernel-20261029-v1/`;
+complete-file gates, exact joins and uncertainty limits are retained in
+`output/pico-kgsl-phase-analysis-20261029-v2/`. Full trace-option and trigger
+snapshots were not collected, so no claim covers those unrecorded settings.
+No scheduling-policy change is adopted.

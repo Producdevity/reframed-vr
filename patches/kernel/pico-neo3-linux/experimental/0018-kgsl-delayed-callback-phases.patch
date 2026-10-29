@@ -1,0 +1,134 @@
+Pico KGSL callback phase diagnostic. Disabled unless its new trace event is
+enabled. Existing callback order, promotion and restoration are preserved.
+No scheduling policy or performance fix is adopted by this patch.
+
+Pinned input/result source hashes:
+{
+  "drivers/gpu/msm/kgsl_events.c": {
+    "input": "output/pico-kgsl-promotion-20261029-v1/source/drivers/gpu/msm/kgsl_events.c",
+    "before_sha256": "695b723c04b3c852806dbe2046be58eb13c8d0450fe65334e332f817643fa5af",
+    "after_sha256": "33bd9119a0882721bc4be8c0f94ffdfc2943e6e5b1f2a473677852e27de9c7ed"
+  },
+  "drivers/gpu/msm/kgsl_trace.h": {
+    "input": "output/pico-gpu-readiness-20261028-v1/source/kgsl_trace.h",
+    "before_sha256": "925eb3e5001edfa51145779868967d368de27c9b0b5693420773d9d99c5cb015",
+    "after_sha256": "3bf127c6d933efc8d89d789e973df1f60ccc4b927fa68453db1abdda5e9528d6"
+  }
+}
+
+--- a/drivers/gpu/msm/kgsl_events.c
++++ b/drivers/gpu/msm/kgsl_events.c
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <linux/debugfs.h>
++#include <linux/ktime.h>
+ #include <uapi/linux/sched/types.h>
+ 
+ #include "kgsl_debugfs.h"
+@@ -23,6 +24,43 @@
+ 	list_del(&event->node);
+ 	event->result = result;
+ 	queue_work(device->events_wq, &event->work);
++}
++
++static noinline void _kgsl_event_worker_phases(struct work_struct *work,
++		u64 entry_ns)
++{
++	struct kgsl_event *event = container_of(work, struct kgsl_event, work);
++	struct sched_attr sched_attr;
++	u64 marks[6];
++	int policies[6], results[2];
++	int id = KGSL_CONTEXT_ID(event->context);
++	unsigned int timestamp = event->timestamp;
++	int result = event->result;
++
++	marks[0] = entry_ns;
++	policies[0] = READ_ONCE(current->policy);
++	policies[1] = READ_ONCE(current->prio);
++	memset(&sched_attr, 0, sizeof(struct sched_attr));
++	marks[1] = ktime_get_ns();
++	trace_kgsl_fire_event(id, event->timestamp, event->result,
++		jiffies - event->created, event->func);
++	marks[2] = ktime_get_ns();
++
++	results[0] = sched_save_priority_and_promote(&sched_attr);
++	marks[3] = ktime_get_ns();
++	policies[2] = READ_ONCE(current->policy);
++	policies[3] = READ_ONCE(current->prio);
++	event->func(event->device, event->group, event->priv, event->result);
++	marks[4] = ktime_get_ns();
++	results[1] = sched_restore_priority(&sched_attr);
++	marks[5] = ktime_get_ns();
++	policies[4] = READ_ONCE(current->policy);
++	policies[5] = READ_ONCE(current->prio);
++
++	trace_kgsl_event_phases(work, id, timestamp, result, marks,
++		policies, results);
++	kgsl_context_put(event->context);
++	kmem_cache_free(events_cache, event);
+ }
+ 
+ /**
+@@ -34,9 +72,17 @@
+  */
+ static void _kgsl_event_worker(struct work_struct *work)
+ {
+-	struct kgsl_event *event = container_of(work, struct kgsl_event, work);
+-	int id = KGSL_CONTEXT_ID(event->context);
++	struct kgsl_event *event;
++	int id;
+ 	struct sched_attr sched_attr;
++
++	if (trace_kgsl_event_phases_enabled()) {
++		_kgsl_event_worker_phases(work, ktime_get_ns());
++		return;
++	}
++
++	event = container_of(work, struct kgsl_event, work);
++	id = KGSL_CONTEXT_ID(event->context);
+ 	memset(&sched_attr, 0, sizeof(struct sched_attr));
+ 
+ 	trace_kgsl_fire_event(id, event->timestamp, event->result,
+--- a/drivers/gpu/msm/kgsl_trace.h
++++ b/drivers/gpu/msm/kgsl_trace.h
+@@ -981,6 +981,39 @@
+ 			__entry->age, __entry->func)
+ );
+ 
++TRACE_EVENT(kgsl_event_phases,
++	TP_PROTO(struct work_struct *work, unsigned int id, unsigned int ts,
++		int result, const u64 *marks, const int *policies,
++		const int *results),
++	TP_ARGS(work, id, ts, result, marks, policies, results),
++	TP_STRUCT__entry(
++		__field(void *, work)
++		__field(unsigned int, id)
++		__field(unsigned int, ts)
++		__field(int, result)
++		__array(u64, marks, 6)
++		__array(int, policies, 6)
++		__array(int, results, 2)
++	),
++	TP_fast_assign(
++		__entry->work = work;
++		__entry->id = id;
++		__entry->ts = ts;
++		__entry->result = result;
++		memcpy(__entry->marks, marks, sizeof(__entry->marks));
++		memcpy(__entry->policies, policies, sizeof(__entry->policies));
++		memcpy(__entry->results, results, sizeof(__entry->results));
++	),
++	TP_printk("work=%p ctx=%u ts=%u result=%d entry_ns=%llu fire_enter_ns=%llu fire_exit_ns=%llu promote_end_ns=%llu callback_end_ns=%llu restore_end_ns=%llu entry_policy=%d entry_prio=%d promoted_policy=%d promoted_prio=%d restored_policy=%d restored_prio=%d promote_ret=%d restore_ret=%d",
++		__entry->work, __entry->id, __entry->ts, __entry->result,
++		__entry->marks[0], __entry->marks[1], __entry->marks[2],
++		__entry->marks[3], __entry->marks[4], __entry->marks[5],
++		__entry->policies[0], __entry->policies[1],
++		__entry->policies[2], __entry->policies[3],
++		__entry->policies[4], __entry->policies[5],
++		__entry->results[0], __entry->results[1])
++);
++
+ TRACE_EVENT(kgsl_active_count,
+ 
+ 	TP_PROTO(struct kgsl_device *device, unsigned long ip),

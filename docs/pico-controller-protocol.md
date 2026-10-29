@@ -2467,3 +2467,11 @@ returns to muted offline stock with unchanged BOOT/DTBO hashes and the owned
 USB host joined. This validates the recorder fix; it neither accepts the old
 failed recording nor establishes optical tracking or a pacing improvement.
 The live controller path still publishes digital inputs only.
+
+The unchanged threshold-80 diagnostic finds four components in each of cameras
+2/3 across all eight accepted sets, and no five-feature hypotheses. Cameras
+0/1 have none. The earlier run's conditional centroid and origin bound cannot
+be assigned to these different observations; five features is the host
+diagnostic's requirement, not an established SDK minimum. Source closure,
+all 32 raw/submitted-plane joins and the comparison are retained in
+`output/pico-optical-geometry-audit-20261029-v2/`.
