@@ -57,12 +57,12 @@ int pico_controller_motion_consumer_poll(struct pico_controller_motion_consumer 
         int rc = pico_controller_motion_channel_read(c->config.channel, c->config.instance,
             c->config.generation, &cursor, c->config.monotonic_ns, c->config.data,
             c->config.max_age_ns, &next);
-        if (rc < 0 && rc != -EAGAIN)
-            return fail(c, rc, PICO_CONTROLLER_MOTION_FAILURE_CHANNEL, NULL, c->now);
         int64_t now = c->config.monotonic_ns(c->config.data);
         if (now <= 0 || now < c->now)
             return fail(c, -ETIME, PICO_CONTROLLER_MOTION_FAILURE_CLOCK, NULL, now);
         c->now = now;
+        if (rc < 0 && rc != -EAGAIN)
+            return fail(c, rc, PICO_CONTROLLER_MOTION_FAILURE_CHANNEL, NULL, now);
         for (unsigned i = 0; i < 2; ++i)
             if (c->last_time[i] && now - c->last_time[i] > c->config.max_age_ns)
                 return fail(c, -ETIMEDOUT, PICO_CONTROLLER_MOTION_FAILURE_EXPIRED, NULL, now);

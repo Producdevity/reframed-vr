@@ -87,6 +87,20 @@ int main(void)
     assert(f->calls == 3); cleanup(f);
 
     cfg = setup(f);
+    assert(!pico_controller_motion_consumer_create(&cfg, &f->consumer));
+    pico_controller_motion_channel_stop(&f->channel);
+    f->now += 5000000;
+    assert(pico_controller_motion_consumer_poll(f->consumer) == -ESHUTDOWN);
+    pico_controller_motion_consumer_status(f->consumer, &s);
+    assert(s.failure == PICO_CONTROLLER_MOTION_FAILURE_CHANNEL && s.failure_now_ns == f->now);
+    int64_t first_failure = s.failure_now_ns;
+    f->now += 1000000;
+    assert(pico_controller_motion_consumer_poll(f->consumer) == -ESHUTDOWN);
+    pico_controller_motion_consumer_status(f->consumer, &s);
+    assert(s.failure_now_ns == first_failure && !f->calls);
+    cleanup(f);
+
+    cfg = setup(f);
     cfg.head_generation = 0;
     assert(pico_controller_motion_consumer_create(&cfg, &f->consumer) == -EINVAL);
     cfg.head_generation = 7;
