@@ -2534,3 +2534,58 @@ later branch outcome remain the missing measurement before changing acquisition
 behavior. The exact offsets, chronology, source pins and unchanged decoder
 checks are retained in
 `output/pico-controller-acquisition-live-analysis-20261029-v1/`.
+
+### Asynchronous fitting worker and observed candidate (2026-10-29)
+
+The public image call enqueues work. The SDK's `imageThreadFunc` at `0x153904`
+dispatches fitting on an independent thread; the adapter's synchronous call
+does not identify that thread. The first hardware probe incorrectly selected
+`pico-ctrl-feed` and produced no hit. Its closed result is preserved in
+`output/pico-controller-candidate-native-20261029-v1/`; it supplies no candidate
+or rejection-stage evidence.
+
+[`pico-vendor-log.c`](../src/pico-vendor-log.c) preserves the existing Android
+print/write/vprint adapter. Exactly `PICO_CONTROLLER_CANDIDATE_TID=1` opts into
+one structured worker marker at the pinned SDK's successful left brute-fit
+log site, return offset `0xb9a08`. It records the emitting process/thread,
+monotonic time and library base. Original log text, return values and error
+state are preserved, including concurrent calls. The probe validates this
+marker against the fixed owned process, SDK mapping and thread lifetime before
+attaching. It may observe a later candidate, not the candidate that emitted
+the marker.
+
+Build with the same pinned NDK compiler:
+
+```sh
+"$PICO_NDK_CC" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -mno-outline-atomics \
+  -shared src/pico-vendor-log.c -ldl -o /tmp/libpico-vendor-log.so
+```
+
+Use a new library filename for the new consumer's preload entry. Overwriting
+the logger already mapped by the DSP service is unsafe. The tested run keeps
+that old file unchanged. The maintained source's preprocessed code and emitted
+text/read-only-data sections match the live build; Linux ARM64 fixtures verify
+ABI preservation, exact opt-in/callsite/side/flag checks and one-shot concurrency.
+
+The corrected native run in `output/pico-controller-candidate-native-20261029-v2/`
+captures one candidate before the volume tests at `0xb9b14`:
+`X=-0.396971, Y=0.001797, Z=-0.891855` under the SDK's metre convention, FPCR
+zero. The helper enforces bit-for-bit agreement between its 24 raw bytes and
+the SDK's already-loaded q0/x8 registers; full register dumps were not retained.
+Source at `0xb9b60` rejects
+`abs(Z)>=0.8`, so this candidate implies that rejection. The branch itself was
+not traced. These are fitted coordinates, not a measured physical controller
+position, and this one observation does not explain every initialization
+failure. No threshold or calibration change is justified by it alone.
+
+The disposable-child smoke, explicit hardware-breakpoint disable/readback,
+detach, target survival and unchanged SDK hash all verify. The full run finishes
+4,499 camera sets with zero bad results, validates the separate paired recording,
+joins the owned USB host and returns to muted offline stock with unchanged
+BOOT/DTBO. All 556 exported data members rehash; archive SHA-256 is
+`0abf150111bd7f080c93a15d2cbd9efa5c03e3f1431291f075316c7b3003eb81`.
+Optical pose publication remains zero. A measured closer placement and real
+controller motion are the next discriminating physical test; other candidates'
+later rejection stages remain unobserved. Debugger/logging instrumentation is
+not pacing acceptance. Exact call-chain and probe sources are retained in
+`output/pico-controller-candidate-thread-audit-20261029-v1/`.
