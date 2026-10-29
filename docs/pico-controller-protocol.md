@@ -2040,6 +2040,12 @@ capture-gap limit, 100 ms age limit and permanent-stop behaviour are unchanged;
 context is written only on failure. The serialized status retains that first
 context across later polls.
 
+Channel-error context now samples and validates the detection clock before
+latching its observation time. Previously it retained the preceding poll's
+time, including zero before the first poll. A before/after reproducer and
+macOS/Linux ARM64 sanitizer tests verify this diagnostic correction. Native
+records below retain their independently pinned consumer builds.
+
 The RAM-only control in `output/pico-motion-rejection-20261028-v2/` delivers
 13,745 motion updates before the per-hand history freshness check returns
 `-110`. Its retained diagnostic reports stage 6 (`EXPIRED`) at
@@ -2160,9 +2166,56 @@ failure does not itself publish a new endpoint. This establishes a missing
 recovery trigger, rather than the radio-side cause of the gap. Controller image
 delivery continues through 4,424 sets with zero public confident poses. Both
 ordered acquisition files contain only their headers, so this recording supplies
-no new image/IMU replay subset or geometric-acquisition result.
+no new image/IMU replay subset or geometric-acquisition result. The dual-hand
+diagnostic deliberately disables recording because the existing version-2
+motion record has no hand field. Fresh dual-hand replay needs a versioned,
+hand-tagged format with per-hand timestamp ordering and the existing shared
+dispatch-order/generation checks.
 
 The full graphics workload, archive hashes and verified recovery are recorded
 in the corresponding observer-free section of `pico-steamvr-verification.md`.
 Do not revive the stopped consumer or increase its gap bound: recovery requires
 fresh input, a new motion mapping and an estimator reset before rebinding.
+
+### Consumer-gap recovery on native Linux (2026-10-29)
+
+`output/pico-motion-gap-recovery-20261029-v4/` verifies the new recovery trigger
+with real left-controller radio input. Its private, explicitly enabled control
+omits eight validated inputs over a 15 ms window after 500 published records.
+Head/camera processing and fresh producer reception continue. The resulting
+17.770 ms capture gap produces the unchanged `GAP` rejection, −71/reason 5.
+This is controlled loss injection, not a natural-radio or pacing comparison.
+
+The owner retires motion generation 104 and publishes generation 105 after
+fresh post-failure input. The consumer resets both estimator instances in
+3.224219 ms, binds the new mapping and delivers another 12,849 left IMU updates.
+Head/world generation remains 104. The stopped consumer is never revived.
+Later motion freshness expires at 152.818562076 seconds; recovery still requires
+fresh eligible input. The underlying receive cutoff remains unresolved.
+
+Head tracking independently completes 4,499 camera sets and 184,648 callbacks
+with zero bad results. Controller image delivery reaches 4,424 sets, with
+optical publication disabled. Right-hand radio input is outside this left-only
+control; SDK registration/calibration still includes both hands. Neither tracked
+pointing nor full dual-radio tracking is accepted. The complete DRM stream has
+300,605 qualified rows; CPU window 2 contains a malformed scheduler row and
+remains wholly rejected, while windows 0 and 1 qualify. Startup's 500 API samples
+pass; steady API is unmeasured. These traces do not establish improved frame
+pacing.
+
+Thirty-five session tests pass on macOS and Linux ARM64. Five fixtures execute
+the actual recovery loop, including an overwritten global `stat` name and an
+unsafe receipt file. ASan/UBSan controls verify unchanged delivery with injection
+disabled, and GAP rejection with a healthy producer and fresh head history when
+enabled. All native worker source/helper hashes, archive members, firmware
+readbacks, trace/FIFO/DSP cleanup, muted offline stock return and owned USB-host
+termination verify. The 385-data-file archive is 50,033,775 bytes, SHA-256
+`b6684bcc41bc21ad374d69b7b34f45246ff974d17b936e3f19fbb45c6f1c34cc`.
+
+Earlier attempts remain distinct: v1 stops at the strict camera-name guard
+before tracking; its rejected name was not saved. V2 completes the head workload
+but its recovery-loop module name is overwritten by an existing list. V3's
+150 ms consumer pause selects channel expiry and stale deferred head history,
+so it supplies no GAP-recovery acceptance. V4 isolates the module import and
+uses the sanitizer-validated input-omission control. Its result does not
+reclassify those failures or relax the consumer's validity checks.
