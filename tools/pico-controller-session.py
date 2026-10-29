@@ -18,7 +18,7 @@ MOTION_RECEIVE_TIMEOUT = -110
 
 class ControllerSession:
     def __init__(self, build, directory, boot_id, *, seconds, environment,
-                 companion_accel=False, motion=None):
+                 companion_accel=False, motion=None, motion_subset=False):
         if str(uuid.UUID(boot_id)) != boot_id or type(seconds) is not int or not 1 <= seconds <= 3600:
             raise ValueError('Invalid boot identity or duration')
         self.build = Path(build).resolve()
@@ -31,6 +31,9 @@ class ControllerSession:
         self.boot_id, self.seconds = boot_id, seconds
         self.environment = dict(environment)
         self.companion_accel = bool(companion_accel)
+        if type(motion_subset) is not bool or (motion_subset and motion is None):
+            raise ValueError('Subset protocol requires enabled motion and an explicit boolean')
+        self.motion_subset = motion_subset
         self.motion = None
         if motion is not None:
             if (not isinstance(motion, dict) or set(motion) - {'generation', 'left', 'right'} or
@@ -50,6 +53,12 @@ class ControllerSession:
                             for key in fields - {'connected'})):
                     raise ValueError('Each motion hand requires verified connected stock byte settings')
                 self.motion[hand] = dict(settings)
+        self.motion_mask = sum(1 << i for i, hand in enumerate(('left', 'right'))
+                               if self.motion and hand in self.motion)
+        self.motion_offer = self.motion_retired = None
+        self.motion_offer_id = 0
+        self.motion_retire_pending = False
+        self.motion_retire_boundary = None
         self.motion_channel = self.directory / 'motion.channel'
         self.motion_base = self.motion_channel
         self.motion_ready = self.motion_stop_result = None
@@ -83,6 +92,8 @@ class ControllerSession:
         if self.motion:
             command += ['--motion-channel', str(self.motion_channel),
                         '--motion-generation', self.motion['generation']]
+            if self.motion_subset:
+                command += ['--motion-subset-v2']
             for hand in ('left', 'right'):
                 if hand in self.motion:
                     settings = self.motion[hand]
@@ -122,7 +133,9 @@ class ControllerSession:
             raise RuntimeError('Oversized worker status line')
         for raw in lines:
             line = raw.decode(errors='replace')
-            if line.startswith('PICO_CONTROLLER_READY '):
+            if line.startswith('PICO_CONTROLLER_MOTION_V'):
+                self._parse_subset_status(line)
+            elif line.startswith('PICO_CONTROLLER_READY '):
                 match = re.fullmatch(r'PICO_CONTROLLER_READY instance=([0-9a-f]{16}) '
                                      r'companion_accel=([01]) rc=(-?\d+)', line)
                 if (not match or self.ready is not None or match[1] != self.instance or
@@ -137,6 +150,8 @@ class ControllerSession:
                 self.stop_result = dict(zip(('rc', 'controller_rc', 'accel_rc', 'left', 'right'),
                                             map(int, match.groups())))
             elif line.startswith('PICO_CONTROLLER_MOTION_READY '):
+                if self.motion_subset:
+                    raise RuntimeError('Legacy motion readiness in subset session')
                 match = re.fullmatch(r'PICO_CONTROLLER_MOTION_READY instance=([0-9a-f]{16}) '
                                      r'generation=([0-9a-f]{16}) mask=([1-3]) rc=(-?\d+)', line)
                 mask = sum(1 << i for i, hand in enumerate(('left', 'right'))
@@ -155,6 +170,8 @@ class ControllerSession:
                                             **self.motion_stop_result})
                 self.motion_resumed = None
             elif line.startswith('PICO_CONTROLLER_MOTION_RESUMED '):
+                if self.motion_subset:
+                    raise RuntimeError('Legacy resumption in subset session')
                 match = re.fullmatch(r'PICO_CONTROLLER_MOTION_RESUMED instance=([0-9a-f]{16}) '
                                      r'generation=([0-9a-f]{16}) received_ns=(\d+) deadline_ns=(\d+)', line)
                 if (not match or not self.motion or match[1] != self.instance or
@@ -175,6 +192,8 @@ class ControllerSession:
                     raise RuntimeError('Unexpected motion resumption failure')
                 self.motion_resume_error = int(match[2])
             elif line.startswith('PICO_CONTROLLER_MOTION_RESTART '):
+                if self.motion_subset:
+                    raise RuntimeError('Legacy restart in subset session')
                 match = re.fullmatch(r'PICO_CONTROLLER_MOTION_RESTART previous=([0-9a-f]{16}) '
                                      r'generation=([0-9a-f]{16}) rc=(-?\d+)', line)
                 restart = self.motion_restart
@@ -197,6 +216,82 @@ class ControllerSession:
                 if not self.waiting or self.released:
                     raise RuntimeError('Worker released before shutdown acknowledgment')
                 self.released = True
+
+    def _parse_subset_status(self, line):
+        if not self.motion_subset or not self.motion:
+            raise RuntimeError('Unexpected subset protocol')
+        prefix = 'PICO_CONTROLLER_MOTION_V2_'
+        identity = r'instance=([0-9a-f]{16}) generation=([0-9a-f]{16}) '
+        if line.startswith(prefix + 'READY '):
+            match = re.fullmatch(prefix + 'READY ' + identity + r'mask=([1-3]) rc=(-?\d+)', line)
+            if (not match or self.motion_ready is not None or
+                    (match[1], match[2]) != (self.instance, self.motion['generation']) or
+                    int(match[3]) != self.motion_mask):
+                raise RuntimeError('Subset readiness identity or mask differs')
+            self.motion_ready = int(match[4])
+        elif line.startswith(prefix + 'RETIRED '):
+            match = re.fullmatch(prefix + 'RETIRED ' + identity + r'boundary_ns=(\d+) rc=(-\d+)', line)
+            if (not match or self.motion_retired is not None or self.motion_stop_result is None or
+                    (match[1], match[2]) != (self.instance, self.motion['generation']) or
+                    not 0 < int(match[3]) <= time.monotonic_ns() or
+                    (self.motion_retire_boundary is not None and int(match[3]) != self.motion_retire_boundary) or
+                    int(match[4]) != self.motion_stop_result['rc']):
+                raise RuntimeError('Subset retirement identity or boundary differs')
+            self.motion_retired = int(match[3])
+            self.motion_retire_boundary = None
+        elif line.startswith(prefix + 'RETIRE_ACK '):
+            match = re.fullmatch(prefix + r'RETIRE_ACK generation=([0-9a-f]{16}) '
+                r'observed_ns=(\d+) boundary_ns=(\d+) rc=0', line)
+            if (not match or not self.motion_retire_pending or match[1] != self.motion['generation'] or
+                    int(match[2]) != self.motion_retire_pending or
+                    not int(match[2]) <= int(match[3]) <= time.monotonic_ns()):
+                raise RuntimeError('Unexpected subset retirement acknowledgment')
+            self.motion_retire_pending = False
+            self.motion_retire_boundary = int(match[3])
+            self.motion_offer = self.motion_retired = None
+        elif line.startswith(prefix + 'OFFER '):
+            match = re.fullmatch(prefix + 'OFFER ' + identity +
+                r'offer=([0-9a-f]{16}) mask=([1-3]) boundary_ns=(\d+) observed_ns=(\d+) deadline_ns=(\d+)', line)
+            configured = sum(1 << i for i, h in enumerate(('left', 'right')) if h in self.motion)
+            if (not match or self.motion_retired is None or self.motion_resume_error is not None or
+                    self.motion_stop_result is None or self.motion_stop_result['rc'] not in (-110, -108) or
+                    (match[1], match[2]) != (self.instance, self.motion['generation']) or
+                    int(match[3], 16) <= self.motion_offer_id or int(match[4]) & ~configured or
+                    int(match[5]) != self.motion_retired or
+                    not self.motion_retired < int(match[6]) <= time.monotonic_ns() or
+                    not int(match[6]) <= int(match[7]) <= int(match[6]) + 100000000):
+                raise RuntimeError('Invalid subset offer identity, mask or freshness')
+            self.motion_offer_id = int(match[3], 16)
+            self.motion_offer = {'id': match[3], 'mask': int(match[4]),
+                                 'boundary_ns': int(match[5]), 'observed_ns': int(match[6]),
+                                 'deadline_ns': int(match[7])}
+        elif line.startswith(prefix + 'ACCEPT '):
+            match = re.fullmatch(prefix + r'ACCEPT previous=([0-9a-f]{16}) generation=([0-9a-f]{16}) '
+                r'offer=([0-9a-f]{16}) mask=([1-3]) rc=(-?\d+)', line)
+            request = self.motion_restart
+            if (not match or request is None or request['rc'] is not None or
+                    (match[1], match[2], match[3], int(match[4])) !=
+                    (request['previous'], request['generation'], request['offer'], request['mask']) or
+                    int(match[5]) > 0):
+                raise RuntimeError('Unexpected subset acceptance acknowledgment')
+            request['rc'] = int(match[5])
+            if not request['rc']:
+                if self.motion_retired is None or self.motion_stop_result is None:
+                    raise RuntimeError('Subset accepted without retirement')
+                self.motion['generation'] = request['generation']
+                self.motion_mask = request['mask']
+                self.motion_channel = Path(request['path'])
+                self.motion_ready = self.motion_stop_result = self.motion_channel_identity = None
+                self.motion_resumed = self.motion_resume_error = None
+                self.motion_offer = self.motion_retired = None
+                self.motion_offer_id = 0
+        elif line.startswith(prefix + 'FAILED '):
+            match = re.fullmatch(prefix + r'FAILED generation=([0-9a-f]{16}) rc=(-\d+)', line)
+            if not match or match[1] != self.motion['generation'] or not int(match[2]):
+                raise RuntimeError('Invalid subset failure identity')
+            self.motion_resume_error = int(match[2])
+        else:
+            raise RuntimeError('Unknown subset protocol record')
 
     def _wait(self, predicate, timeout):
         if self.process is None or not math.isfinite(timeout) or timeout < 0:
@@ -285,15 +380,13 @@ class ControllerSession:
             if received_after is not None:
                 return False
             raise RuntimeError('Motion channel is stopped')
-        if not sequence or any(not stamp for hand, stamp in [('left', left), ('right', right)]
-                                   if hand in self.motion):
+        stamps = [stamp for i, stamp in enumerate((left, right)) if self.motion_mask & (1 << i)]
+        if not sequence or any(not stamp for stamp in stamps):
             return False
         now = time.monotonic_ns()
-        if not received or received > now or any(stamp > now
-                for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
+        if not received or received > now or any(stamp > now for stamp in stamps):
             raise RuntimeError('Motion channel has no fresh capture times')
-        if any(now - stamp > 100000000
-                for hand, stamp in [('left', left), ('right', right)] if hand in self.motion):
+        if any(now - stamp > 100000000 for stamp in stamps):
             if received_after is not None:
                 return False
             raise RuntimeError('Motion channel has no fresh capture times')
@@ -307,8 +400,11 @@ class ControllerSession:
             raise RuntimeError('Motion was not enabled for this worker')
         if self.motion_restart is not None and self.motion_restart['rc'] is None:
             raise RuntimeError('Motion restart is awaiting acknowledgment')
-        return {'path': str(self.motion_channel), 'instance': self.instance,
-                'generation': self.motion['generation']}
+        endpoint = {'path': str(self.motion_channel), 'instance': self.instance,
+                    'generation': self.motion['generation']}
+        if self.motion_subset:
+            endpoint.update(version=2, mask=self.motion_mask)
+        return endpoint
 
     def motion_binding(self):
         self._read_status()
@@ -324,6 +420,8 @@ class ControllerSession:
         A timeout leaves the request pending; finish it with
         wait_motion_restart rather than issuing another request or killing RPC.
         """
+        if self.motion_subset:
+            raise RuntimeError('Subset sessions require a validated offer via recover_motion')
         self._read_status()
         if (not isinstance(generation, str) or not re.fullmatch('[0-9a-f]{16}', generation) or
                 not self.motion or int(generation, 16) <= int(self.motion['generation'], 16) or not math.isfinite(timeout) or timeout < 0):
@@ -386,6 +484,8 @@ class ControllerSession:
                     type(consumer_timeout['observed_ns']) is not int or
                     not 0 < consumer_timeout['observed_ns'] <= time.monotonic_ns()):
                 raise ValueError('Consumer timeout requires a canonical generation and past observation')
+        if self.motion_subset:
+            return self._recover_subset(timeout, consumer_timeout)
         self._read_status()
         if not self.motion_recovery_pending:
             if self.process is not None and self.process.poll() is not None and not self.released:
@@ -433,6 +533,59 @@ class ControllerSession:
         except Exception:
             self.motion_recovery_pending = False
             raise
+        self.motion_recovery_pending = False
+        return endpoint
+
+    def _recover_subset(self, timeout, consumer_timeout):
+        self._read_status()
+        if self.process is not None and self.process.poll() is not None and not self.released:
+            raise RuntimeError(f'Worker exited before motion recovery: {self.process.returncode}')
+        if (self.ready != 0 or self.waiting or self.process is None or self.process.poll() is not None or
+                self.motion_resume_error is not None):
+            return None
+        if not self.motion_recovery_pending:
+            if self.motion_retire_pending:
+                return None
+            if self.motion_stop_result is not None and self.motion_stop_result['rc'] not in (-110, -108):
+                return None
+            if (consumer_timeout is not None and consumer_timeout['generation'] == self.motion['generation'] and
+                    (self.motion_retired is None or consumer_timeout['observed_ns'] > self.motion_retired)):
+                command = f'retire2 {self.motion["generation"]} {consumer_timeout["observed_ns"]:016x}\n'
+                self.process.stdin.write(command.encode('ascii')); self.process.stdin.flush()
+                self.motion_retire_pending = consumer_timeout['observed_ns']
+                return None
+            if self.motion_stop_result is None:
+                return None
+            if self.motion_stop_result['rc'] not in (-110, -108) or self.motion_offer is None:
+                return None
+            offer = self.motion_offer
+            now = time.monotonic_ns()
+            if not offer['observed_ns'] <= now <= offer['deadline_ns']:
+                return None
+            previous_attempt = int(self.motion_restart['generation'], 16) if self.motion_restart else 0
+            generation = max(int(self.motion['generation'], 16), previous_attempt) + 1
+            if generation >= 1 << 64:
+                raise RuntimeError('Motion generation exhausted')
+            text = f'{generation:016x}'
+            self.motion_restart = {'previous': self.motion['generation'], 'generation': text,
+                'path': str(self.motion_base) + '.' + text, 'rc': None,
+                'offer': offer['id'], 'mask': offer['mask']}
+            self.motion_recovery_pending = True
+            command = f'accept2 {self.motion["generation"]} {text} {offer["id"]} {offer["mask"]}\n'
+            self.process.stdin.write(command.encode('ascii')); self.process.stdin.flush()
+        self._wait(lambda: self.motion_restart['rc'] is not None, timeout)
+        rc = self.motion_restart['rc']
+        if rc:
+            self.motion_recovery_pending = False
+            if rc in (-11, -116):
+                if self.motion_offer and self.motion_offer['id'] == self.motion_restart['offer']:
+                    self.motion_offer = None
+                return None
+            self.motion_resume_error = rc
+            raise RuntimeError(f'Subset acceptance failed: rc={rc}')
+        self._wait(lambda: self.motion_ready is not None, timeout)
+        self.wait_motion_ready(timeout)
+        endpoint = self.motion_binding()
         self.motion_recovery_pending = False
         return endpoint
 

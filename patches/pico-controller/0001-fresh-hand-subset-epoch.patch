@@ -1,0 +1,112 @@
+Reframed native controller-consumer harness: bind explicit v2 active-hand
+endpoints and reset both estimators before a replacement motion epoch.
+Record successful delivery capture spans without new per-call clock reads.
+SDK lifetime, head generation and motion/pose validity limits remain unchanged.
+
+Baseline source SHA-256: d773f6e359f2f8ae3a946db8864ed1fd292531e73291d77c2788c2dfaba81a01
+Result source SHA-256: 93f6f801ebd17b8de94fdbbcea82bce1d3910721934fe183b0077249d69e0c5c
+
+--- a/consumer-controller-owned.c
++++ b/consumer-controller-owned.c
+@@ -41,6 +41,7 @@
+ static int controller_error;
+ static bool controller_head_ready;
+ static uint64_t motion_generation;
++static unsigned motion_mask=3,motion_endpoint_version;
+ static FILE *acquire_motion,*acquire_images;
+ static struct pico_controller_acquisition *acquisition;
+ static int64_t acquisition_started;
+@@ -334,6 +335,7 @@
+ static struct pico_controller_motion_channel *motion_map;
+ static uint64_t motion_instance;
+ static int motion_error;
++static struct { uint64_t count; int64_t first,last; } motion_success[2];
+ static int64_t controller_clock(void *data) { (void)data;return mono_ns(); }
+ static int controller_update_motion(void *data,unsigned hand,const double values[9],int64_t timestamp,
+                                     const uint8_t *before,const uint8_t *after) {
+@@ -343,7 +345,12 @@
+         pico_controller_acquisition_motion(acquisition,motion_generation,hand,timestamp,values,before,after);
+     }
+     ++controller_imu_calls[hand-1];
+-    return controller_imu[hand-1](values,9,timestamp,before,after);
++    int rc=controller_imu[hand-1](values,9,timestamp,before,after);
++    if(!rc) {
++        if(!motion_success[hand-1].count)motion_success[hand-1].first=timestamp;
++        motion_success[hand-1].last=timestamp;++motion_success[hand-1].count;
++    }
++    return rc;
+ }
+ static bool controller_reset_failed;
+ static int64_t motion_endpoint_checked;
+@@ -353,6 +360,12 @@
+     printf("PICO_MOTION_EPOCH %s generation=%llu error=%d delivered=%llu max_age_ns=%lld max_head_wait_ns=%lld max_call_ns=%lld\n",
+         label,(unsigned long long)motion_generation,motion_error,(unsigned long long)st.delivered,
+         (long long)st.max_age_ns,(long long)st.max_head_wait_ns,(long long)st.max_call_ns);
++    for(unsigned h=0;h<2;++h) {
++        int64_t span=motion_success[h].last-motion_success[h].first-100000000;
++        printf("PICO_MOTION_DELIVERY label=%s generation=%llu hand=%u successful=%llu first_capture_ns=%lld last_capture_ns=%lld delivery_span_lower_bound_ns=%lld\n",
++            label,(unsigned long long)motion_generation,h+1,(unsigned long long)motion_success[h].count,
++            (long long)motion_success[h].first,(long long)motion_success[h].last,(long long)(span>0?span:0));
++    }
+ }
+ static void report_motion_rejection(void) {
+     struct pico_controller_motion_consumer_status st={0};
+@@ -382,34 +395,51 @@
+         int64_t now=mono_ns();if(now-motion_endpoint_checked<20000000)return motion_error;
+         motion_endpoint_checked=now;
+         FILE *f=fopen("/run/neo3-vendor-slam-v1/motion-endpoint.txt","r");if(!f)return motion_error;
+-        unsigned long long instance=0,generation=0;char path[256],expected[256];
+-        int n=fscanf(f,"%16llx %16llx %255s",&instance,&generation,path);fclose(f);
+-        if(n!=3||!instance||generation<104)return -EINVAL;
++        unsigned long long instance=0,generation=0;char path[256],expected[256],line[384],canonical[384];
++        unsigned mask=3,version=1;int consumed=0,n;
++        bool complete=fgets(line,sizeof(line),f)&&fgetc(f)==EOF;fclose(f);
++        if(!complete)return -EINVAL;
++        if(!strncmp(line,"v2 ",3)) {
++            version=2;n=sscanf(line,"v2 %16llx %16llx %u %255s%n",&instance,&generation,&mask,path,&consumed);
++            if(n!=4||mask<1||mask>3)return -EINVAL;
++            snprintf(canonical,sizeof(canonical),"v2 %016llx %016llx %u %s\n",instance,generation,mask,path);
++        } else {
++            n=sscanf(line,"%16llx %16llx %255s%n",&instance,&generation,path,&consumed);
++            if(n!=3)return -EINVAL;
++            snprintf(canonical,sizeof(canonical),"%016llx %016llx %s\n",instance,generation,path);
++        }
++        if(strcmp(line,canonical)||!instance||generation<104||
++           (motion_endpoint_version&&version!=motion_endpoint_version))return -EINVAL;
+         if(generation==104)snprintf(expected,sizeof(expected),"/run/neo3-vendor-slam-v1/controller-input-session/motion.channel");
+         else snprintf(expected,sizeof(expected),"/run/neo3-vendor-slam-v1/controller-input-session/motion.channel.%016llx",generation);
+         if(strcmp(path,expected))return -EINVAL;
+         if(motion_generation && (instance!=motion_instance||generation<motion_generation))return -ESTALE;
+-        if(generation==motion_generation)return motion_error;
++        if(generation==motion_generation)return mask==motion_mask?motion_error:-ESTALE;
+         void *map=map_ring(path,sizeof(*motion_map));if(map==MAP_FAILED)return motion_error;
+         struct pico_controller_motion_channel *fresh=map;
+         if(__atomic_load_n(&fresh->magic,__ATOMIC_ACQUIRE)!=UINT64_C(0x525650434d430001)||
+-           fresh->instance!=instance||fresh->generation!=generation) {munmap(map,sizeof(*motion_map));return motion_error;}
++           fresh->instance!=instance||fresh->generation!=generation||
++           __atomic_load_n(&fresh->active,__ATOMIC_ACQUIRE)!=1) {munmap(map,sizeof(*motion_map));return motion_error;}
+         if(acquisition && generation!=acquisition_epoch)pico_controller_acquisition_stop(acquisition,PICO_CONTROLLER_ACQUISITION_RESET);
+         if(motion_consumer) {
+             report_motion("stopped");pico_controller_motion_consumer_stop(motion_consumer);
+             pico_controller_motion_consumer_destroy(motion_consumer);motion_consumer=NULL;
+             munmap(motion_map,sizeof(*motion_map));motion_map=NULL;
++        }
++        if(motion_generation||generation!=acquisition_epoch) {
+             int64_t begin=mono_ns();int rc=controller_calibrate_all();
+             printf("PICO_CONTROLLER_ESTIMATOR_RESET generation=%llu elapsed_ns=%lld rc=%d\n",generation,(long long)(mono_ns()-begin),rc);
+             if(rc){controller_reset_failed=true;munmap(map,sizeof(*motion_map));return -EIO;}
+         }
+         motion_map=map;motion_instance=instance;motion_generation=generation;
++        motion_mask=mask;motion_endpoint_version=version;
++        memset(motion_success,0,sizeof(motion_success));
+         struct pico_controller_motion_consumer_config cfg={.channel=motion_map,.heads=controller_heads,
+-            .instance=instance,.generation=generation,.head_generation=104,.connected_mask=3,.max_age_ns=100000000,
++            .instance=instance,.generation=generation,.head_generation=104,.connected_mask=motion_mask,.max_age_ns=100000000,
+             .max_gap_ns=10000000,.monotonic_ns=controller_clock,.update=controller_update_motion};
+         int rc=pico_controller_motion_consumer_create(&cfg,&motion_consumer);if(rc)return rc;
+         motion_error=0;
+-        printf("PICO_CONTROLLER_LIVE_MOTION_BOUND generation=%llu head_generation=104\n",generation);
++        printf("PICO_CONTROLLER_LIVE_MOTION_BOUND generation=%llu head_generation=104 mask=%u endpoint_version=%u\n",generation,motion_mask,motion_endpoint_version);
+     }
+     return pico_controller_motion_consumer_poll(motion_consumer);
+ }

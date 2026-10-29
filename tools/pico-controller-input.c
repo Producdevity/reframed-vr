@@ -123,6 +123,77 @@ static bool restart_request(const char request[42], uint64_t *previous, uint64_t
     return *previous && *next;
 }
 
+struct subset_state {
+    struct pico_controller_motion_offer offer;
+    uint64_t id;
+    bool retired;
+    int error;
+};
+
+static bool hex16(const char *text, uint64_t *value)
+{
+    char word[17] = {0}; memcpy(word, text, 16);
+    if (strspn(word, "0123456789abcdef") != 16) return false;
+    *value = strtoull(word, NULL, 16);
+    return *value != 0;
+}
+
+static int subset_request(const char *request, size_t length, uint64_t values[3], unsigned *mask)
+{
+    if (length == 42 && !memcmp(request, "retire2 ", 8) &&
+        request[24] == ' ' && request[41] == '\n' &&
+        hex16(request + 8, values) && hex16(request + 25, values + 1)) return 1;
+    if (length == 61 && !memcmp(request, "accept2 ", 8) &&
+        request[24] == ' ' && request[41] == ' ' && request[58] == ' ' &&
+        request[59] >= '1' && request[59] <= '3' && request[60] == '\n' &&
+        hex16(request + 8, values) && hex16(request + 25, values + 1) &&
+        hex16(request + 42, values + 2)) {
+        *mask = (unsigned)(request[59] - '0'); return 2;
+    }
+    return 0;
+}
+
+static void subset_poll(struct pico_controller_motion_producer *p, struct subset_state *s,
+    const uint8_t first[1000], const uint8_t second[1000], int64_t now, uint64_t samples)
+{
+    if (s->error) return;
+    struct pico_controller_motion_offer next;
+    if (!p->error) {
+        if (p->connected_mask == p->configured_mask) return;
+        int rc = pico_controller_motion_producer_offer(p, first, second, now, &next);
+        if (rc || (next.mask & ~p->connected_mask)) {
+            if (rc) s->error = rc;
+            pico_controller_motion_producer_retire(p, p->generation, now);
+            printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n", p->error, samples);
+        } else return;
+    }
+    if (!s->retired) {
+        printf("PICO_CONTROLLER_MOTION_V2_RETIRED instance=%016" PRIx64 " generation=%016" PRIx64
+               " boundary_ns=%" PRId64 " rc=%d\n", p->channel->instance, p->generation, p->now, p->error);
+        s->retired = true;
+    }
+    int rc = s->error ? s->error : pico_controller_motion_producer_offer(p, first, second, now, &next);
+    if (rc) {
+        s->error = rc;
+        printf("PICO_CONTROLLER_MOTION_V2_FAILED generation=%016" PRIx64 " rc=%d\n", p->generation, rc);
+        return;
+    }
+    if (!next.mask) { s->offer.mask = 0; return; }
+    if (next.mask != s->offer.mask || now > s->offer.deadline_ns - 25000000) {
+        if (s->id == UINT64_MAX) {
+            s->error = -EOVERFLOW;
+            printf("PICO_CONTROLLER_MOTION_V2_FAILED generation=%016" PRIx64 " rc=%d\n", p->generation, s->error);
+            return;
+        }
+        s->offer = next; ++s->id;
+        printf("PICO_CONTROLLER_MOTION_V2_OFFER instance=%016" PRIx64 " generation=%016" PRIx64
+               " offer=%016" PRIx64 " mask=%u boundary_ns=%" PRId64
+               " observed_ns=%" PRId64 " deadline_ns=%" PRId64 "\n",
+               p->channel->instance, p->generation, s->id, next.mask, next.boundary_ns,
+               next.observed_ns, next.deadline_ns);
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *boot_id = NULL, *path = NULL;
@@ -131,7 +202,7 @@ int main(int argc, char **argv)
     struct pico_controller_motion_config config[2] = {{0}};
     unsigned motion_mask = 0;
     unsigned seconds = 0;
-    bool companion = false;
+    bool companion = false, subset = false;
     static const struct option options[] = {
         {"boot-id", required_argument, NULL, 'b'},
         {"channel", required_argument, NULL, 'c'},
@@ -142,6 +213,7 @@ int main(int argc, char **argv)
         {"motion-generation", required_argument, NULL, 'g'},
         {"left-motion-config", required_argument, NULL, 'l'},
         {"right-motion-config", required_argument, NULL, 'r'},
+        {"motion-subset-v2", no_argument, NULL, 'v'},
         {NULL, 0, NULL, 0}
     };
     int option;
@@ -160,6 +232,7 @@ int main(int argc, char **argv)
             seconds = (unsigned)value; break;
         }
         case 'a': companion = true; break;
+        case 'v': subset = true; break;
         case 'm': motion_path = optarg; break;
         case 'g':
             if (strlen(optarg) != 16 || strspn(optarg, "0123456789abcdef") != 16) return 2;
@@ -176,7 +249,7 @@ int main(int argc, char **argv)
     if (optind != argc || !boot_id || strlen(boot_id) != 36 || !path || path[0] != '/' ||
         !instance || !seconds || geteuid() ||
         (motion_path ? motion_path[0] != '/' || !strcmp(motion_path, path) ||
-                       !motion_generation || !motion_mask : motion_generation || motion_mask)) {
+                       !motion_generation || !motion_mask : motion_generation || motion_mask || subset)) {
         fprintf(stderr, "Usage: %s --boot-id UUID --channel NEW_PATH --instance HEX16 "
                         "--seconds 1..3600 [--companion-accel] "
                         "[--motion-channel NEW_PATH --motion-generation HEX16 "
@@ -221,7 +294,8 @@ int main(int argc, char **argv)
         int flags = fcntl(control_fd, F_GETFL);
         if (flags < 0 || fcntl(control_fd, F_SETFL, flags | O_NONBLOCK)) return 2;
     }
-    char request[42]; size_t request_size = 0;
+    char request[128]; size_t request_size = 0;
+    struct subset_state subset_state = {0};
     unsigned restarts = 0;
     setvbuf(stdout, NULL, _IONBF, 0);
     signal(SIGINT, interrupt); signal(SIGTERM, interrupt); signal(SIGPIPE, SIG_IGN);
@@ -241,8 +315,8 @@ int main(int argc, char **argv)
     if (!rc && motion_channel) {
         rc = pico_controller_motion_producer_init(&motion, motion_channel, instance, motion_generation,
                                                    &clock, config, 1, 2, motion_mask, begin);
-        printf("PICO_CONTROLLER_MOTION_READY instance=%016" PRIx64 " generation=%016" PRIx64
-               " mask=%u rc=%d\n", instance, motion_generation, motion_mask, rc);
+        printf("PICO_CONTROLLER_MOTION_%sREADY instance=%016" PRIx64 " generation=%016" PRIx64
+               " mask=%u rc=%d\n", subset ? "V2_" : "", instance, motion_generation, motion_mask, rc);
     }
     printf("PICO_CONTROLLER_READY instance=%016" PRIx64 " companion_accel=%u rc=%d\n", instance, companion, rc);
     while (!rc && !interrupted) {
@@ -261,10 +335,71 @@ int main(int argc, char **argv)
         int64_t received = now_ns();
         if (control_fd >= 0 && received - last_control >= 20000000) {
             last_control = received;
-            ssize_t size = read(control_fd, request + request_size, sizeof(request) - request_size);
+            size_t capacity = subset ? sizeof(request) : 42;
+            ssize_t size = read(control_fd, request + request_size, capacity - request_size);
             if (size == 0 || (size < 0 && errno != EAGAIN && errno != EINTR)) control_fd = -1;
             if (size > 0) request_size += (size_t)size;
-            if (request_size == sizeof(request)) {
+            if (subset && (memchr(request, '\n', request_size) || request_size == capacity)) {
+                uint64_t values[3] = {0}; unsigned mask = 0;
+                int kind = subset_request(request, request_size, values, &mask);
+                if (!kind) {
+                    control_fd = -1; subset_state.error = -EINVAL;
+                    printf("PICO_CONTROLLER_MOTION_V2_FAILED generation=%016" PRIx64 " rc=%d\n",
+                           motion_generation, -EINVAL);
+                } else if (kind == 1) {
+                    int retired = values[1] > (uint64_t)received || values[1] < (uint64_t)motion.started ?
+                                  -EINVAL : subset_state.error ? -EPERM :
+                        pico_controller_motion_producer_retire(&motion, values[0], received);
+                    if (!retired && !motion_error) {
+                        motion_error = motion.error;
+                        printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n", motion_error, motion_samples);
+                    }
+                    if (!retired) {
+                        subset_state.retired = false;
+                        subset_state.offer.mask = 0;
+                        printf("PICO_CONTROLLER_MOTION_V2_RETIRE_ACK generation=%016" PRIx64
+                               " observed_ns=%" PRIu64 " boundary_ns=%" PRId64 " rc=0\n",
+                               motion_generation, values[1], motion.now);
+                    }
+                    if (retired) printf("PICO_CONTROLLER_MOTION_V2_FAILED generation=%016" PRIx64 " rc=%d\n",
+                                        motion_generation, retired);
+                } else {
+                    uint64_t previous = values[0], next = values[1];
+                    int accepted = -ESTALE;
+                    struct pico_controller_motion_offer current;
+                    if (subset_state.error) accepted = -EPERM;
+                    else if (previous == motion_generation && next > previous &&
+                             values[2] == subset_state.id && mask == subset_state.offer.mask &&
+                             received <= subset_state.offer.deadline_ns && motion.error) {
+                        accepted = pico_controller_motion_producer_offer(&motion, first, second, received, &current);
+                        if (!accepted && current.mask != mask) accepted = -EAGAIN;
+                        if (!accepted && restarts >= 64) accepted = -EOVERFLOW;
+                        if (!accepted) {
+                            char next_path[PATH_MAX];
+                            int length = snprintf(next_path, sizeof(next_path), "%s.%016" PRIx64, motion_path, next);
+                            struct pico_controller_motion_channel *fresh = MAP_FAILED;
+                            if (length > 0 && (size_t)length < sizeof(next_path)) fresh = new_motion_channel(next_path);
+                            if (fresh == MAP_FAILED) accepted = -EIO;
+                            else {
+                                struct pico_controller_motion_channel *old = motion.channel;
+                                accepted = pico_controller_motion_producer_accept(&motion, fresh, next,
+                                    &subset_state.offer, first, second, received);
+                                if (!accepted) {
+                                    munmap(old, sizeof(*old)); motion_generation = next;
+                                    motion_samples = 0; motion_error = 0; ++restarts;
+                                    subset_state = (struct subset_state){0};
+                                } else munmap(fresh, sizeof(*fresh));
+                            }
+                        }
+                    }
+                    printf("PICO_CONTROLLER_MOTION_V2_ACCEPT previous=%016" PRIx64 " generation=%016" PRIx64
+                           " offer=%016" PRIx64 " mask=%u rc=%d\n", previous, next, values[2], mask, accepted);
+                    if (!accepted)
+                        printf("PICO_CONTROLLER_MOTION_V2_READY instance=%016" PRIx64 " generation=%016" PRIx64
+                               " mask=%u rc=0\n", instance, motion_generation, motion.connected_mask);
+                }
+                request_size = 0;
+            } else if (!subset && request_size == 42) {
                 uint64_t previous = 0, next = 0;
                 int restart_rc = -EINVAL;
                 if (!restart_request(request, &previous, &next)) control_fd = -1;
@@ -323,7 +458,12 @@ int main(int argc, char **argv)
                 printf("PICO_CONTROLLER_MOTION_STOP rc=%d samples=%" PRIu64 "\n", count, motion_samples);
             } else motion_samples += (unsigned)count;
         }
-        if (motion_error == -ETIMEDOUT && !resume_failed &&
+        if (subset && motion.channel && received - last_resume_probe >= 20000000) {
+            last_resume_probe = received;
+            subset_poll(&motion, &subset_state, first, second, received, motion_samples);
+            motion_error = motion.error;
+        }
+        if (!subset && motion_error == -ETIMEDOUT && !resume_failed &&
             received - last_resume_probe >= 20000000) {
             last_resume_probe = received;
             struct ssc_timestamp captures[2];

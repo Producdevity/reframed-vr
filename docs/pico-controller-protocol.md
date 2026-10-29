@@ -2260,13 +2260,12 @@ calls it once. These entry points do not establish independent reset semantics.
 Source/binary evidence is retained in
 `output/pico-controller-hand-ownership-20261029-v1/`.
 
-The proposed narrower availability fix retains a shared SDK epoch and resets
-both estimators when its active hand subset changes. It requires a versioned
-worker offer/accept exchange proving fresh post-retirement captures, their
-uncertainty, mask and expiration before attaching a new channel/generation.
-The existing shared receipt timestamp cannot authorize that subset. This design
-is not implemented or validated by the diagnostic; age, gap and pose-validity
-rules remain unchanged.
+The opt-in fresh-hand subset mode retains a shared SDK epoch and resets both
+estimators when its active hand subset changes. A versioned worker offer/accept
+exchange proves fresh post-retirement captures, their uncertainty, mask and
+expiration before attaching a new channel/generation. The existing shared
+receipt timestamp cannot authorize that subset. Host verification and native
+validation are separate; age, gap and pose-validity rules remain unchanged.
 
 The first direct native receipt, in
 `output/pico-callback-occupancy-native-20261029-v1/`, confirms reason 7
@@ -2281,3 +2280,64 @@ firmware readbacks and muted offline stock recovery verify; archive SHA-256 is
 `dac24311b30d6b49e0a51edfa1e02b216491aec7c7d0218fad352b66ef3b13dc`.
 The added occupancy epoch hits its deadline and is wholly rejected; only main
 CPU window 0 qualifies, while windows 1/2 retain malformed wakeup rows.
+
+### Fresh-hand subset recovery (2026-10-29)
+
+`ControllerSession(..., motion_subset=True)` explicitly selects worker protocol
+v2; the default retains the legacy protocol. Configured radio routes/settings
+remain immutable. A missing hand can stay pending while a fresh subset uses a
+new motion channel and generation. The initial two-hand attempt still has its
+two-second startup bound; recovery can then select only the reporting hand.
+
+The worker validates eligibility from two synchronized raw snapshots with the
+existing slot/CRC decoder, stock-unit conversion and calibrated clock. Selected
+captures must be newer than the retired watermark, with their uncertainty
+interval strictly after retirement and within the unchanged 100 ms age limit.
+Offers bind instance, generation, offer ID, mask, boundary and expiration.
+Acceptance rechecks current bytes and the exact subset. Seed records are
+discarded; stopped mappings and consumers remain stopped.
+
+A pending hand's return retires the subset before attaching a larger one.
+Trusted consumer GAP/EXPIRED observations can also request retirement. Explicit
+retirement advances the boundary even if a producer timeout has already occurred,
+preserving the original failure diagnostic. A bound acknowledgment prevents an
+older offer from bypassing an in-flight or newer retirement request. Clock,
+parser, head and SDK failures do not become hand-availability recovery.
+
+V2 endpoint dictionaries include `version: 2` and `mask`; their canonical text is
+`v2 <instance-hex16> <generation-hex16> <mask> <path>`, followed by one newline.
+The SDK owner refuses mixed versions or in-place mask changes. It resets and
+recalibrates both estimators before the replacement consumer, while preserving
+head/world generation. This introduces a transition pause; it does not promise
+uninterrupted independent-hand tracking. Acquisition stops at reset instead of
+mixing epochs in one recording.
+
+Forty-two session tests and four sanitized motion programs pass. Replaying all
+4,811 retained raw snapshot pairs preserves 5,006 legacy events byte-for-byte
+(SHA-256 `933ed739ac9a649202a1029d9fb9c74377b59fdd03b8cbd2f8f0ce8dc1ef15e6`).
+The subset replay recovers once to active mask 1/configured mask 3 and delivers
+5,003 events, discarding three failure/seed-boundary records. Mirrored hands,
+dropout/join, uncertainty boundaries, malformed commands and both retirement
+races are synthetic fixtures. Evidence and the separate Android consumer build
+with its 117-file source closure are in
+`output/pico-controller-subset-20261029-v1/`. These checks do not establish optical
+acquisition or tracked pointing.
+
+Native control `output/pico-kgsl-maintenance-native-20261029-v3/` verifies the
+missing-right-hand case. The initial mask-3 epoch 104 times out; the owner
+accepts mask 1 in a new channel at epoch 105, resetting both controller
+estimators while retaining head generation 104. The SDK then accepts 12,752
+left-hand IMU calls, with a conservative successful-delivery span of
+25.089747 seconds. The previous right-hand startup timeout no longer
+permanently blocks fresh left input. The subsequent left receive timeout
+remains an upstream receive-path issue; this run does not establish its cause.
+
+The optional private 12-second right-motion omission hook withholds zero
+slots in this run because no right-hand reports arrive. It completes before
+steady measurement, but proves neither controlled-loss recovery nor a
+right-hand rejoin on hardware. Those transitions remain covered by synthetic
+fixtures only. Optical publication remains zero: successful IMU delivery does
+not establish a tracked controller or SteamVR pointer. The complete head
+workload, source/payload hashes, firmware readbacks and muted offline stock
+return verify. The independent graphics and controller qualifications are
+retained in `output/pico-kgsl-maintenance-analysis-20261029-v1/`.

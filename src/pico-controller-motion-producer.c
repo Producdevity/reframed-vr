@@ -33,7 +33,7 @@ int pico_controller_motion_producer_init(struct pico_controller_motion_producer 
     struct pico_controller_motion_producer next = {
         .channel = channel, .clock = *clock, .generation = generation,
         .started = now, .now = now, .mcu_type = mcu_type, .radio_type = radio_type,
-        .connected_mask = mask};
+        .connected_mask = mask, .configured_mask = mask};
     memcpy(next.config, config, sizeof(next.config));
     if (!pico_controller_motion_channel_init(channel, instance, generation)) return -EINVAL;
     *p = next;
@@ -150,6 +150,99 @@ int pico_controller_motion_producer_restart(struct pico_controller_motion_produc
     rc = pico_controller_motion_producer_init(&next, channel, p->channel->instance,
         generation, &p->clock, p->config, p->mcu_type, p->radio_type, p->connected_mask, now);
     if (rc) return rc;
+    next.ring = ring;
+    next.configured_mask = p->configured_mask;
+    *p = next;
+    return 0;
+}
+
+static bool recoverable(const struct pico_controller_motion_producer *p)
+{
+    return !p->error || p->error == -ETIMEDOUT || p->error == -ESHUTDOWN;
+}
+
+int pico_controller_motion_producer_retire(struct pico_controller_motion_producer *p,
+    uint64_t generation, int64_t now)
+{
+    if (!p || !p->channel || now <= 0 || now < p->now) return -EINVAL;
+    if (generation != p->generation) return -ESTALE;
+    if (!recoverable(p)) return -EPERM;
+    p->now = now;
+    if (!p->error) {
+        fail(p, -ESHUTDOWN, PICO_CONTROLLER_PRODUCER_FAILURE_STOP, 0, 0, now);
+    }
+    return 0;
+}
+
+int pico_controller_motion_producer_offer(const struct pico_controller_motion_producer *p,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now,
+    struct pico_controller_motion_offer *offer)
+{
+    if (!p || !p->channel || !first || !second || !offer || now <= 0 || now < p->now)
+        return -EINVAL;
+    if (!recoverable(p)) return -EPERM;
+    struct pico_controller_motion_ring ring = p->ring;
+    struct pico_controller_imu_sample samples[PICO_CONTROLLER_RING_MAX_IMU];
+    int rc = pico_controller_ring_read_motion(&ring, first, second,
+        p->mcu_type, p->radio_type, p->configured_mask, samples);
+    if (rc < 0) return rc;
+    struct pico_controller_motion_offer next = {
+        .boundary_ns = p->error ? p->now : p->started,
+        .observed_ns = now, .deadline_ns = INT64_MAX};
+    for (unsigned h = 0; h < 2; ++h) {
+        const struct pico_controller_imu_sample *sample = &ring.latest[h];
+        if (!(p->configured_mask & (1U << h)) ||
+            sample->timestamp_us <= p->ring.latest[h].timestamp_us) continue;
+        struct ssc_timestamp time;
+        if (!pico_controller_motion_time(&p->clock, sample->timestamp_us, now, INT64_MAX, &time))
+            return -EPROTO;
+        if (time.timestamp_ns - time.uncertainty_ns <= next.boundary_ns ||
+            now - time.timestamp_ns > PICO_CONTROLLER_MOTION_MAX_AGE_NS - time.uncertainty_ns)
+            continue;
+        double values[9];
+        if (p->config[h].mcu_type != p->mcu_type ||
+            !pico_controller_motion_values(sample, &p->config[h], values)) return -EPROTO;
+        next.mask |= 1U << h;
+        next.captures[h] = time;
+        int64_t remaining = PICO_CONTROLLER_MOTION_MAX_AGE_NS - time.uncertainty_ns;
+        int64_t deadline = time.timestamp_ns > INT64_MAX - remaining ?
+                           INT64_MAX : time.timestamp_ns + remaining;
+        if (deadline < next.deadline_ns) next.deadline_ns = deadline;
+    }
+    if (!next.mask) next.deadline_ns = now;
+    *offer = next;
+    return 0;
+}
+
+int pico_controller_motion_producer_accept(struct pico_controller_motion_producer *p,
+    struct pico_controller_motion_channel *channel, uint64_t generation,
+    const struct pico_controller_motion_offer *offer,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now)
+{
+    if (!p || !p->channel || !channel || channel == p->channel || !offer ||
+        !first || !second || now <= 0 || now < p->now ||
+        __atomic_load_n(&channel->magic, __ATOMIC_ACQUIRE)) return -EINVAL;
+    if (!p->error || !recoverable(p)) return -EPERM;
+    if (generation <= p->generation) return -ESTALE;
+    if (!offer->mask || (offer->mask & ~p->configured_mask) ||
+        offer->boundary_ns != p->now || offer->observed_ns <= p->now ||
+        offer->observed_ns > now || now > offer->deadline_ns) return -ESTALE;
+    struct pico_controller_motion_offer current;
+    int rc = pico_controller_motion_producer_offer(p, first, second, now, &current);
+    if (rc) return rc;
+    if (current.mask != offer->mask) return -EAGAIN;
+    struct pico_controller_motion_ring ring = p->ring;
+    struct pico_controller_imu_sample discarded[PICO_CONTROLLER_RING_MAX_IMU];
+    rc = pico_controller_ring_read_motion(&ring, first, second, p->mcu_type,
+                                         p->radio_type, p->configured_mask, discarded);
+    if (rc < 0) return rc;
+    struct pico_controller_motion_producer next;
+    rc = pico_controller_motion_producer_init(&next, channel, p->channel->instance, generation,
+        &p->clock, p->config, p->mcu_type, p->radio_type, offer->mask, now);
+    if (rc) return rc;
+    next.configured_mask = p->configured_mask;
     next.ring = ring;
     *p = next;
     return 0;

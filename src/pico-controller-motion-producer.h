@@ -30,7 +30,7 @@ struct pico_controller_motion_producer {
     struct pico_controller_motion_config config[2];
     uint64_t generation;
     int64_t started, now, received[2];
-    unsigned mcu_type, radio_type, connected_mask;
+    unsigned mcu_type, radio_type, connected_mask, configured_mask;
     int error;
     enum pico_controller_motion_producer_failure failure;
     unsigned rejected_hand;
@@ -79,6 +79,32 @@ int pico_controller_motion_producer_resumed(const struct pico_controller_motion_
  * Refusal leaves the producer and both mappings unchanged. */
 int pico_controller_motion_producer_restart(struct pico_controller_motion_producer *producer,
     struct pico_controller_motion_channel *channel, uint64_t generation,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);
+
+struct pico_controller_motion_offer {
+    unsigned mask;
+    int64_t boundary_ns, observed_ns, deadline_ns;
+    struct ssc_timestamp captures[2];
+};
+
+/* Opt-in subset lifecycle. Retire freezes a new boundary for an owner-reported
+ * consumer gap or a joining hand. Probe is read-only, uses all configured hands,
+ * and accepts only newer captures strictly after boundary_ns. While active it
+ * can detect a pending hand; an offer can be accepted only after retirement.
+ * Zero mask means wait. Parser/clock failures are not availability changes. */
+int pico_controller_motion_producer_retire(struct pico_controller_motion_producer *producer,
+    uint64_t generation, int64_t now_ns);
+int pico_controller_motion_producer_offer(const struct pico_controller_motion_producer *producer,
+    const uint8_t first[PICO_CONTROLLER_RING_BYTES],
+    const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns,
+    struct pico_controller_motion_offer *offer);
+/* Revalidate the exact offered subset against current synchronized bytes, then
+ * seed/discard that snapshot. No mutation on refusal; old mapping stays stopped.
+ * The owner must reset both estimators before attaching the replacement. */
+int pico_controller_motion_producer_accept(struct pico_controller_motion_producer *producer,
+    struct pico_controller_motion_channel *channel, uint64_t generation,
+    const struct pico_controller_motion_offer *offer,
     const uint8_t first[PICO_CONTROLLER_RING_BYTES],
     const uint8_t second[PICO_CONTROLLER_RING_BYTES], int64_t now_ns);
 

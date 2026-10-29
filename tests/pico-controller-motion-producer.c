@@ -341,10 +341,140 @@ static void errors(void)
     free(c);puts("PASS wrong_generation_malformed_clock_stale_age_publish_first_failure_precedence");
 }
 
+static void subset_lifecycle(void)
+{
+    for (unsigned live=1; live<=2; ++live) {
+        struct pico_controller_motion_channel *channels[4];
+        for (unsigned i=0;i<4;++i) {channels[i]=calloc(1,sizeof(*channels[i]));assert(channels[i]);}
+        struct pico_controller_motion_producer p={0};start_test(&p,channels[0],3);
+        uint8_t a[1000]={0},b[1000];
+        for (int64_t now=1002000000;now<3000000000;now+=2000000) {
+            record(a,(uint64_t)(now-1000000)/1000,live);assert(poll_test(&p,a,now)==1);
+        }
+        assert(poll_test(&p,a,3000000000)==-ETIMEDOUT);
+        struct pico_controller_motion_offer offer;
+        assert(!pico_controller_motion_producer_offer(&p,a,a,3000000000,&offer)&&!offer.mask);
+        record(a,3001000,live);
+        struct pico_controller_motion_producer saved=p;
+        assert(!pico_controller_motion_producer_offer(&p,a,a,3002000000,&offer));
+        assert(offer.mask==(1U<<(live-1))&&offer.boundary_ns==3000000000&&
+               offer.deadline_ns==3100998998&&!memcmp(&p,&saved,sizeof(p)));
+        struct pico_controller_motion_offer bad=offer;bad.mask=3;
+        assert(pico_controller_motion_producer_accept(&p,channels[1],3,&bad,a,a,3002000000)==-EAGAIN);
+        assert(pico_controller_motion_producer_accept(&p,channels[1],2,&offer,a,a,3002000000)==-ESTALE);
+        assert(pico_controller_motion_producer_accept(&p,channels[1],3,&offer,a,a,offer.deadline_ns+1)==-ESTALE);
+        assert(!memcmp(&p,&saved,sizeof(p))&&!channels[1]->magic);
+        memcpy(b,a,sizeof(b));b[33]^=1;
+        struct pico_controller_motion_offer skipped;
+        assert(!pico_controller_motion_producer_offer(&p,a,b,3002000000,&skipped)&&!skipped.mask);
+        a[99]^=1;assert(!pico_controller_motion_producer_offer(&p,a,a,3002000000,&skipped)&&!skipped.mask);a[99]^=1;
+        assert(!pico_controller_motion_producer_accept(&p,channels[1],3,&offer,a,a,3002000000));
+        assert(p.connected_mask==offer.mask&&p.configured_mask==3&&!channels[0]->active&&!channels[1]->sequence);
+        assert(!poll_test(&p,a,3002000000));
+        for (int64_t now=3004000000;now<=5200000000;now+=2000000) {
+            record(a,(uint64_t)(now-1000000)/1000,live);assert(poll_test(&p,a,now)==1);
+        }
+        record(a+100,5201000,3-live);record(a,5201000,live);
+        assert(poll_test(&p,a,5202000000)==1);
+        assert(!pico_controller_motion_producer_offer(&p,a,a,5202000000,&offer));
+        assert(offer.mask==(1U<<(2-live)));
+        assert(!pico_controller_motion_producer_retire(&p,3,5202000000));
+        assert(!pico_controller_motion_producer_offer(&p,a,a,5202000000,&offer)&&!offer.mask);
+        record(a,5203000,live);record(a+100,5203000,3-live);
+        assert(!pico_controller_motion_producer_offer(&p,a,a,5204000000,&offer)&&offer.mask==3);
+        assert(!pico_controller_motion_producer_accept(&p,channels[2],4,&offer,a,a,5204000000));
+        record(a,5205000,live);record(a+100,5205000,3-live);
+        assert(poll_test(&p,a,5206000000)==2);
+        for (int64_t now=5208000000;now<5306000000;now+=2000000) {
+            record(a,(uint64_t)(now-1000000)/1000,live);assert(poll_test(&p,a,now)==1);
+        }
+        record(a,5307000,live);assert(poll_test(&p,a,5308000000)==-ETIMEDOUT);
+        assert(!pico_controller_motion_producer_offer(&p,a,a,5308000000,&offer)&&!offer.mask);
+        record(a,5309000,live);
+        assert(!pico_controller_motion_producer_offer(&p,a,a,5310000000,&offer)&&offer.mask==(1U<<(live-1)));
+        assert(!pico_controller_motion_producer_accept(&p,channels[3],5,&offer,a,a,5310000000));
+        assert(poll_test(&p,a,7310000000)==-ETIMEDOUT);
+        assert(!pico_controller_motion_producer_offer(&p,a,a,7310000000,&offer)&&!offer.mask);
+        record(a,7311000,live);
+        assert(!pico_controller_motion_producer_offer(&p,a,a,7312000000,&offer)&&offer.mask==(1U<<(live-1)));
+        for (unsigned i=0;i<4;++i) free(channels[i]);
+    }
+    struct pico_controller_motion_channel *c=calloc(1,sizeof(*c));assert(c);
+    struct pico_controller_motion_producer p={0};start_test(&p,c,3);
+    uint8_t a[1000]={0};struct pico_controller_motion_offer offer;
+    assert(pico_controller_motion_producer_retire(&p,99,1001000000)==-ESTALE&&c->active);
+    assert(!pico_controller_motion_producer_retire(&p,2,1000998998));
+    record(a,1001000,1);
+    assert(!pico_controller_motion_producer_offer(&p,a,a,1002000000,&offer)&&!offer.mask);
+    record(a,1001001,1);
+    assert(!pico_controller_motion_producer_offer(&p,a,a,1002000000,&offer)&&offer.mask==1);
+    record(a,9000000,1);
+    assert(pico_controller_motion_producer_offer(&p,a,a,1002000000,&offer)==-EPROTO);
+    start_test(&p,c,3);assert(poll_test(&p,a,1002000000)==-EPROTO);
+    assert(pico_controller_motion_producer_retire(&p,2,1003000000)==-EPERM);
+    assert(pico_controller_motion_producer_offer(&p,a,a,1003000000,&offer)==-EPERM);
+    start_test(&p,c,3);memset(a,0,sizeof(a));
+    assert(poll_test(&p,a,3000000000)==-ETIMEDOUT);
+    int64_t first_failure=p.failure_now_ns;
+    record(a,3001000,1);
+    assert(!pico_controller_motion_producer_offer(&p,a,a,3002000000,&offer)&&offer.mask==1);
+    struct pico_controller_motion_offer old_offer=offer;
+    assert(!pico_controller_motion_producer_retire(&p,2,3010000000));
+    assert(p.now==3010000000&&p.failure_now_ns==first_failure&&p.failure==PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT);
+    assert(!pico_controller_motion_producer_offer(&p,a,a,3011000000,&offer)&&!offer.mask);
+    struct pico_controller_motion_channel *fresh=calloc(1,sizeof(*fresh));assert(fresh);
+    record(a,3012000,1);
+    assert(pico_controller_motion_producer_accept(&p,fresh,3,&old_offer,a,a,3013000000)==-ESTALE);
+    assert(!pico_controller_motion_producer_offer(&p,a,a,3013000000,&offer)&&offer.mask==1);
+    assert(!pico_controller_motion_producer_accept(&p,fresh,3,&offer,a,a,3013000000));
+    free(fresh);
+    free(c);puts("PASS subset_startup_dropout_join_both_absent_post_boundary_expiry_wrong_generation_malformed");
+}
+
+static void replay_subset(const char *input, const char *output)
+{
+    FILE *file=fopen(input,"rb"),*out=fopen(output,"wx");assert(file&&out);
+    uint64_t header[8];assert(fread(header,sizeof(header),1,file)==1);
+    assert(header[0]==UINT64_C(0x52564354494d0001)&&header[4]==2024&&header[5]==19200000);
+    struct ssc_clock clock={.counter_ticks=3840000000,.counter_hz=19200000,
+        .host_ns=INT64_C(200000000000)+(int64_t)header[3],.uncertainty_ns=50002,.initialized=true};
+    struct pico_controller_motion_channel *c=calloc(1,sizeof(*c));assert(c);
+    struct pico_controller_motion_producer p={0};
+    uint64_t cursor=0;unsigned snapshots=0,samples=0,restarts=0;uint8_t raw[2024];size_t bytes;
+    while((bytes=fread(raw,1,sizeof(raw),file))) {
+        assert(bytes==sizeof(raw));uint64_t receipt;memcpy(&receipt,raw+8,8);fake_now=(int64_t)receipt;
+        if(!snapshots)assert(!pico_controller_motion_producer_init(&p,c,19,20,&clock,config,1,2,3,fake_now));
+        ++snapshots;
+        if(p.error) {
+            assert(p.error==-ETIMEDOUT);struct pico_controller_motion_offer offer;
+            assert(!pico_controller_motion_producer_offer(&p,raw+24,raw+1024,fake_now,&offer));
+            if(offer.mask) {
+                assert(offer.mask==1);struct pico_controller_motion_channel *fresh=calloc(1,sizeof(*fresh));assert(fresh);
+                assert(!pico_controller_motion_producer_accept(&p,fresh,p.generation+1,&offer,raw+24,raw+1024,fake_now));
+                assert(!c->active&&p.connected_mask==1&&p.configured_mask==3&&!fresh->sequence);
+                free(c);c=fresh;cursor=0;++restarts;
+            }
+            continue;
+        }
+        int count=pico_controller_motion_producer_update(&p,p.generation,raw+24,raw+1024,fake_now);
+        if(count<0) {assert(count==-ETIMEDOUT&&p.failure==PICO_CONTROLLER_PRODUCER_FAILURE_STARTUP_TIMEOUT&&p.rejected_hand==2);continue;}
+        for(int i=0;i<count;++i) {
+            struct pico_controller_motion_event e;
+            assert(pico_controller_motion_channel_read(c,19,p.generation,&cursor,clock_ns,NULL,100000000,&e)==1);
+            fprintf(out,"%" PRIu64 " %u %" PRIu64 " %" PRId64 "\n",p.generation,e.hand,e.timestamp_us,e.time.timestamp_ns);
+            ++samples;
+        }
+    }
+    assert(snapshots&&samples&&restarts==1&&p.connected_mask==1&&p.configured_mask==3&&!p.error);
+    assert(feof(file)&&!ferror(file)&&!fclose(file)&&!fclose(out));
+    free(c);printf("PICO_CONTROLLER_SUBSET_REPLAY_PASS snapshots=%u samples=%u restarts=%u active_mask=1 configured_mask=3\n",snapshots,samples,restarts);
+}
+
 int main(int argc, char **argv)
 {
     alarm(20);
+    if(argc==4&&!strcmp(argv[1],"--replay-subset")){replay_subset(argv[2],argv[3]);return 0;}
     if (argc == 4 && !strcmp(argv[1], "--replay")) { replay(argv[2], argv[3]); return 0; }
-    assert(argc == 1); boundaries(); startup_and_recovery(); dropouts(); errors();
+    assert(argc == 1); boundaries(); startup_and_recovery(); dropouts(); errors(); subset_lifecycle();
     puts("PICO_CONTROLLER_MOTION_PRODUCER_PASS");
 }

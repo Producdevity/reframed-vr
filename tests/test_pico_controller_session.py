@@ -21,6 +21,7 @@ from pathlib import Path
 p=argparse.ArgumentParser()
 for name in ['boot-id','channel','instance','seconds']:p.add_argument('--'+name,required=True)
 p.add_argument('--companion-accel',action='store_true')
+p.add_argument('--motion-subset-v2',action='store_true')
 for name in ['motion-channel','motion-generation','left-motion-config','right-motion-config']:p.add_argument('--'+name)
 a=p.parse_args()
 mode=os.environ.get('FIXTURE_MODE','normal');stopping=False
@@ -50,7 +51,7 @@ def motion_channel(path,generation):
 if a.motion_channel:
  mask=int(bool(a.left_motion_config))|int(bool(a.right_motion_config))<<1
  motion_channel(a.motion_channel,a.motion_generation)
- print(f'PICO_CONTROLLER_MOTION_READY instance={a.instance} generation={a.motion_generation} mask={mask} rc=0',flush=True)
+ print(f'PICO_CONTROLLER_MOTION_{"V2_" if a.motion_subset_v2 else ""}READY instance={a.instance} generation={a.motion_generation} mask={mask} rc=0',flush=True)
 if mode=='delay':time.sleep(.3)
 if mode=='flood':
  for _ in range(300):print('LOG '+('x'*1000),flush=True)
@@ -73,13 +74,37 @@ if mode.startswith('auto-'):
   generation_text='0000000000000001' if mode=='auto-wrong-generation' else generation
   print(f'PICO_CONTROLLER_MOTION_RESUMED instance={a.instance} generation={generation_text} received_ns={now} deadline_ns={now+90000000}',flush=True)
   if mode=='auto-failed-probe':print(f'PICO_CONTROLLER_MOTION_RESUME_FAILED generation={generation} rc=-71',flush=True)
+def retire_v2(error,offer_mask,observed=None):
+ global offer_id,boundary
+ with open(current,'r+b') as file:file.seek(32);file.write(bytes(8))
+ boundary=time.monotonic_ns();offer_id=1
+ print(f'PICO_CONTROLLER_MOTION_STOP rc={error} samples=2',flush=True)
+ if observed is not None:print(f'PICO_CONTROLLER_MOTION_V2_RETIRE_ACK generation={generation} observed_ns={observed} boundary_ns={boundary} rc=0',flush=True)
+ print(f'PICO_CONTROLLER_MOTION_V2_RETIRED instance={a.instance} generation={generation} boundary_ns={boundary} rc={error}',flush=True)
+ time.sleep(.002);now=time.monotonic_ns()
+ print(f'PICO_CONTROLLER_MOTION_V2_OFFER instance={a.instance} generation={generation} offer={offer_id:016x} mask={offer_mask} boundary_ns={boundary} observed_ns={now} deadline_ns={now+90000000}',flush=True)
+joined=False;accepted_at=0
+if mode.startswith('subset-start'):
+ retire_v2(-110,2 if mode=='subset-start-right' else 1)
 while not stopping and not rc:
+ if mode=='subset-start-join' and accepted_at and not joined and time.monotonic()-accepted_at>.08:
+  joined=True;retire_v2(-108,3)
  if a.motion_channel and mode not in ['motion-stale','motion-empty','motion-wrong-generation']:
   with Path(current).open('rb') as source:active=struct.unpack('<8Q',source.read(64))[4]
   if active:refresh_motion(current,generation)
  if a.motion_channel and select.select([sys.stdin],[],[],.01)[0]:
   command=sys.stdin.readline().split()
   if not command:continue
+  if a.motion_subset_v2:
+   if command[0]=='retire2':
+    retire_v2(-108,mask,int(command[2],16));continue
+   _,previous,next_generation,offered,selected=command
+   if mode=='subset-start-delay':time.sleep(.15)
+   mask=int(selected);current=a.motion_channel+'.'+next_generation;generation=next_generation
+   motion_channel(current,generation)
+   print(f'PICO_CONTROLLER_MOTION_V2_ACCEPT previous={previous} generation={generation} offer={offered} mask={mask} rc=0',flush=True)
+   print(f'PICO_CONTROLLER_MOTION_V2_READY instance={a.instance} generation={generation} mask={mask} rc=0',flush=True)
+   accepted_at=time.monotonic();continue
   _,previous,next_generation=command
   if mode in ['restart-delay','auto-delay']:time.sleep(.2)
   if mode in ['restart-failure','auto-restart-failure']:
@@ -129,12 +154,12 @@ class PicoControllerSessionTests(unittest.TestCase):
                 worker.process.stdin.close()
         self.temp.cleanup()
 
-    def make(self, mode='normal', companion=False, motion=None):
+    def make(self, mode='normal', companion=False, motion=None, subset=False):
         worker = session_module.ControllerSession(
             self.build, self.root / ('session with spaces ' + str(len(self.sessions))),
             'a014287d-2c4f-4869-bd16-ac24b4b1e752', seconds=120,
             environment=os.environ | {'FIXTURE_MODE': mode, 'FIXTURE_DSP_OFFLINE': str(self.offline)},
-            companion_accel=companion, motion=motion)
+            companion_accel=companion, motion=motion, motion_subset=subset)
         self.sessions.append(worker)
         return worker
 
@@ -600,6 +625,147 @@ class PicoControllerSessionTests(unittest.TestCase):
         self.assertEqual(worker.motion_history, [{'generation': old['generation'], 'rc': -108, 'samples': 2}])
         self.assertIsNone(worker.recover_motion(0, consumer_timeout=report))
         self.stop(worker)
+
+
+
+
+class PicoControllerSubsetSessionTests(unittest.TestCase):
+    setUp=PicoControllerSessionTests.setUp
+    tearDown=PicoControllerSessionTests.tearDown
+    make=PicoControllerSessionTests.make
+    stop=PicoControllerSessionTests.stop
+    motion=staticmethod(PicoControllerSessionTests.motion)
+    # Only the focused subset tests run in this class; legacy coverage remains above.
+    def subset(self, mode='subset-start-left'):
+        motion=self.motion();motion['right']=dict(motion['left'])
+        worker=self.make(mode,motion=motion,subset=True)
+        worker.start();worker.wait_ready(2)
+        return worker
+
+    def recover_until(self, worker, report=None):
+        deadline=session_module.time.monotonic()+2
+        while session_module.time.monotonic()<deadline:
+            try: endpoint=worker.recover_motion(.05,consumer_failure=report)
+            except TimeoutError: endpoint=None
+            if endpoint:return endpoint
+            session_module.time.sleep(.005)
+        self.fail('subset did not recover')
+
+    def test_subset_missing_hand_starts_healthy_and_join_changes_epoch(self):
+        for mode,mask in [('subset-start-left',1),('subset-start-right',2),('subset-start-join',1)]:
+            worker=self.subset(mode);old=worker.motion_endpoint()
+            endpoint=self.recover_until(worker)
+            self.assertEqual((endpoint['version'],endpoint['mask']),(2,mask))
+            self.assertGreater(int(endpoint['generation'],16),int(old['generation'],16))
+            self.assertEqual(struct.unpack('<8Q',Path(old['path']).read_bytes()[:64])[4],0)
+            self.assertEqual(set(worker.motion),{'left','right','generation'})
+            self.assertIn('--motion-subset-v2',json.loads((worker.directory/'session.json').read_text())['command'])
+            if mode.endswith('join'):
+                joined=self.recover_until(worker)
+                self.assertEqual(joined['mask'],3)
+                self.assertGreater(int(joined['generation'],16),int(endpoint['generation'],16))
+            self.stop(worker);self.offline.unlink()
+
+    def test_subset_consumer_gap_retires_before_accepting_and_pending_does_not_resend(self):
+        worker=self.subset('normal');worker.wait_motion_ready(2)
+        old=worker.motion_endpoint()
+        failure={'generation':old['generation'],'observed_ns':session_module.time.monotonic_ns(),'error':-71,'reason':5}
+        self.assertIsNone(worker.recover_motion(0,consumer_failure=failure))
+        self.assertTrue(worker.motion_retire_pending)
+        self.assertIsNone(worker.recover_motion(0,consumer_failure=failure))
+        endpoint=self.recover_until(worker,failure)
+        self.assertEqual(endpoint['mask'],3)
+        self.assertNotEqual(endpoint['path'],old['path'])
+        self.stop(worker)
+
+    def test_subset_timeout_keeps_one_pending_accept(self):
+        worker=self.subset('subset-start-delay')
+        worker._wait(lambda:worker.motion_offer is not None,2)
+        with self.assertRaises(TimeoutError):worker.recover_motion(.01)
+        request=dict(worker.motion_restart)
+        with self.assertRaises(TimeoutError):worker.recover_motion(.01)
+        self.assertEqual(worker.motion_restart,request)
+        self.assertEqual(self.recover_until(worker)['mask'],1)
+        self.stop(worker)
+
+    def test_subset_offer_identity_mask_boundary_expiry_and_ack_are_strict(self):
+        for mutation in ('instance','generation','mask','boundary','future','deadline','duplicate','version'):
+            motion=self.motion();motion['right']=dict(motion['left'])
+            worker=self.make(motion=motion,subset=True)
+            worker.ready=worker.motion_ready=0;worker.motion_stop_result={'rc':-110,'samples':2}
+            worker.motion_retired=1000000000
+            identity=worker.instance;generation=worker.motion['generation'];mask=1;boundary=1000000000;observed=1001000000;deadline=1090000000;offer='0000000000000001'
+            if mutation=='instance':identity='0000000000000000'
+            if mutation=='generation':generation='0000000000000001'
+            if mutation=='mask':mask=4
+            if mutation=='boundary':boundary+=1
+            if mutation=='future':observed=1200000000;deadline=1201000000
+            if mutation=='deadline':deadline=1200000000
+            if mutation=='duplicate':worker.motion_offer_id=1
+            version='V3' if mutation=='version' else 'V2'
+            line=f'PICO_CONTROLLER_MOTION_{version}_OFFER instance={identity} generation={generation} offer={offer} mask={mask} boundary_ns={boundary} observed_ns={observed} deadline_ns={deadline}'
+            with patch.object(session_module.time,'monotonic_ns',return_value=1010000000):
+                if mutation=='version':
+                    with self.assertRaises(RuntimeError):worker._parse_subset_status(line)
+                else:
+                    with self.assertRaises(RuntimeError):worker._parse_status((line+'\n').encode())
+            self.assertIsNone(worker.motion_offer)
+        worker=self.make(motion=self.motion(),subset=True)
+        worker.ready=worker.motion_ready=0;worker.motion_stop_result={'rc':-110,'samples':2};worker.motion_retired=1000000000
+        worker.process=Mock();worker.process.poll.return_value=None;worker._read_status=Mock()
+        worker.motion_offer={'id':'0000000000000001','mask':1,'boundary_ns':1000000000,'observed_ns':1001000000,'deadline_ns':1090000000}
+        with patch.object(session_module.time,'monotonic_ns',return_value=1090000001):self.assertIsNone(worker.recover_motion(0))
+        worker.process.stdin.write.assert_not_called();worker.process=None
+
+    def test_subset_refuses_legacy_and_terminal_consumer_failures(self):
+        worker=self.make(motion=self.motion(),subset=True)
+        with self.assertRaises(RuntimeError):worker.restart_motion('1123456789abcdef',0)
+        with self.assertRaises(RuntimeError):worker._parse_status(f'PICO_CONTROLLER_MOTION_READY instance={worker.instance} generation={worker.motion["generation"]} mask=1 rc=0\n'.encode())
+        with self.assertRaises(ValueError):worker.recover_motion(0,consumer_failure={'generation':worker.motion['generation'],'observed_ns':1,'error':-5,'reason':8})
+        legacy=self.make(motion=self.motion())
+        with self.assertRaises(RuntimeError):legacy._parse_status(f'PICO_CONTROLLER_MOTION_V2_READY instance={legacy.instance} generation={legacy.motion["generation"]} mask=1 rc=0\n'.encode())
+
+    def test_subset_inflight_retirement_blocks_older_offer_until_bound_ack(self):
+        motion=self.motion();motion['right']=dict(motion['left'])
+        worker=self.make(motion=motion,subset=True)
+        worker.ready=worker.motion_ready=0;worker.process=Mock();worker.process.poll.return_value=None
+        worker._read_status=Mock();worker.motion_retire_pending=1005000000
+        worker.motion_stop_result={'rc':-110,'samples':2}
+        ident=f'instance={worker.instance} generation={worker.motion["generation"]}'
+        generation=worker.motion['generation']
+        with patch.object(session_module.time,'monotonic_ns',return_value=1020000000):
+            worker._parse_status((f'PICO_CONTROLLER_MOTION_V2_RETIRED {ident} boundary_ns=1000000000 rc=-110\n'
+                f'PICO_CONTROLLER_MOTION_V2_OFFER {ident} offer=0000000000000001 mask=1 boundary_ns=1000000000 observed_ns=1001000000 deadline_ns=1090000000\n').encode())
+            self.assertIsNone(worker.recover_motion(0));worker.process.stdin.write.assert_not_called()
+            with self.assertRaises(RuntimeError):
+                worker._parse_status(f'PICO_CONTROLLER_MOTION_V2_RETIRE_ACK generation={generation} observed_ns=1004000000 boundary_ns=1010000000 rc=0\n'.encode())
+            worker._parse_status((f'PICO_CONTROLLER_MOTION_V2_RETIRE_ACK generation={generation} observed_ns=1005000000 boundary_ns=1010000000 rc=0\n'
+                f'PICO_CONTROLLER_MOTION_V2_RETIRED {ident} boundary_ns=1010000000 rc=-110\n').encode())
+            self.assertIsNone(worker.motion_offer);self.assertFalse(worker.motion_retire_pending)
+            with self.assertRaises(RuntimeError):
+                worker._parse_status(f'PICO_CONTROLLER_MOTION_V2_OFFER {ident} offer=0000000000000002 mask=1 boundary_ns=1000000000 observed_ns=1011000000 deadline_ns=1100000000\n'.encode())
+            worker._parse_status(f'PICO_CONTROLLER_MOTION_V2_OFFER {ident} offer=0000000000000002 mask=1 boundary_ns=1010000000 observed_ns=1011000000 deadline_ns=1100000000\n'.encode())
+            with self.assertRaises(TimeoutError):worker.recover_motion(0)
+            self.assertIn(b'accept2 ',worker.process.stdin.write.call_args.args[0])
+        worker.process=None
+
+
+    def test_subset_stopped_producer_retires_again_for_later_consumer_observation(self):
+        worker=self.make(motion=self.motion(),subset=True)
+        worker.ready=worker.motion_ready=0;worker.process=Mock();worker.process.poll.return_value=None
+        worker._read_status=Mock();worker.motion_stop_result={'rc':-110,'samples':2}
+        worker.motion_retired=1000000000
+        worker.motion_offer={'id':'0000000000000001','mask':1,'boundary_ns':1000000000,'observed_ns':1001000000,'deadline_ns':1090000000}
+        failure={'generation':worker.motion['generation'],'observed_ns':1005000000,'error':-71,'reason':5}
+        with patch.object(session_module.time,'monotonic_ns',return_value=1020000000):
+            self.assertIsNone(worker.recover_motion(0,consumer_failure=failure))
+            sent=worker.process.stdin.write.call_args.args[0]
+            self.assertTrue(sent.startswith(b'retire2 '));self.assertNotIn(b'accept2 ',sent)
+            self.assertEqual(worker.motion_retire_pending,1005000000)
+            self.assertIsNone(worker.recover_motion(0,consumer_failure=failure))
+            worker.process.stdin.write.assert_called_once()
+            self.assertIsNone(worker.motion_restart)
+        worker.process=None
 
 
 if __name__ == '__main__':
