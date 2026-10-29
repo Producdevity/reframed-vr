@@ -4966,3 +4966,37 @@ readiness fixtures. The existing priority setter, RR2 checks and restoration
 contract remain unchanged and can reject a later transient. This gate avoids
 refusing a supported temporary observation; it does not prevent a subsequent
 kernel transition, fix a CFS scheduling decision or establish improved pacing.
+
+### Complete scheduler capture and repeated callback delay (2026-10-29)
+
+`output/pico-acquisition-cfs-20261029-v3/` accepts the renderer baseline in
+8.127 ms and completes 4,499 head-camera sets and 184,722 head callbacks with
+zero bad results. All three CPU epochs and 298,658 DRM rows qualify. The three
+observer-free windows have 1,795 / 1,801 / 1,793 adjacent flip pairs and sequence
+skips 1 / 0 / 1. Startup's 500 API queries pass; steady API remains unmeasured.
+This diagnostic does not establish improved frame pacing.
+
+The corrected scheduler reader retains complete source-shaped sections for all
+eight online CPUs and verifies all selected task identities. It explicitly
+refuses complete selected context: the head main thread is absent from the
+non-atomic task tables, so its effective group is unobserved. SSC's row selects
+autogroup 68; all four selected callback workers have root-group rows. A missing
+head row does not prove migration, and the snapshot does not reconstruct a
+historical scheduling decision. Raw/source pins and complete-context exclusions
+remain in `output/pico-cfs-context-20261029-v2/live-v3/`.
+
+Window-0 present 6,182's callback queues 2.418 ms before the expected software
+vblank but executes after a 2.349 ms queue delay, including 2.323 ms runnable.
+Head, SSC and the KGSL waker run on other CPUs during that wait. CPU 0's final
+42 µs is covered by another selected worker; its preceding 2.281 ms occupancy
+is unknown because the Steam IPC task switching out is unselected. Its final
+switch-out cannot establish that entire interval's occupant. Moving the head
+thread would test the earlier overlap, but cannot explain this new delay.
+Present 9,706 separately has only 121 µs callback dispatch delay; kickoff before
+the software-vblank record still misses a flip, reinforcing the physical-deadline
+limits documented above. No scheduler policy change follows from these results.
+
+The 497-data-file archive is 58,291,139 bytes, SHA-256
+`804d367bf75d6689709c33a2ecb36676363f5325495977247525d2a5b72a43b8`.
+Every member rehashes. Complete BOOT/DTBO readbacks, trace/FIFO/DSP cleanup,
+muted offline stock return and owned USB-host termination verify.

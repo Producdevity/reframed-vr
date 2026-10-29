@@ -1783,7 +1783,7 @@ Optical controller confidence remains zero; this is not a pointing fix.
 ### Offline image geometry diagnostic
 
 [`analyze-pico-controller-images.py`](../tools/analyze-pico-controller-images.py)
-uses NumPy and saved version-2 image carriers, without a device, SDK replay or
+uses NumPy and saved version-2 or version-3 image carriers, without a device, SDK replay or
 debugger. The caller explicitly selects two recorded camera IDs and their
 factory omni/radtan YAMLs; optional pixel flips are reported assumptions. It
 checks the carrier metadata, retains input hashes, and examines at most four

@@ -84,3 +84,60 @@ through EOF, enforce its byte bound, and validate every online CPU section and
 selected task/group before accepting scheduler context. Thirty-three offline
 fixtures include the actual short-read regression, overflow and missing-context
 cases; native validation of that correction is separate from this recording.
+
+### Mixed-hand native prefix (2026-10-29)
+
+`output/pico-acquisition-cfs-20261029-v2/` independently validates 1,985 left and
+1,959 right motion records, 98 four-camera sets and contiguous dispatch 1–4,042
+in generation 104. The writer stops at its duration limit without errors. Both
+real radio routes deliver data. The native graphics diagnostic later refuses
+its initial renderer OTHER0 check after observing FIFO40; this prefix supplies
+no full-workload or steady timing acceptance. All 236 exported data files
+rehash, and muted offline stock recovery verifies. The 24,792,313-byte archive
+has SHA-256
+`1e94bb1f4a414ee098f3bb603743f3d30d7aa832a30bcf95be4fd71b2dedf175`.
+
+The full-workload v3 retry uses both routes but receives zero right radio
+reports, versus 13,491 left reports. Its shared motion producer stops with −110
+after 1,010 delivered left updates. The configured mask requires both hands;
+zero right reports do not establish controller sleep or the radio-side cause.
+The retained prefix has 1,010 left records and 50 image sets, stopping before
+further SDK motion calls. Controller image delivery continues through 4,445
+sets, with optical publication disabled. Input-format validation, continued
+radio reception, SDK acquisition and tracked pointing remain separate gates.
+
+### Offline SDK replay (2026-10-29)
+
+`output/pico-offline-replay-20261029-v2/` executes the mixed-hand prefix in an
+isolated Linux ARM64 container using the retained Bionic linker, exact SDK and
+image-ownership adapter. Both native factory vectors and calibration order are
+preserved. The container has no network or host devices; runtime, calibration
+and input mounts are read-only. A 47-file closure and all 4,042 events validate
+before execution. Sixty-four sanitized parser fixtures and four fake-session
+fixtures cover the replay contract separately from SDK execution.
+
+The real-input replay completes 1,985 left and 1,959 right IMU calls plus 98
+image calls, with 3,944 callbacks, zero getter errors and 784 image adoptions.
+An exact-input repeat produces bit-identical positions/quaternions at every
+positive per-hand result timestamp. The all-black control changes only camera
+pixels; headers, metadata, head brackets, IMU values and dispatch order remain
+identical. Its poses, state, confidence and diagnostic `0x52` match the real
+replay at every positive result timestamp. This subset therefore demonstrates
+no image-content-dependent pose correction. Diagnostic `0x54` varies even
+between identical-input repeats and supplies no new acceptance rule.
+
+The lone left startup result with state/confidence 1 has timestamp −1 and
+`0x52 == 0`; it is not an accepted pose. Native-versus-offline sampled left
+quaternions also differ, so the replay does not reproduce all native outputs
+or original wall timing. The unchanged getter caveats in
+`pico-controller-protocol.md` remain in force.
+
+A separate bounded inotify audit observes open/access/close events for each of
+the four original factory camera YAML paths during the isolated replay. It adds
+no SDK interposition. No `imu0` events are observed; that is not a demonstrated
+missing dependency. File events contain no actor PID and can coalesce; they do
+not prove parsed calibration contents, exact read counts or optical validity.
+Twenty audit-parser fixtures cover short reads, overflow, bounds and deadlines.
+The private execution/analysis receipts retain complete inputs, commands and
+result hashes. These controls require no additional device session and do not
+change SDK thresholds, calibration or pose publication.
