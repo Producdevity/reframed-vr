@@ -5054,3 +5054,58 @@ All 504 exported data files rehash. The 56,106,052-byte archive has SHA-256
 Complete BOOT/DTBO readbacks, trace/FIFO/DSP cleanup, muted offline stock return
 and owned USB-host termination verify. Strict qualification is retained in
 `output/pico-callback-occupancy-analysis-20261029-v1/`.
+
+### Scoped KGSL maintenance placement control (2026-10-29)
+
+`tools/pico-gpu-maintenance.py` is opt-in. Its default control performs no queue
+writes. Enabled placement changes only `kgsl-workqueue` and `kgsl-mementry`
+CPU masks to `70` (CPUs 4–6), leaving the renderer's CPU 7 outside that mask and
+the existing `kgsl-events` policy at `0f`/nice −20. Nice, concurrency, NUMA policy,
+thread scheduling classes and the global workqueue mask remain unchanged.
+Identity/topology/source guards and before/active/after receipts surround the
+operation; partial writes unwind in reverse order. Thirty-one focused fixtures
+and all 57 GPU-policy tests pass.
+
+The experimental kernel patch exposes only `kgsl-mementry` through `WQ_SYSFS`;
+the general queue is already exposed. The vendor's unbound/max-active-one
+devfreq queue is implicitly ordered. Applying its attributes clears the internal
+ordering flag, which restoring the visible mask cannot recover. It is therefore
+excluded entirely from the helper and kernel change. Its source stays
+byte-identical, pinned as
+`c7f213e9ef6ebefa8d6bf4d94fb809b344c2d2bf841e7e4e923a2b5854e2bc9a`.
+
+The v3 kernel build in `output/pico-kgsl-maintenance-kernel-20261029-v3/`
+compiles, verifies image layout and restores its retained source tree. Config,
+module CRCs, DTB and initramfs are unchanged. Its first hardware control,
+`output/pico-kgsl-maintenance-native-20261029-v2/`, verifies the new interface
+with zero maintenance writes and complete restoration. It then stops before
+steady measurement at a stale consumer-binary pin in `tracking-selection.py`.
+All 244 exported data files and firmware readbacks verify, followed by muted
+offline stock return and owned host termination. This failed control provides
+no full-workload or pacing acceptance; the pin must name the exact rebuilt
+consumer before retrying, retaining the original mapping checks.
+
+Corrected control v3 and placed v4 use 204-member payloads whose source files
+differ only in the explicit maintenance `enabled` boolean. Both complete 4,499 head-camera
+sets with zero bad results. The original main CPU epochs and whole DRM streams
+qualify independently: 299,503 control rows and 299,297 placed rows. Across the
+three unchanged 20-second windows, missed presents are 2 / 0 / 1 for control
+and 1 / 0 / 3 for placement. This single comparison does not establish an
+improvement; live radio activity also differs between boots.
+
+Control's complete additional occupancy stream qualifies with 95,445,817
+bytes and 539,848 switches. Placement's additional stream is wholly rejected
+for a PID residency-chain break. No rejected prefix or selected interval is
+used for interruption attribution, and the independently accepted main
+recordings do not repair that missing evidence. The placement policy remains
+experimental; it is not a verified callback-interruption fix.
+
+Placement changes exactly the two allowed masks and restores them in reverse
+order to `ff`, with no restoration errors or unrelated attribute changes.
+All 537 control and 523 placed archive data files rehash. Both firmware
+readback sequences, DSP/FIFO cleanup, muted offline stock returns and owned
+USB-host joins verify. Archive hashes are respectively
+`77e41375fb72ac4035ff2ade16b5ccab5865fbb83f47acfcf89a39fa1e6da911` and
+`38279ec9bb6ef4f6c8e023bbedf2ecb7190465b41047781b5e412fd01b6efacb`.
+Qualification receipts and the separate controller outcomes are retained in
+`output/pico-kgsl-maintenance-analysis-20261029-v1/`.

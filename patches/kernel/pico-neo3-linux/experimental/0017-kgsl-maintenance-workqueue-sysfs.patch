@@ -1,0 +1,17 @@
+Expose the KGSL memory-entry queue attributes for scoped CPU-placement
+experiments, preserving reclaim/concurrency and default CPU/nice policy.
+The already exposed general KGSL queue needs no change. Keep the implicitly
+ordered devfreq queue untouched: applying attributes would clear its ordering
+flag. This patch does not select a placement policy.
+
+--- a/drivers/gpu/msm/kgsl.c
++++ b/drivers/gpu/msm/kgsl.c
+@@ -5390,7 +5390,7 @@
+ 		WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS, 0);
+ 
+ 	kgsl_driver.mem_workqueue = alloc_workqueue("kgsl-mementry",
+-		WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
++		WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS, 0);
+ 
+ 	INIT_WORK(&kgsl_driver.mem_work, _flush_mem_workqueue);
+ 
