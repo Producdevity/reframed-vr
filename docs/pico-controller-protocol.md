@@ -2131,3 +2131,26 @@ controls remain distinct: queue diagnostic SHA-256
 and notification v1 SHA-256
 `c4d63f1f17249b0abda5efd8a84b0c179c7a57975b619ad707a01f083a3fd48f`.
 Their stock recovery verifies; neither supplies graphics acceptance.
+
+### Right-hand input-gap rejection (2026-10-29)
+
+The completed observer-free run in
+`output/pico-no-api-observer-20261029-v2/` records the first rejected event:
+reason 5 (`GAP`), error −71, hand 2, sequence 41, generation 104. Its capture
+timestamp is 141.457227748 seconds; the preceding delivered timestamp for that
+hand is 141.445230748. The 11.997 ms capture gap exceeds the unchanged 10 ms
+consumer limit. Detection is at 141.468218956 seconds, so this selects the
+capture-gap branch, independently of the 100 ms freshness deadline.
+
+The shared consumer remains stopped after 15,338 delivered updates. The existing
+automatic owner waits for producer timeout/resumption, so this consumer-only
+failure does not itself publish a new endpoint. This establishes a missing
+recovery trigger, rather than the radio-side cause of the gap. Controller image
+delivery continues through 4,424 sets with zero public confident poses. Both
+ordered acquisition files contain only their headers, so this recording supplies
+no new image/IMU replay subset or geometric-acquisition result.
+
+The full graphics workload, archive hashes and verified recovery are recorded
+in the corresponding observer-free section of `pico-steamvr-verification.md`.
+Do not revive the stopped consumer or increase its gap bound: recovery requires
+fresh input, a new motion mapping and an estimator reset before rebinding.

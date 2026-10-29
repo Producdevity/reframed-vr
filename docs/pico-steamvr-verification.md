@@ -4904,3 +4904,40 @@ before measurement at the scheduler-state check. RR2 activation, CFS restoration
 and stock recovery verify, but the failed check's actual tuple was not saved.
 Its shortened perf stream is unqualified. No observer-free pacing comparison or
 transition cause is established; the scheduler check remains strict.
+
+### Observer-free windows and callback dispatch (2026-10-29)
+
+The second control, `output/pico-no-api-observer-20261029-v2/`, saves the actual
+renderer/event scheduler tuples before checking them. All three renderer checks
+retain RR2/priority2/nice−20. The initial bounded setter trace qualifies its
+complete two-record request/return pair and is stopped before settling and the
+steady windows. It does not reproduce or explain the earlier check failure.
+Pinned vendor sources permit transient FIFO40 during GPU submission; that remains
+a possible explanation, with no new scheduler-policy change adopted.
+
+The full 181-second workload completes 4,499 head camera sets and 184,720
+callbacks with zero bad results. All 300,437 DRM rows qualify. Three observer-free
+windows have 1,794 adjacent flip pairs each, with sequence skips 1 / 1 / 0.
+Startup's 500 API queries have zero overdue samples; steady API acceptance is
+unmeasured. Removing the observer therefore does not remove every sequence skip.
+CPU window 0 is wholly rejected for one malformed scheduler row; windows 1 and 2
+qualify. No CPU cause is assigned to window 0's skipped present 4,831.
+
+In accepted window 1, present 6,945's fence callback queues 2.214 ms before the
+expected software vblank. Its worker is awake but waits runnable for 2.503 ms
+before scheduling, accounting for most of the 2.550 ms queue-to-execute delay.
+The head-feed main thread occupies the same CPU 2 for 2.496 ms during that wait.
+Earlier work on this callback worker has already completed; neighboring callback
+runnable waits are 9 and 17 µs. Callback fire-to-commit wake is only 18 µs.
+These are scheduled intervals including possible interrupts, not measured user
+CPU time or proof of the exact CFS decision. The head-feed's premeasurement mask
+is CPUs 0–3 and 7; moving it away from the callback pool requires a separate
+control retaining head/camera freshness checks. Exact joins and source/identity
+pins are in `output/pico-scheduler-readback-20261029-v1/observer-free/`.
+
+The 381-data-file archive is 50,069,191 bytes, SHA-256
+`ed763e148f52000f2dbb9232edc7bc7d3304304d938f44c96758e2b2b91500d3`.
+Complete source/archive checks, trace/FIFO/DSP cleanup, full BOOT/DTBO readbacks,
+muted offline stock return and owned USB-host termination verify. Optical
+controller publication remains disabled; the independently recorded right-hand
+IMU gap is described in `pico-controller-protocol.md`.
