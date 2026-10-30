@@ -68,6 +68,8 @@ if(REFRAMED_PICO_WIFI_TRANSPORT)
     endif()
     install(PROGRAMS tools/pico-wifi-transport.py DESTINATION libexec/reframed-vr
             COMPONENT PicoWifiTransport)
+    install(PROGRAMS tools/pico-wifi-state.py DESTINATION libexec/reframed-vr
+            COMPONENT PicoWifiTransport)
     configure_file(system/pico/reframed-pico-wifi-transport.in
                    reframed-pico-wifi-transport @ONLY)
     install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/reframed-pico-wifi-transport"

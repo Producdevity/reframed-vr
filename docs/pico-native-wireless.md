@@ -2,14 +2,17 @@
 
 ## Current status (2026-10-30)
 
-Installed Wi-Fi startup, unit identity, passive scanning and two NetworkManager
-start/stop cycles pass on the native Pico, with the supplicant lifecycle fix
-below. These tests remain unassociated. Association/DHCP, throughput, pairing,
-Bluetooth audio, suspend/resume and powered coexistence with SteamVR remain
-unverified. The earlier Bluetooth result passes three cold initializations and
-three warm power cycles, but a later combined run fails its second cold address
-configuration with an FC14 timeout. Bluetooth startup repeatability and identity
-rollback therefore remain open. The dated records below retain both outcomes.
+Native Wi-Fi now passes association, DHCP, DNS, certificate-validated HTTPS,
+Steam access and automatic reconnection after NetworkManager restart. A private
+profile saved on the Pico also restores on a fresh Linux boot without consulting
+the Mac's credentials. Bluetooth passes three cold starts and two warm power
+cycles, and a separate public GATT test passes two exact 43-byte write/read
+roundtrips with disconnect/reconnect.
+
+Bonded/encrypted pairing remains unverified: the Mac's pairing UI expires before
+confirmation. Concurrent radio traffic under SteamVR/tracking, Bluetooth audio,
+suspend/resume and complete installed-image/session integration remain open.
+The dated records below preserve the earlier failures and narrower milestones.
 
 ## Verified boundary
 
@@ -832,3 +835,57 @@ maintained service has no such hook. Fresh CMake installation removes that
 harness contamination; UART shutdown itself reports restored power policy,
 detached HCI and restored rfkill. Pairing/encrypted traffic and complete installed
 network/session integration still require separate acceptance.
+
+
+## Connected Wi-Fi, saved state and BLE data (2026-10-30)
+
+`output/pico-radio-e2e-20261030-v8/verification.json` verifies Wi-Fi association,
+two DHCP leases, DNS, a hash-pinned HTTPS download, Steam HTTPS and automatic
+reconnection after NetworkManager restart. Bluetooth remains powered during
+these checks. Its separate lifecycle test passes three cold starts and two warm
+power cycles with the unit address already supplied by NVM.
+
+`tools/pico-wifi-state.py`, installed by the opt-in `PicoWifiTransport` component,
+saves an existing private NetworkManager WPA-PSK keyfile to a unit-specific
+namespace on the verified userdata volume. Restore mounts that volume read-only,
+checks the profile hash and identity receipt, and refuses to replace a different
+installed profile. State directories stay private; installed keyfiles stay mode
+0600 even when NetworkManager's directory is mode 0755. Versioned profile files
+and an atomic state marker preserve the previous saved state if an update is
+interrupted. A lock prevents competing invocations. Installation does not enable
+an automatic save/restore service.
+
+The native `save`/`restore` invocations require `--boot-serial`, `--boot-id`,
+`--userdata-uuid` and `--profile`; identity defaults to the existing private
+`/etc/reframed-vr/pico-radio-identities.json`. Save after configuring the desired
+NetworkManager connection; restore before starting NetworkManager. `--replace`
+explicitly updates an existing saved snapshot. The tested boot recipe is in
+`output/pico-radio-e2e-20261030-v12/setup.py`. Its restored connection passes DHCP,
+DNS, HTTPS and service-restart reconnection across a stock return and fresh RAM
+boot. No Mac credential lookup is used in that restored-boot path. Host fixtures
+also cover standard passphrases and keyfile escapes, interrupted writes,
+corruption, unit mismatch, symlinks and preservation of existing files.
+
+The first BLE echo test fails in the interactive test server: the received
+payload is correct in the HCI trace and server log, but its stored D-Bus Value
+becomes empty. Both 19- and 43-byte writes reproduce that result. Replacing only
+that test service with a typed D-Bus implementation using
+[dbus-next 0.2.3](https://pypi.org/project/dbus-next/) (MIT, Tony Crisci) passes two
+43-byte write/read roundtrips and disconnect/reconnect with the unchanged Mac
+client and kernel. The library is a temporary test dependency; encrypted and
+public test characteristics retain separate flags. This verifies public BLE
+data, not bonded pairing. The Mac log separately records its pairing UI starting
+and expiring in the earlier encrypted test.
+
+V12's archive hashes and every member verify, credentials are excluded, whole
+BOOT/DTBO readbacks match, service teardown completes, and the Pico returns to
+verified muted, offline stock. Twelve trusted HTTPS downloads and the BLE test
+complete in the same session; their active transfer windows do not overlap, so
+this is not simultaneous traffic-load or compositor coexistence acceptance.
+Twenty-eight focused Wi-Fi host tests pass, including CMake's default-off guards
+and the eleven-file Wi-Fi component installation.
+
+| V12 checkpoint | Data members | Archive SHA-256 |
+| --- | ---: | --- |
+| Wi-Fi restore/save | 26 | `51d2df9b22d7ddda76b4d1c877dc0a3f596ed95a5f8d902280d432a779023c7c` |
+| BLE data and teardown | 31 | `34938ee8b31b626432b14fb7c4af8a87042ec5e1a64232abbeb72b8075f9127c` |
