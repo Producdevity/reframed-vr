@@ -5312,3 +5312,14 @@ failure archive SHA-256 is
 `9757ab451f789d45e3d2e792cac7ce49951ccb80cfd357de8626c1bf065e32ea`.
 Firmware readbacks and muted offline stock return were verified afterward;
 the exact USB helper was retired, without an orderly wrapper-join receipt.
+
+The subsequent completed native workload in
+`output/pico-ipc-rr1-native-20261030-v4/` records successful sequential systemd
+stops without the earlier vrserver exit 1 or compositor SIGSEGV. Both core
+receipts instead report `result=success`, `code=killed`, `status=TERM`; the Steam
+UI process exits zero. This verifies bounded service termination in that run.
+The coordinator still reports `natural_core_exit=false` and
+`clean_core_shutdown=false`; a graceful in-runtime quit remains unverified.
+Its [CFS/RR1/CFS comparison](pico-kgsl-fence-dispatch.md) and export-recovery
+limits are documented separately. No new optical controller or physical lens
+acceptance follows.

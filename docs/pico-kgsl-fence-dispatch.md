@@ -195,3 +195,45 @@ policy change follows. The first run verifies firmware readbacks, muted offline
 stock return and host join. The repeat reached stock through the fallback timer;
 stock identity, offline state and mute were checked afterward, but its final
 firmware readbacks, evidence export and orderly host join were not completed.
+
+### Completed CFS/RR1/CFS diagnostic (2026-10-30)
+
+`output/pico-ipc-rr1-native-20261030-v4/` completes the 180-second native workload
+and three 20-second windows using the same kernel, driver and renderer policy.
+Sparse fence-dispatch and fence-signal observers are omitted equally in all
+three windows; DRM and CPU/IPC tracing remain active. All five complete CPU
+epochs qualify, with zero malformed records and no loss-counter rejection.
+Whole-DRM grammar, semantic bounds, hashes and loss checks also pass.
+
+| API worker policy | Contained presentation pairs | Missed presentations |
+| --- | ---: | ---: |
+| CFS, nice −20 | 1,792 | 2 |
+| RR1, nice −20 | 1,795 | 0 |
+| CFS, nice −20 | 1,801 | 1 |
+
+The same API thread retains its process/thread identity and affinity throughout;
+each context restores its original CFS/nice 0 state. RR1 retains RTPRIO 0 and
+100,000-microsecond RTTIME limits. This is one short sequential diagnostic and
+does not establish sustained improvement or observer neutrality. No default
+policy is changed.
+
+The earlier 7 ms API-owner stall is absent in all three windows. At the sampled
+Valve IPC mappings, complete shared-futex waits whose expected word identifies
+the API worker have maxima of 349, 4 and 3 microseconds. The middle and final
+groups contain only `-EAGAIN` returns; they do not establish equivalent lock
+contention. A server-owner-word wait reaches 1.880 ms in the first control.
+These rounded ftrace timings are not new per-wait owner/callsite proofs. The
+comparison therefore does not verify that RR1 fixes the previously observed
+stall. Exact classifications and return codes are in `analysis/waits.json`.
+
+The workload finishes 4,499 head-camera sets with zero bad results and both
+controllers connected, but publishes zero optical controller poses. Firmware
+readbacks, DSP/MCU release and muted offline stock return verify. The exporter
+initially expected raw files for the deliberately omitted observers; a corrected
+export explicitly marks both unmeasured and retains the CPU/DRM data unchanged.
+All 578 data members rehash; archive SHA-256 is
+`5b317a89ea3dd683117f5b29f55e7e9fa5db00fad6c8e755d998021f5eb1f74b`
+(56,806,605 bytes), boot UUID `6fe6c7b7-5bdc-46bb-9059-b3b1688da5df`.
+The owned USB helper's exit is independently observed; an orderly host-wrapper
+join is not claimed. Physical display-boundary analysis is not accepted by this
+run. The scoped verification and its source adapters are retained in `analysis/`.
