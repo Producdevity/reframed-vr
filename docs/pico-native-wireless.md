@@ -1,5 +1,16 @@
 # Native Neo3 wireless bring-up
 
+## Current status (2026-10-30)
+
+Installed Wi-Fi startup, unit identity, passive scanning and teardown pass on
+the native Pico. The corrected Bluetooth UART owner and default-advertising
+backport pass three cold identity initializations and three warm power cycles,
+including real HCI responses and clean power/TTY teardown. These are unpaired,
+unassociated tests. NetworkManager activation, association/DHCP, pairing, RF
+traffic, Bluetooth audio, suspend/resume and coexistence with SteamVR remain
+unverified. The dated records below preserve the earlier failures; the latest
+UART/advertising result is recorded at the end of this document.
+
 ## Verified boundary
 
 On 2026-10-24, the Neo3 Pro Eye's QCA6390 (`17cb:1101`) created a managed
@@ -637,3 +648,89 @@ audio and Wi-Fi association remain unaccepted.
 | --- | ---: | ---: | --- |
 | Parser preflight v1 | 99 | 2,962,376 | `1e125902b8146dd14a6e1c1ba2fcaa27ff7e5234141ca3225da7b37ebbcfdbfa` |
 | Power-cycle v2 | 99 | 2,963,275 | `875742ec8f2efb18b1f2abb93bb36d07b3f70315de505cd0b0e7bad5489d955e` |
+
+## UART power and advertising corrections (2026-10-30)
+
+The deployed vendor QCA TTY driver's serial clock-vote callbacks are empty.
+The GENI UART can runtime-suspend its receiver. The maintained transport owner
+now validates the exact `ttyHS0`/`998000.qcom,qup_uart` binding, compatible and
+wake byte, then holds its runtime-power policy at `on` while owning the UART.
+It opens a matching character-device descriptor before that vote and keeps it
+through the `btattach` child lifetime. After reaping the child, it restores the
+original policy **before** closing its final descriptor, then verifies HCI
+detach and restores rfkill. Child failure and forced termination follow the
+same cleanup order. Baud, firmware and identity timeouts are unchanged.
+
+That ordering matters on this vendor driver. A simple sysfs power hold surviving
+last TTY close prevents GENI's synchronous shutdown suspend. Shutdown then frees
+the wake IRQ; dropping the hold later invokes runtime-suspend and attempts to
+enable the freed IRQ. The earlier v3 and v5 runs contain this `irq_startup`
+warning despite successful policy readbacks. A parent-held descriptor prevents
+an unexpected child exit from freeing the IRQ before policy restoration.
+
+The hold also costs UART idle power while the owner runs, including when BlueZ
+is unpowered. Proper event-driven GENI/IBS voting remains future work. It must
+account for the vendor shutdown draining ioctl votes before QCA ldisc close;
+adding a naive GET/PUT pair to QCA open/close would be unbalanced.
+
+A separate kernel request-builder bug supplies a local-name scan response for
+default advertising instance zero while declaring that instance non-scannable.
+The controller correctly rejects opcode `0x2038` with status `0x12`.
+`patches/kernel/pico-neo3-linux/0017-bluetooth-default-scan-response.patch`
+backports [Luiz Augusto von Dentz's upstream correction](https://github.com/torvalds/linux/commit/492ad783a150cd352abba8723e5942521d938c8d),
+retaining its author/sign-off attribution. It changes both default-instance
+scannability checks, preserving the local name and payload. Only Pico Linux
+userspace profiles select it. Extracted C request-builder tests reproduce the
+recorded old parameters and verify the corrected mode without removing data.
+
+### Accepted native boundary
+
+`output/pico-radio-startup-native-20261030-v7/` completes three cold UART/unit
+identity starts, three warm powered/unpowered cycles and a final unpaired
+powered hold. Each cold start has a real status-zero vendor Change Address
+(`0xfc14`) response followed by a hardware unit-address readback. The observed
+response times are 1.767, 1.791 and 7.364 ms. All three owner receipts restore
+`auto` before final TTY close; the full captured kernel log has no GENI
+`irq_startup` warning or HCI command timeout.
+
+The independent warm capture contains 153 commands and 153 successful responses,
+with a maximum observed response time of 4.006 ms. All four advertising parameter
+commands select `0x0012`; all four scan-response commands return status zero.
+Their payload bytes match the four earlier status-`0x12` cases. Wi-Fi separately
+completes startup/identity restart and a passive scan returning 227 BSS entries,
+remaining unassociated.
+
+The build changes only the two HCI request-builder checks relative to the prior
+phase kernel. Configuration, all retained module symbol versions and embedded
+signing trust match. Full export/source hashes, all runtime policy/module
+restoration, BOOT/DTBO readbacks, muted offline stock return and owned USB-host
+join pass. Boot UUID is `166f0a12-e0ed-4ee7-bb86-52119364baa9`; the archive has
+195 data members, 13,213,760 bytes and SHA-256
+`de2bce564989484f54b9d8ad763341658c35c577639d9f2422d6eb3a3ab63a85`.
+The independent audit and exact maintained-file pins are in
+`output/pico-bluetooth-promotion-20261030-v1/`.
+
+### Retained failures and observation limits
+
+V4 stopped at a stale embedded kernel guard before radio testing; its failed
+setup and verified stock recovery are retained. V5 reached a real `0xfc14`
+timeout before advertising configuration. V6 completed two cold identities with
+the corrected descriptor ordering, then its harness rejected an asynchronous
+propagated service stop. V7 preserves the existing 25-second bound, verifies the
+original owner and actual stop job, and waits for its final inactive state.
+These are separate failures; none was relabelled as a successful run.
+
+Startup monitoring is **not lossless**. Exact firmware payload matching finds
+only 225 / 225 / 226 of 840 expected patch TX fragments in V7, despite a reported
+btsnoop drop count of zero. The retained monitor source can silently discard a
+record on socket enqueue failure. Standard-command completions and hardware
+readbacks are positive observations; absent startup packets cannot identify a
+UART failure. Warm HCI validation uses its separate capture. Firmware-fragment
+ACK modes and source-injected command completions are classified separately,
+without treating every firmware fragment as an ordinary synchronous command.
+
+This accepts the tested unpaired startup/power/cleanup behavior. It does not
+establish sustained startup reliability, RF traffic, discovery/pairing,
+Bluetooth audio, suspend/resume or powered coexistence with tracking/SteamVR.
+The successful Wi-Fi scan likewise does not establish NetworkManager activation,
+association, DHCP or throughput. No network credentials or peers were configured.

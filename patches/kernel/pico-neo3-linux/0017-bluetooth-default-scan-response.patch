@@ -1,0 +1,35 @@
+From: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Subject: [PATCH] Bluetooth: Fix not using LE_ADV_NONCONN_IND for instance 0
+
+Backport of upstream 492ad783a150cd352abba8723e5942521d938c8d.
+Instance 0 supplies the local name in its scan response and must be scannable.
+
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Signed-off-by: Marcel Holtmann <marcel@holtmann.org>
+---
+--- a/net/bluetooth/hci_request.c
++++ b/net/bluetooth/hci_request.c
+@@ -904,9 +904,9 @@
+ {
+ 	struct adv_info *adv_instance;
+ 
+-	/* Ignore instance 0 */
++	/* Instance 0x00 always set local name */
+ 	if (instance == 0x00)
+-		return 0;
++		return 1;
+ 
+ 	adv_instance = hci_find_adv_instance(hdev, instance);
+ 	if (!adv_instance)
+@@ -923,9 +923,9 @@
+ 	u8 instance = hdev->cur_adv_instance;
+ 	struct adv_info *adv_instance;
+ 
+-	/* Ignore instance 0 */
++	/* Instance 0x00 always set local name */
+ 	if (instance == 0x00)
+-		return 0;
++		return 1;
+ 
+ 	adv_instance = hci_find_adv_instance(hdev, instance);
+ 	if (!adv_instance)
