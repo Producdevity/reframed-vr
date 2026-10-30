@@ -772,3 +772,13 @@ pass, although the UART transport detaches and restores power policy before
 the verified stock reboot. The baseline verifier retains that failure; the
 independent NetworkManager result does not imply Bluetooth acceptance or
 simultaneous radio/graphics coexistence.
+
+The whole retained packet log shows `Index Removed` immediately after the
+management command in both the successful first cycle and failed second cycle.
+The first hardware FC14 response then succeeds in 7.512 ms; the second reaches
+the positive kernel command-timeout and Change Address failure. The management
+index transition alone is therefore not the failure to fix. Its disappearance
+must not be hidden by accepting the management command's early success. This
+audit does not identify a UART/IBS cause, and missing startup-monitor packets
+remain inconclusive. Exact rows and rehashed inputs are retained in
+`output/pico-bluetooth-fc14-audit-20261030-v1/result.json`.
