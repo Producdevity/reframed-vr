@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Temporarily raise one owned Neo3 Steam API worker's ordinary CFS priority."""
+"""Temporarily prioritize one owned Neo3 Steam API worker."""
 import argparse
 from contextlib import contextmanager
 import fcntl
@@ -51,8 +51,23 @@ def snapshot(pid, tid):
             'nice': os.getpriority(os.PRIO_PROCESS, tid)}
 
 
+def realtime_limits(pid):
+    text = (PROC/str(pid)/'limits').read_text()
+    result = {}
+    for key, label, suffix in [('rtprio', 'Max realtime priority', ''),
+                               ('rttime_us', 'Max realtime timeout', r'\s+us')]:
+        values = re.findall(r'^'+label+r'\s+(\d+)\s+(\d+)'+suffix+r'\s*$', text, re.M)
+        if len(values) != 1:
+            raise ValueError('Missing numeric realtime resource limits')
+        result[key] = list(map(int, values[0]))
+    # The root owner applies RR1; RTPRIO0 prevents unrelated UI threads from self-promoting.
+    if result != {'rtprio': [0, 0], 'rttime_us': [100000, 100000]}:
+        raise ValueError('RR1 requires RTPRIO0 and 100ms RTTIME')
+    return result
+
+
 @contextmanager
-def prioritize_worker(serial, boot, pid, tid):
+def prioritize_worker(serial, boot, pid, tid, *, realtime=False):
     validate_device(serial, boot)
     fd = os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
     try:
@@ -64,11 +79,17 @@ def prioritize_worker(serial, boot, pid, tid):
         if (before['policy'], before['rt_priority'], before['nice']) != (os.SCHED_OTHER, 0, 0):
             raise ValueError('Requires the unchanged ordinary-priority worker')
         record = {'boot_id': boot, 'before': before}
+        expected = before | {'nice': -20}
+        if realtime:
+            record['realtime_limits'] = realtime_limits(pid)
+            expected |= {'policy': os.SCHED_RR | os.SCHED_RESET_ON_FORK, 'rt_priority': 1}
         try:
             os.setpriority(os.PRIO_PROCESS, tid, -20)
+            if realtime:
+                os.sched_setscheduler(tid, expected['policy'], os.sched_param(1))
             validate_device(serial, boot)
             active = snapshot(pid, tid)
-            if active != before | {'nice': -20}:
+            if active != expected or (realtime and realtime_limits(pid) != record['realtime_limits']):
                 raise RuntimeError('Worker priority readback or identity changed')
             record['active'] = active
             yield record
@@ -81,12 +102,22 @@ def prioritize_worker(serial, boot, pid, tid):
                     raise RuntimeError('Worker inspection failed while the task still exists')
                 record['restoration'] = 'owned-worker-exited'
             else:
-                if {k: v for k, v in current.items() if k != 'nice'} != {k: v for k, v in before.items() if k != 'nice'}:
+                mutable = {'nice', 'policy', 'rt_priority'} if realtime else {'nice'}
+                if {k: v for k, v in current.items() if k not in mutable} != {k: v for k, v in before.items() if k not in mutable}:
                     raise RuntimeError('Worker identity or policy changed; restoration refused')
+                if realtime:
+                    policy = (current['policy'], current['rt_priority'])
+                    if policy not in [(before['policy'], before['rt_priority']),
+                                      (expected['policy'], expected['rt_priority'])]:
+                        raise RuntimeError('Worker scheduling policy changed; restoration refused')
+                    if policy != (before['policy'], before['rt_priority']):
+                        os.sched_setscheduler(tid, before['policy'], os.sched_param(before['rt_priority']))
                 os.setpriority(os.PRIO_PROCESS, tid, before['nice'])
                 record['after'] = snapshot(pid, tid)
                 if record['after'] != before:
                     raise RuntimeError('Worker priority restoration failed')
+                if realtime:
+                    record['limits_after'] = realtime_limits(pid)
                 record['restoration'] = 'restored'
     finally:
         os.close(fd)
@@ -99,6 +130,7 @@ def main():
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--tid', type=int, required=True)
     parser.add_argument('--seconds', type=int, required=True)
+    parser.add_argument('--realtime', action='store_true', help='Opt-in RR1; requires preconfigured RTPRIO0/100ms RTTIME')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 900:
         parser.error('--seconds must be between 1 and 900')
@@ -112,7 +144,7 @@ def main():
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
             handlers[sig] = signal.signal(sig, stop)
-        with prioritize_worker(args.boot_serial, args.boot_id, args.pid, args.tid) as record:
+        with prioritize_worker(args.boot_serial, args.boot_id, args.pid, args.tid, realtime=args.realtime) as record:
             print('PICO_STEAM_IPC_PRIORITY_READY '+json.dumps(record), flush=True)
             deadline = time.monotonic()+args.seconds
             while not stopped and time.monotonic() < deadline:

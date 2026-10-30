@@ -156,7 +156,7 @@ the ftrace entries (actual timestamp differences +704 and −542 ns). Their
 low-29-bit expected owners match the observed waking threads: Steam's
 `CVRAPIITask::Ru` and a vrserver IPC thread. Nearby task snapshots retain stable
 process/thread start identities. This supports robust-mutex owner attribution;
-it does not establish a named pose lock or the owner's complete run state.
+it does not establish a named pose lock.
 
 The second saved LR selects the pinned vrclient robust-lock call at ELF
 `0x241dbc`. The first returns into the pinned compositor at `0x16f658`, immediately
@@ -167,3 +167,31 @@ the actual server tasks rather than relying on incidental scheduler rows.
 Whole-capture checks, exact joins, disassembly and input hashes are retained in
 `output/pico-upstream-delay-analysis-20261030-v1/result.json`. This is a narrower
 diagnosis, not a verified frame-pacing fix.
+
+The API owner is selected on all CPUs in the qualified scheduler recording. It
+switches out runnable at 197.980050 s and next runs at 197.987745 s: 7.695 ms
+descheduled while holding the observed mutex. It wakes the renderer about
+27 microseconds after resuming. Its recorded policy is CFS/nice −20. This
+establishes runnable descheduling, without identifying a particular fairness
+defect or excluding voluntary rescheduling. The server owner's complete run
+state remains unqualified. Exact rows and selector/identity checks are in
+`output/pico-upstream-delay-analysis-20261030-v1/owner-state.json`.
+
+The optional `tools/pico-steamvr-ipc-priority.py --realtime` experiment assigns
+only the selected Steam API worker RR1 with reset-on-fork, below the renderer's
+RR2. It requires RTPRIO 0 and both RTTIME limits of 100,000 microseconds; other
+UI threads retain their policy. Default operation remains CFS/nice −20 and
+neither mode is installed as session policy.
+
+`output/pico-ipc-rr1-native-20261030-v1/policy-acceptance.json` verifies the exact
+helper source, a 20-second RR1 window, unchanged identity/affinity/limits, and
+restoration to the original policy and nice value. Its 345-data-member archive
+SHA-256 is `9f33620c24e13880a9aab895fbe7319ded4dc5ae4ce40d06592be30fb0a93cd4`.
+The planned final CFS control failed a harness guard before restoration; the
+context subsequently restored correctly. The repeat instead failed to join
+trace readers during its first CFS control, before reaching RR1. Neither run
+qualifies a performance comparison, so no frame-pacing improvement or default
+policy change follows. The first run verifies firmware readbacks, muted offline
+stock return and host join. The repeat reached stock through the fallback timer;
+stock identity, offline state and mute were checked afterward, but its final
+firmware readbacks, evidence export and orderly host join were not completed.

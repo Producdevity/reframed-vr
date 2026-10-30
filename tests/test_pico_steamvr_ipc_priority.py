@@ -17,7 +17,7 @@ class IpcPriorityTests(unittest.TestCase):
         return {'pid': 20, 'tid': 21, 'process_start': 100, 'thread_start': 110,
                 'policy': 0, 'rt_priority': 0, 'affinity': [0, 1, 2, 3], 'nice': 0}
 
-    def run_context(self, root, state, setter, body=lambda _: None, validate=lambda *_: None, reader=None):
+    def run_context(self, root, state, setter, body=lambda _: None, validate=lambda *_: None, reader=None, realtime=False):
         with patch.object(MODULE, 'LOCK', root/'lock'), \
                 patch.object(MODULE.os, 'SCHED_OTHER', 0), \
                 patch.object(MODULE, 'validate_device', validate), \
@@ -25,7 +25,7 @@ class IpcPriorityTests(unittest.TestCase):
                 patch.object(MODULE.os, 'fstat', return_value=SimpleNamespace(
                     st_mode=0o100600, st_uid=0, st_nlink=1)), \
                 patch.object(MODULE.os, 'setpriority', setter):
-            with MODULE.prioritize_worker('fixture', 'fixture-boot', 20, 21) as record:
+            with MODULE.prioritize_worker('fixture', 'fixture-boot', 20, 21, realtime=realtime) as record:
                 body(record)
             return record
 
@@ -40,6 +40,65 @@ class IpcPriorityTests(unittest.TestCase):
                 lambda r: self.assertEqual(r['active'], r['before'] | {'nice': -20}))
         self.assertEqual(writes, [-20, 0])
         self.assertEqual(record['after'], record['before'])
+
+    def test_rr1_is_bounded_restored_and_refuses_changed_identity_or_policy(self):
+        for fault in ('none', 'write', 'body', 'identity', 'policy', 'affinity', 'limits'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                state, writes, policies, changed = self.state(), [], [], [False]
+                policy = 2 | 0x40000000
+                def setter(_which, _tid, value):
+                    state['nice'] = value
+                    writes.append(value)
+                def scheduler(tid, value, param):
+                    self.assertEqual(tid, 21)
+                    policies.append(value)
+                    state.update(policy=value, rt_priority=param.sched_priority)
+                    if fault == 'write' and value == policy:
+                        raise OSError('fixture applied-then-failed RR')
+                def limits(_pid):
+                    if fault == 'limits' and changed[0]:
+                        raise ValueError('fixture resource-limit drift')
+                    return {'rtprio': [0, 0], 'rttime_us': [100000, 100000]}
+                def body(record):
+                    self.assertEqual(record['active'], record['before'] | {
+                        'nice': -20, 'policy': policy, 'rt_priority': 1})
+                    changed[0] = True
+                    if fault == 'body': raise RuntimeError('fixture body error')
+                    if fault == 'identity': state['thread_start'] += 1
+                    if fault == 'policy': state['policy'] = 2
+                    if fault == 'affinity': state['affinity'] = [3]
+                with patch.object(MODULE.os, 'SCHED_RR', 2, create=True), \
+                        patch.object(MODULE.os, 'SCHED_RESET_ON_FORK', 0x40000000, create=True), \
+                        patch.object(MODULE.os, 'sched_param', lambda p: SimpleNamespace(sched_priority=p), create=True), \
+                        patch.object(MODULE.os, 'sched_setscheduler', scheduler, create=True), \
+                        patch.object(MODULE, 'realtime_limits', limits):
+                    if fault == 'none':
+                        record = self.run_context(Path(tmp), state, setter, body, realtime=True)
+                        self.assertEqual(record['after'], record['before'])
+                    else:
+                        with self.assertRaises((OSError, RuntimeError, ValueError)):
+                            self.run_context(Path(tmp), state, setter, body, realtime=True)
+                refused = fault in ('identity', 'policy', 'affinity')
+                self.assertEqual(policies, [policy] if refused else [policy, 0])
+                self.assertEqual(writes, [-20] if refused else [-20, 0])
+
+    def test_rr1_refuses_unbounded_resource_limits_before_writes(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(MODULE, 'realtime_limits', side_effect=ValueError('unbounded')):
+            with self.assertRaisesRegex(ValueError, 'unbounded'):
+                self.run_context(Path(tmp), self.state(), lambda *_: self.fail('Unexpected write'), realtime=True)
+
+    def test_numeric_realtime_limit_contract(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(MODULE, 'PROC', Path(tmp)):
+            path = Path(tmp)/'20/limits'
+            path.parent.mkdir()
+            for priority, timeout in [('0 0', '100000 100000'), ('2 2', '100000 100000'),
+                                      ('0 0', 'unlimited unlimited'), ('0 0', '200000 200000')]:
+                path.write_text('Max realtime priority     '+priority+'\nMax realtime timeout     '+timeout+'     us\n')
+                if priority == '0 0' and timeout == '100000 100000':
+                    self.assertEqual(MODULE.realtime_limits(20)['rtprio'], [0, 0])
+                else:
+                    with self.assertRaises(ValueError): MODULE.realtime_limits(20)
 
     def test_applied_then_failed_write_and_body_failure_restore(self):
         for failure in ('write', 'body'):
