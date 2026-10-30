@@ -93,3 +93,50 @@ physical motion/lens checks remain necessary. Optical controller acquisition
 and pointing are still unverified; connected radio input and successful head
 tracking do not establish controller 6DoF. Keep these boundaries separate from
 the [overall VR acceptance checklist](pico-vr-acceptance.md).
+
+## Follow-up signal timing
+
+`output/pico-kgsl-fence-signal-native-20261030-v1/` adds an independent sparse
+`dma_fence_signaled` stream to the same enabled kernel and workload. Compiled
+source puts this marker after the first successful signalled-bit transition
+and timestamp assignment, before wake-callback traversal. It is not the exact
+transition instant or GPU completion time. All source/whole-stream, eight-CPU
+loss/read, worker, restoration and stock/host closure gates pass. The workload
+completes in 180.953 seconds with 4,499 camera sets and zero bad head results.
+
+All five measured misses have a unique full driver/timeline/context/sequence
+identity and signal in task context inside the exact guarded RT callback.
+This resolves signal attribution for this new run, without retroactively
+identifying actors in earlier recordings. The three windows miss 2 / 1 / 2
+presentations, totaling 5 / 5,379. Added instrumentation has observer cost;
+this is not a controlled pacing-regression or neutrality result.
+
+Two frames have upstream previous-wait-to-queue gaps of 8.428 and 8.099 ms;
+their events reach the RT queue 4.856 and 4.258 ms after software vblank and
+dispatch in about 30 µs. Another frame's 634 µs dispatch envelope includes
+approximately 478 µs after the recorded selecting switch. That switch precedes
+the actual context switch and worker loop, so this is not a proved priority
+failure. A different callback has approximately 479 µs between its fire marker
+and signal. Phase tracing is disabled, and IRQ/preemption, promotion helpers,
+timeline locking and observer work are not separated. The CPU recordings pass,
+but their scheduler filters omit the RT task; they cannot establish its complete
+intervening state. No new scheduling-policy change is justified.
+
+The whole DRM stream has 298,929 valid rows. Its terminal row opens fence 14945
+without a captured end at 303.980000 seconds, after all measured windows end
+at 260.261409 seconds. The inherited zero-unmatched-waits check rejected this;
+that rejection is retained. Measured associations explicitly exclude only this
+terminal out-of-window open wait, with all raw rows still validated. No claim
+that every workload fence completed follows.
+
+There is also a real post-workload SteamVR shutdown failure. The harness's
+nonblocking stop request returns zero, then the server log reports disconnected
+cross-thread pipe fatal assertions and its service-stop audit reports failure.
+The final process exit code/signal was not exported. This remains a session
+cleanup issue; it is not declared harmless or attributed to KGSL.
+
+Boot UUID is `7c971203-e37b-4573-aae8-afe87be05191`; the 570-data-member archive
+SHA-256 is `7c21e6e36954e4904b58e83da0fec59b4a13006fb4064a3e5e5ef1fa848ce87d`.
+Qualified identities, rounding bounds, source proofs, original rejection and
+shutdown logs are indexed by
+`output/pico-kgsl-fence-signal-analysis-20261030-v1/result.json`.
