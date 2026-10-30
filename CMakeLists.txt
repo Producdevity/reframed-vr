@@ -79,6 +79,9 @@ if(REFRAMED_PICO_WIFI_TRANSPORT)
     install(FILES system/pico/10-wifi-transport.conf
             DESTINATION lib/systemd/system/reframed-pico-wifi-identity@wlan0.service.d
             COMPONENT PicoWifiTransport)
+    install(FILES system/pico/10-wifi-supplicant-lifecycle.conf
+            DESTINATION lib/systemd/system/wpa_supplicant.service.d
+            COMPONENT PicoWifiTransport)
 endif()
 
 option(REFRAMED_PICO_BLUETOOTH_IDENTITY "Install native Pico Bluetooth identity startup" OFF)

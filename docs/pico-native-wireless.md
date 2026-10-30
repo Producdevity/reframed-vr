@@ -2,14 +2,14 @@
 
 ## Current status (2026-10-30)
 
-Installed Wi-Fi startup, unit identity, passive scanning and teardown pass on
-the native Pico. The corrected Bluetooth UART owner and default-advertising
-backport pass three cold identity initializations and three warm power cycles,
-including real HCI responses and clean power/TTY teardown. These are unpaired,
-unassociated tests. NetworkManager activation, association/DHCP, pairing, RF
-traffic, Bluetooth audio, suspend/resume and coexistence with SteamVR remain
-unverified. The dated records below preserve the earlier failures; the latest
-UART/advertising result is recorded at the end of this document.
+Installed Wi-Fi startup, unit identity, passive scanning and two NetworkManager
+start/stop cycles pass on the native Pico, with the supplicant lifecycle fix
+below. These tests remain unassociated. Association/DHCP, throughput, pairing,
+Bluetooth audio, suspend/resume and powered coexistence with SteamVR remain
+unverified. The earlier Bluetooth result passes three cold initializations and
+three warm power cycles, but a later combined run fails its second cold address
+configuration with an FC14 timeout. Bluetooth startup repeatability and identity
+rollback therefore remain open. The dated records below retain both outcomes.
 
 ## Verified boundary
 
@@ -734,3 +734,41 @@ establish sustained startup reliability, RF traffic, discovery/pairing,
 Bluetooth audio, suspend/resume or powered coexistence with tracking/SteamVR.
 The successful Wi-Fi scan likewise does not establish NetworkManager activation,
 association, DHCP or throughput. No network credentials or peers were configured.
+
+## NetworkManager restart and supplicant lifetime (2026-10-30)
+
+The first installed NetworkManager cycle creates managed, disconnected `wlan0`
+and stops cleanly. Its next start initially fails: the D-Bus-activated
+`wpa_supplicant.service` survives the manager stop, and the WLAN owner's
+preflight correctly refuses to reload underneath that daemon. A `Before=`
+ordering relationship alone does not propagate stops.
+
+The opt-in `PicoWifiTransport` component now installs
+`wpa_supplicant.service.d/10-wifi-supplicant-lifecycle.conf`, containing
+`PartOf=NetworkManager.service`. Existing identity/transport ordering already
+places supplicant shutdown before module teardown. This couples the supplicant
+to the manager on this dedicated Pico WLAN stack without weakening ownership
+checks. Default builds install no such policy.
+
+The actual ten-file CMake installation passes two complete native cycles in
+`output/pico-networkmanager-native-20261030-v3/`: readiness takes 2.076 and
+1.986 seconds, each cycle has a new owner invocation, state 30 (disconnected),
+no wireless connection profile or WLAN route, followed by module unload and
+fallback-policy restoration. The separate passive scan sees 208 BSS entries.
+The parent-invoked `tests/pico-networkmanager-smoke.py` retains this regression
+test for the prepared, initially masked native radio-test environment.
+
+Archive SHA-256 is
+`d06b2d7692966c979f95e93653c7678283c40b03ce41fac69894b742a5bfc042`
+(185 data members). Whole-archive/source checks and unchanged BOOT/DTBO,
+muted offline stock return and USB-host join pass. Independent Wi-Fi and
+NetworkManager acceptance is recorded in `networkmanager-acceptance.json`.
+Thirteen transport and eight identity host tests pass.
+
+The full radio run remains rejected: after Wi-Fi succeeds, the second Bluetooth
+cold address configuration loses its management index and the kernel reports
+an FC14 transmit timeout. Identity rollback and overall radio cleanup do not
+pass, although the UART transport detaches and restores power policy before
+the verified stock reboot. The baseline verifier retains that failure; the
+independent NetworkManager result does not imply Bluetooth acceptance or
+simultaneous radio/graphics coexistence.

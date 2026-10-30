@@ -257,7 +257,8 @@ class WifiTransportTests(unittest.TestCase):
             files = ['tools/pico-wifi-identity.py', 'tools/pico-wireless-config.py', 'tools/pico-wifi-transport.py',
                      'system/pico/reframed-pico-wifi-identity.in', 'system/pico/reframed-pico-wifi-identity@.service.in',
                      'system/pico/10-reframed-pico-wifi.link', 'system/pico/reframed-pico-wifi-transport.in',
-                     'system/pico/reframed-pico-wifi-transport.service.in', 'system/pico/10-wifi-transport.conf']
+                     'system/pico/reframed-pico-wifi-transport.service.in', 'system/pico/10-wifi-transport.conf',
+                     'system/pico/10-wifi-supplicant-lifecycle.conf']
             for name in files:
                 target = project / name
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +283,9 @@ class WifiTransportTests(unittest.TestCase):
             for component in ('PicoWifiIdentity', 'PicoWifiTransport'):
                 run(['cmake', '--install', str(build), '--component', component, '--prefix', str(stage / 'usr')])
             installed = {str(p.relative_to(stage)) for p in stage.rglob('*') if p.is_file()}
-            self.assertEqual(len(installed), 9)
+            self.assertEqual(len(installed), 10)
+            supplicant = stage / 'usr/lib/systemd/system/wpa_supplicant.service.d/10-wifi-supplicant-lifecycle.conf'
+            self.assertEqual(supplicant.read_text(), '[Unit]\nPartOf=NetworkManager.service\n')
             self.assertFalse(any('wants' in name or '.requires/' in name for name in installed))
             for name in ('pico-wifi-identity.py', 'pico-wireless-config.py', 'pico-wifi-transport.py'):
                 self.assertEqual((stage / 'usr/libexec/reframed-vr' / name).read_bytes(), (ROOT / 'tools' / name).read_bytes())
