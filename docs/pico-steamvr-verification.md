@@ -5243,3 +5243,42 @@ kernel control, complete capture qualifications and route-specific timings.
 The private worker lowers the observed dispatch tails; two presentation misses
 remain. It stays opt-in and disabled by default. This does not close steady API,
 physical motion or optical controller acceptance.
+## Shutdown diagnostics (2026-10-30)
+
+Clean SteamVR shutdown remains unverified. The new
+`tools/pico-steamvr-shutdown.py` records systemd's `SERVICE_RESULT`, `EXIT_CODE`
+and `EXIT_STATUS` from each owned unit's `ExecStopPost`, before transient-unit
+collection can remove that information. Receipts are published atomically and
+bound to the unit, boot and shutdown time. The coordinator waits for a caller's
+quit request, then stops remaining services sequentially, keeping seatd/Xvfb
+until last. A successful stop request cannot substitute for a successful final
+core-process exit. This optional diagnostic is not installed in the OS image.
+
+Native runs in `output/pico-steamvr-orderly-shutdown-20261030-v2/` and `v3/`
+capture vrserver exiting 1 and vrcompositor terminating with SIGSEGV. The
+driver-requested quit event was emitted but did not produce a runtime shutdown;
+the normal X11 close test found no window belonging to vrmonitor. Both attempts
+are retained as rejected approaches. Their driver/probe/window experiments were
+not promoted to maintained runtime code.
+
+Both compositor minidumps have an unmapped PC and LR at `vrcompositor+0x106a3c`,
+immediately after an indirect call through an object's vtable at `0x106a38`.
+The enclosing retained binary releases shared resources. This narrows the
+failure to resource teardown; it does not prove why the object became invalid.
+A [related upstream report](https://github.com/ValveSoftware/SteamVR-for-Linux/issues/990)
+describes a shared-resource cleanup crash on another SteamVR build. Exact dump,
+module and frame-pointer evidence is in
+`output/pico-upstream-delay-analysis-20261030-v1/shutdown-crashes.json`.
+
+The v2 workload stopped at a race-prone pre-measurement check of its 30-second
+controller probe; the probe later exited zero. The next harness waits for its
+bounded completion before attempting observer-free measurement. The v3 run
+instead hit a camera-feed timeout before dashboard readiness. Neither run
+supplies a new frame-pacing or optical-tracking acceptance result. Version 3
+does verify automatic failure export, DSP/MCU release, unchanged BOOT/DTBO,
+muted offline stock return and USB-host join.
+
+Diagnostic archives: v2 SHA-256
+`1517d3404df40afb7dce8a079d9972ed34579d0f03dc71dae33157d1b2502b58`;
+v3 SHA-256
+`3debffb292aea626e6ce9279d5b2695b614c81f42d80ceec9c7b562059d359a2`.
