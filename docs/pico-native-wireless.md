@@ -782,3 +782,27 @@ must not be hidden by accepting the management command's early success. This
 audit does not identify a UART/IBS cause, and missing startup-monitor packets
 remain inconclusive. Exact rows and rehashed inputs are retained in
 `output/pico-bluetooth-fc14-audit-20261030-v1/result.json`.
+
+
+## Unit address in the downloaded NVM (2026-10-30)
+
+`tools/pico-bluetooth-nvm.py` generates a private copy of the authentic b1977
+`htnv20.bin`, changing only tag 2's six address bytes at offsets 16–21. It requires
+an exact firmware hash and the existing private, firmware/serial-matched stock
+identity receipt. It refuses existing output paths. The generator neither
+installs firmware nor writes a device partition. Five host tests cover table
+bounds, address validation, identity matching and exclusive private output.
+
+This follows Qualcomm's normal [Android NVM address provisioning](https://android.googlesource.com/platform/hardware/qcom/bt/+/5f13e7b/msm8909/libbt-vendor/src/hw_rome.c).
+The authentic source is retained unchanged. In
+`output/pico-radio-e2e-20261030-v2/`, the generated RAM copy initializes the correct
+hardware address without a separate FC14 address command; Bluetooth powers on,
+and the Mac discovers and connects to its GATT service over the air. Encrypted
+read/write and bonding have not passed. A later fresh boot still fails at
+power-on, so NVM provisioning alone is not a complete reliability fix.
+
+The V2 checkpoint hashes every exported member and verifies unchanged whole
+BOOT/DTBO readbacks; its timed return verifies stock, offline and muted. The
+initial Wi-Fi setup failed on missing firmware aliases and was repaired live;
+its scan result is not association, DHCP or Internet acceptance. Credentials and
+Bluetooth keys are excluded from the checkpoint and from Git.
