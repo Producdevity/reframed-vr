@@ -806,3 +806,29 @@ BOOT/DTBO readbacks; its timed return verifies stock, offline and muted. The
 initial Wi-Fi setup failed on missing firmware aliases and was repaired live;
 its scan result is not association, DHCP or Internet acceptance. Credentials and
 Bluetooth keys are excluded from the checkpoint and from Git.
+
+
+## Preserve an already provisioned controller (2026-10-30)
+
+The UART owner now loads the existing verified unit identity before attachment.
+If the initialized controller already reports that address, it leaves HCI's
+startup/auto-off lifecycle intact. A different address retains the synchronous
+`HCIDEVDOWN` step before identity programming. The identity service still checks
+the hardware readback; this does not accept a fallback address.
+
+In `output/pico-radio-e2e-20261030-v3/`, the forced-close path repeatedly fails
+Set Powered at the HCI Reset boundary, with IBS TX stuck waking. A fresh UART
+attachment that skips this unnecessary close powers on and completes two warm
+cycles. This is a bounded comparison, not proof that every earlier FC14 failure
+has the same cause. The later V4 clean CMake installation reaches the completion
+marker after three cold starts and two warm cycles, then returns to verified
+muted, offline stock. Its detailed in-RAM results were not exported before the
+automatic return; the retained console and exact test source record that limit.
+Thirty-three focused Bluetooth host tests pass.
+
+The earlier identity stop failure is a separate harness issue: a reused test
+service contained an `ExecStopPost` pointing at a missing receipt script. The
+maintained service has no such hook. Fresh CMake installation removes that
+harness contamination; UART shutdown itself reports restored power policy,
+detached HCI and restored rfkill. Pairing/encrypted traffic and complete installed
+network/session integration still require separate acceptance.

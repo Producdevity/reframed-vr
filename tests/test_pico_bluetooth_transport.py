@@ -70,7 +70,7 @@ class BluetoothTransportTests(unittest.TestCase):
         (root / 'class/bluetooth').mkdir(parents=True)
         return rf / 'soft', uart, root / 'class/bluetooth/hci0'
 
-    def exercise(self, fault=None, original='1', policy='auto'):
+    def exercise(self, fault=None, original='1', policy='auto', expected_address=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             soft, uart, adapter = self.fixture(root, original, policy)
@@ -160,7 +160,8 @@ class BluetoothTransportTests(unittest.TestCase):
                 try:
                     transport.own_transport(lambda: None, stopped, report, notify, sysfs=root,
                                             run=run, spawn=spawn, seconds=1 if fault == 'pending-info' else 0,
-                                            settle_seconds=0, open_guard=Guard)
+                                            settle_seconds=0, open_guard=Guard,
+                                            expected_address=expected_address)
                 except BaseException as error:
                     failure = error
             self.assertEqual(soft.read_text().strip(), original)
@@ -240,6 +241,17 @@ class BluetoothTransportTests(unittest.TestCase):
         self.assertEqual(ready, [True])
         self.assertEqual(calls[-1], ['hciconfig', 'hci0', 'down'])
         self.assertTrue(report['kernel_closed_before_identity'])
+
+    def test_already_provisioned_address_preserves_the_initialized_controller(self):
+        error, report, ready, calls, _ = self.exercise(expected_address='00:03:7f:12:2b:b0')
+        self.assertIsNone(error)
+        self.assertEqual(ready, [True])
+        self.assertFalse(report['kernel_closed_before_identity'])
+        self.assertFalse(any(command[0] == 'hciconfig' for command in calls))
+        error, report, ready, calls, _ = self.exercise(expected_address='08:16:d5:01:02:03')
+        self.assertIsNone(error)
+        self.assertTrue(report['kernel_closed_before_identity'])
+        self.assertIn(['hciconfig', 'hci0', 'down'], calls)
 
     def test_existing_bluez_is_not_interrupted(self):
         error, report, ready, calls, child = self.exercise('bluez')

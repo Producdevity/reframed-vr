@@ -91,7 +91,7 @@ class TTYGuard:
 
 def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
                   run=subprocess.run, spawn=subprocess.Popen, seconds=35,
-                  settle_seconds=18, open_guard=TTYGuard):
+                  settle_seconds=18, open_guard=TTYGuard, expected_address=None):
     check_boot()
     inactive = run(['systemctl', 'is-active', '--quiet', 'bluetooth.service'], timeout=10)
     if inactive.returncode not in (3, 4):
@@ -149,15 +149,17 @@ def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
                     except identity.AdapterUnavailable:
                         pass
                     else:
-                        # Both management and HCIGETDEVINFO mask HCI_UP during auto-off.
-                        # HCIDEVDOWN cancels that phase and synchronously closes HCI.
-                        kernel = run(['hciconfig', 'hci0', 'down'], capture_output=True, text=True,
-                                     timeout=10, env=os.environ | {'LC_ALL': 'C'})
-                        if kernel.returncode:
-                            raise RuntimeError('Cannot close startup HCI before provisioning')
+                        already_provisioned = (expected_address is not None and
+                                               info['address'] == expected_address)
+                        if not already_provisioned:
+                            # HCIDEVDOWN cancels auto-off before changing the unit address.
+                            kernel = run(['hciconfig', 'hci0', 'down'], capture_output=True, text=True,
+                                         timeout=10, env=os.environ | {'LC_ALL': 'C'})
+                            if kernel.returncode:
+                                raise RuntimeError('Cannot close startup HCI before provisioning')
                         identity.validate_transport(0, sysfs)
                         report['initial_adapter'] = info
-                        report['kernel_closed_before_identity'] = True
+                        report['kernel_closed_before_identity'] = not already_provisioned
                         break
             if time.monotonic() >= deadline:
                 raise TimeoutError('QCA6390 UART initialization deadline exceeded')
@@ -244,8 +246,11 @@ def main():
     parser.add_argument('--boot-serial', required=True)
     parser.add_argument('--boot-id', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--identity', type=Path,
+                        default=Path('/etc/reframed-vr/pico-radio-identities.json'))
     args = parser.parse_args()
     identity.validate_device(args.boot_serial, args.boot_id, require_uart=False)
+    expected_address, _ = identity.load_identity(args.identity, args.boot_serial)
     report = {'status': 'starting', 'boot_id': args.boot_id,
               'scope': 'Volatile UART and rfkill ownership; no pairing or partition writes'}
     with os.fdopen(os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC,
@@ -265,7 +270,8 @@ def main():
             if not Path('/dev/ttyHS0').is_char_device():
                 raise ValueError('Expected the Pico ttyHS0 character device')
             check = lambda: identity.validate_device(args.boot_serial, args.boot_id)
-            own_transport(check, lambda: stopping, report, notify_ready)
+            own_transport(check, lambda: stopping, report, notify_ready,
+                          expected_address=expected_address)
             report['status'] = 'stopped-and-restored'
         except BaseException as error:
             report.update(status='failed', error=str(error))
