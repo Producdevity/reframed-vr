@@ -74,6 +74,36 @@ class ShutdownTests(unittest.TestCase):
     def test_fallback_continues_after_stop_timeout(self):
         self.assertFalse(self.exercise(stop_error=True)['clean_core_shutdown'])
 
+    def test_partial_startup_stops_registered_units_without_claiming_core_shutdown(self):
+        server, compositor = 'pico-steamvr-server-test', 'pico-steamvr-compositor-test'
+        for units in ([], ['pico-ui-seatd'], ['pico-ui-seatd', server]):
+            with self.subTest(units=units), tempfile.TemporaryDirectory() as tmp:
+                calls = []
+                def run(args, **kwargs):
+                    calls.append(args)
+                    return subprocess.CompletedProcess(args, 0, '', '')
+                report = shutdown.close_session(units, server, compositor, ['quit-client'],
+                    Path(tmp), run=run, allow_partial=True,
+                    sleep=lambda _: self.fail('Incomplete startup must not wait for absent core units'))
+                expected = ([['systemctl', 'stop', server]] if server in units else [])
+                if 'pico-ui-seatd' in units:
+                    expected.append(['systemctl', 'stop', 'pico-ui-seatd'])
+                self.assertEqual(calls, expected)
+                self.assertFalse(report['clean_core_shutdown'])
+                self.assertFalse(report['natural_core_exit'])
+                self.assertIsNone(report['request'])
+                self.assertIn(compositor, report['missing_core_units'])
+
+    def test_partial_opt_in_does_not_relax_unit_ownership_or_duplicate_checks(self):
+        server, compositor = 'pico-steamvr-server-test', 'pico-steamvr-compositor-test'
+        with tempfile.TemporaryDirectory() as tmp:
+            for units, core, allow in [([], server, False), ([server, server], server, True),
+                                       (['other.service'], server, True), ([], '../other', True)]:
+                with self.subTest(units=units, core=core, allow=allow), \
+                        self.assertRaises(ValueError):
+                    shutdown.close_session(units, core, compositor, ['quit-client'],
+                                           Path(tmp), allow_partial=allow)
+
     def test_receipt_exclusive_and_owned_units_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

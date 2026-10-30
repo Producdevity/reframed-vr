@@ -5282,3 +5282,33 @@ Diagnostic archives: v2 SHA-256
 `1517d3404df40afb7dce8a079d9972ed34579d0f03dc71dae33157d1b2502b58`;
 v3 SHA-256
 `3debffb292aea626e6ce9279d5b2695b614c81f42d80ceec9c7b562059d359a2`.
+
+### Failed-start and trace-reader cleanup (2026-10-30)
+
+The RR1 comparison repeat exposed two diagnostic cleanup defects. The old
+trace factory marked itself finished before joining its reader; a timed-out
+join therefore could never be retried or refreshed. The maintained
+`tools/pico-trace-stream.py` retries that join, retains the timeout as a capture
+rejection even if the reader later exits, and records its native thread ID,
+kernel stack, wait channel and syscall when available. It never closes another
+thread's descriptor or removes its trace instance. Six host regression cases
+include a real nonblocking FIFO drain and reproduce the old premature-finished
+failure. The cause of the native reader's original stall is still unverified.
+
+The next attempt rejected the new factory at a dependent source pin before
+SteamVR startup. Its error handler then called the shutdown coordinator with
+an incomplete unit list, raising before DSP/MCU cleanup. Explicit
+`close_session(..., allow_partial=True)` now stops only the registered owned
+units when startup is incomplete; it skips the quit request and cannot qualify
+a clean core exit. Strict complete-session validation remains the default.
+Ten shutdown tests cover empty and partially started sessions, ownership
+refusals, retained failures and ordinary shutdown receipts.
+
+This rejected attempt is retained in
+`output/pico-ipc-rr1-native-20261030-v3/`; it supplies no pacing comparison or
+optical result. After verifying that camera clients had exited and both DSPs
+were offline, recovery released the single MCU reference. The 72-data-member
+failure archive SHA-256 is
+`9757ab451f789d45e3d2e792cac7ce49951ccb80cfd357de8626c1bf065e32ea`.
+Firmware readbacks and muted offline stock return were verified afterward;
+the exact USB helper was retired, without an orderly wrapper-join receipt.

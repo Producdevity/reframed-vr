@@ -38,13 +38,16 @@ def record_exit(directory, unit):
 
 
 def close_session(units, server, compositor, command, directory, *, run=subprocess.run,
-                  clock=time.monotonic, sleep=time.sleep, grace_seconds=20):
+                  clock=time.monotonic, sleep=time.sleep, grace_seconds=20, allow_partial=False):
     units = [unit_name(unit) for unit in units]
-    if len(set(units)) != len(units) or server not in units or compositor not in units or server == compositor:
+    server, compositor = unit_name(server), unit_name(compositor)
+    missing = [unit for unit in (server, compositor) if unit not in units]
+    if len(set(units)) != len(units) or server == compositor or (missing and not allow_partial):
         raise ValueError('Invalid owned session')
     boot = boot_id()
     report = {'boot_id': boot, 'request': None, 'natural_core_exit': False,
-              'stops': [], 'exits': {}, 'errors': [], 'clean_core_shutdown': False}
+              'stops': [], 'exits': {}, 'errors': [], 'clean_core_shutdown': False,
+              'missing_core_units': missing}
     request_started_ns = time.monotonic_ns()
     report['request_started_ns'] = request_started_ns
 
@@ -67,8 +70,11 @@ def close_session(units, server, compositor, command, directory, *, run=subproce
         return row
 
     try:
-        report['request'] = invoke(command, 15)
-        if report['request']['returncode'] == 0:
+        if missing:
+            report['request_skipped'] = 'Core session did not fully start'
+        else:
+            report['request'] = invoke(command, 15)
+        if report['request'] is not None and report['request']['returncode'] == 0:
             end = clock() + grace_seconds
             while clock() < end:
                 if receipt(server) and receipt(compositor):
@@ -106,6 +112,8 @@ def main():
     parser.add_argument('--units', nargs='+')
     parser.add_argument('--server')
     parser.add_argument('--compositor')
+    parser.add_argument('--allow-partial', action='store_true',
+                        help='Clean up registered units after an incomplete startup; never qualifies clean core shutdown')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.record:
@@ -113,7 +121,8 @@ def main():
         return
     if not args.units or not args.server or not args.compositor or args.command[:1] != ['--'] or len(args.command) < 2:
         parser.error('Owned units, server, compositor and -- quit command are required')
-    report = close_session(args.units, args.server, args.compositor, args.command[1:], args.directory)
+    report = close_session(args.units, args.server, args.compositor, args.command[1:], args.directory,
+                           allow_partial=args.allow_partial)
     (args.directory / 'shutdown.json').write_text(json.dumps(report, indent=2) + '\n')
     print('PICO_STEAMVR_SHUTDOWN ' + json.dumps(report), flush=True)
     raise SystemExit(0 if report['clean_core_shutdown'] else 1)
