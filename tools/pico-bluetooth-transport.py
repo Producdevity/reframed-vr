@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import socket
+import stat
 import subprocess
 import time
 
@@ -38,9 +39,59 @@ def radio(sysfs=Path('/sys')):
     return soft, original
 
 
+def uart_power_target(sysfs=Path('/sys')):
+    uart = (sysfs / 'class/tty/ttyHS0').resolve(strict=True)
+    matches = [p for p in uart.parents if p.name == '998000.qcom,qup_uart']
+    if len(matches) != 1:
+        raise ValueError('Expected the Pico Bluetooth GENI UART at 0x998000')
+    device = matches[0]
+    driver = sysfs / 'bus/platform/drivers/msm_geni_serial'
+    if ((device / 'driver').resolve(strict=True) != driver.resolve(strict=True) or
+            (driver / device.name).resolve(strict=True) != device or
+            (device / 'subsystem').resolve(strict=True) !=
+            (sysfs / 'bus/platform').resolve(strict=True) or
+            (device / 'of_node/compatible').read_bytes() != b'qcom,msm-geni-serial-hs\0' or
+            (device / 'of_node/qcom,wakeup-byte').read_bytes() != b'\0\0\0\xfd'):
+        raise ValueError('Unexpected Pico Bluetooth UART binding')
+    control = device / 'power/control'
+    if control.is_symlink() or control.read_text().strip() not in ('on', 'auto'):
+        raise ValueError('Unexpected UART runtime-power policy')
+    return control.resolve(strict=True)
+
+
+def require_uart_awake(control, sysfs=Path('/sys')):
+    if uart_power_target(sysfs) != control:
+        raise RuntimeError('Bluetooth UART changed during ownership')
+    if (control.read_text().strip() != 'on' or
+            control.with_name('runtime_status').read_text().strip() != 'active'):
+        raise RuntimeError('Owned Bluetooth UART is not runtime-active')
+
+
+class TTYGuard:
+    def __init__(self, sysfs=Path('/sys')):
+        uart_power_target(sysfs)
+        expected = tuple(int(value) for value in
+                         (sysfs / 'class/tty/ttyHS0/dev').read_text().strip().split(':'))
+        self.fd = os.open('/dev/ttyHS0', os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK |
+                          os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(self.fd)
+            if (not stat.S_ISCHR(info.st_mode) or
+                    (os.major(info.st_rdev), os.minor(info.st_rdev)) != expected):
+                raise ValueError('TTY descriptor does not match the validated Bluetooth UART')
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if self.fd is not None:
+            descriptor, self.fd = self.fd, None
+            os.close(descriptor)
+
+
 def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
                   run=subprocess.run, spawn=subprocess.Popen, seconds=35,
-                  settle_seconds=18):
+                  settle_seconds=18, open_guard=TTYGuard):
     check_boot()
     inactive = run(['systemctl', 'is-active', '--quiet', 'bluetooth.service'], timeout=10)
     if inactive.returncode not in (3, 4):
@@ -49,9 +100,23 @@ def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
         raise ValueError('Refusing to adopt or replace an existing Bluetooth adapter')
     soft, original = radio(sysfs)
     target = soft.resolve(strict=True)
+    control = uart_power_target(sysfs)
+    original_policy = control.read_text().strip()
+    report['uart_runtime_power'] = {'control': str(control), 'original_policy': original_policy,
+                                   'initial_status': control.with_name('runtime_status').read_text().strip(),
+                                   'restored': False}
     child = None
+    guard = None
+    policy_written = False
     try:
         check_boot()
+        guard = open_guard(sysfs)
+        report['tty_guard_opened'] = True
+        # This vendor QCA TTY driver has no GENI clock-vote implementation.
+        control.write_text('on\n')
+        policy_written = True
+        require_uart_awake(control, sysfs)
+        report['uart_runtime_power']['held_policy'] = 'on'
         report['rfkill_before'] = original
         soft.write_text('0\n')
         if soft.read_text().strip() != '0':
@@ -65,6 +130,7 @@ def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
         report['startup_settle_seconds'] = settle_seconds
         while True:
             check_boot()
+            require_uart_awake(control, sysfs)
             if stopped():
                 return
             code = child.poll()
@@ -106,6 +172,7 @@ def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
         last_adapter = time.monotonic()
         while not stopped():
             check_boot()
+            require_uart_awake(control, sysfs)
             if (sysfs / 'class/bluetooth/hci0').exists():
                 identity.validate_transport(0, sysfs)
                 last_adapter = time.monotonic()
@@ -125,14 +192,38 @@ def own_transport(check_boot, stopped, report, ready, *, sysfs=Path('/sys'),
                 except subprocess.TimeoutExpired:
                     child.kill()
                     report['child_returncode'] = child.wait(timeout=3)
+            except BaseException as error:
+                errors.append(str(error))
+        try:
+            check_boot()
+            if uart_power_target(sysfs) != control:
+                raise RuntimeError('Bluetooth UART changed before power-policy restoration')
+            if policy_written and control.read_text().strip() != 'on':
+                raise RuntimeError('Bluetooth UART power policy changed outside ownership')
+            if policy_written:
+                if guard is None or (child is not None and 'child_returncode' not in report):
+                    raise RuntimeError('Cannot restore UART policy before owned child is reaped')
+                # GENI must suspend while the final TTY descriptor still owns its wake IRQ.
+                control.write_text(original_policy + '\n')
+                report['uart_runtime_power']['restored_before_tty_close'] = True
+            if control.read_text().strip() != original_policy:
+                raise RuntimeError('Bluetooth UART power-policy restoration did not read back')
+            report['uart_runtime_power']['restored'] = True
+        except BaseException as error:
+            errors.append(str(error))
+        try:
+            if guard is not None:
+                guard.close()
+                report['tty_guard_closed'] = True
+            if child is not None:
                 deadline = time.monotonic() + 3
                 while (sysfs / 'class/bluetooth/hci0').exists():
                     if time.monotonic() >= deadline:
                         raise RuntimeError('Owned HCI adapter did not detach')
                     time.sleep(.1)
                 report['adapter_detached'] = True
-            except BaseException as error:
-                errors.append(str(error))
+        except BaseException as error:
+            errors.append(str(error))
         try:
             check_boot()
             if soft.resolve(strict=True) != target:
