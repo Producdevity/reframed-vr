@@ -140,3 +140,30 @@ SHA-256 is `7c21e6e36954e4904b58e83da0fec59b4a13006fb4064a3e5e5ef1fa848ce87d`.
 Qualified identities, rounding bounds, source proofs, original rejection and
 shutdown logs are indexed by
 `output/pico-kgsl-fence-signal-analysis-20261030-v1/result.json`.
+
+### Upstream shared-memory waits (2026-10-30)
+
+Further analysis of that same accepted recording narrows the two 8 ms gaps.
+Present 5447 spends 7.162 ms in a successful shared futex wait; present 9398
+spends 7.043 ms. Wakeup-to-select time is only 8 and 4 microseconds respectively.
+These are render-thread sleep intervals before GPU submission, not fence-worker
+dispatch delays.
+
+Both addresses map to the retained Valve SteamVR shared-memory inode. The
+independently qualified 35,379-record syscall/register capture yields unique
+same-task/address/expected-word/timeout/CPU candidates within 2 microseconds of
+the ftrace entries (actual timestamp differences +704 and −542 ns). Their
+low-29-bit expected owners match the observed waking threads: Steam's
+`CVRAPIITask::Ru` and a vrserver IPC thread. Nearby task snapshots retain stable
+process/thread start identities. This supports robust-mutex owner attribution;
+it does not establish a named pose lock or the owner's complete run state.
+
+The second saved LR selects the pinned vrclient robust-lock call at ELF
+`0x241dbc`. The first returns into the pinned compositor at `0x16f658`, immediately
+after its NR98/op0 syscall call. Neither result justifies changing the mutex
+protocol or promoting all server threads to real time. The next capture selects
+the actual server tasks rather than relying on incidental scheduler rows.
+
+Whole-capture checks, exact joins, disassembly and input hashes are retained in
+`output/pico-upstream-delay-analysis-20261030-v1/result.json`. This is a narrower
+diagnosis, not a verified frame-pacing fix.
