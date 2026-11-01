@@ -31,6 +31,10 @@ bool pico_station_camera_read_register(unsigned slave, unsigned address, uint8_t
 bool pico_station_version(uint8_t *output);
 /* Neo3 selectors are 1 for left and 2 for right, unlike PICO 4's 0/1. */
 bool pico_station_controller_imu(unsigned hand, bool enabled, uint8_t *output);
+/* b1977 StationService::SetMotor: controller role 2/3, command 1, payload
+ * [on, level * scale / 100 capped at 255, duration_ms]. Level 0 stops. */
+bool pico_station_controller_motor(unsigned hand, unsigned level, unsigned scale_percent,
+                                   uint16_t duration_ms, uint8_t *output);
 bool pico_station_acknowledge(uint16_t sequence, uint8_t *output);
 
 /* Validate one complete fixed-size station response before interpreting it.

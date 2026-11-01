@@ -24,6 +24,15 @@ int main(void)
     golden("aa010702010000000000000000000000000000000000000000000000000000000000000000000048");
     assert(pico_station_controller_imu(2, false, frame));
     golden("aa0107020000000000000000000000000000000000000000000000000000000000000000000000a8");
+    /* CRCs from the stock packetData table in libstationopticsservice.so. */
+    assert(pico_station_controller_motor(1, 128, 75, 200, frame));
+    golden("aa02010160c80000000000000000000000000000000000000000000000000000000000000000002e");
+    assert(pico_station_controller_motor(2, 255, 100, 1000, frame));
+    golden("aa030101ffe8030000000000000000000000000000000000000000000000000000000000000000fc");
+    assert(pico_station_controller_motor(1, 0, 75, 200, frame));
+    golden("aa020100000000000000000000000000000000000000000000000000000000000000000000000014");
+    assert(pico_station_controller_motor(2, 200, 75, 0, frame));
+    golden("aa030101960000000000000000000000000000000000000000000000000000000000000000000042");
     assert(pico_station_camera_initialize(3, true, frame));
     golden("aa0104010300010000000000000000000000000000000000000000000000000000000000000000b7");
     assert(pico_station_camera_initialize_metadata(0, true, PICO_STATION_CAMERA_METADATA_EXPOSURE, frame));
@@ -48,6 +57,10 @@ int main(void)
     BAD(pico_station_controller_imu(0, true, frame));
     BAD(pico_station_controller_imu(3, false, frame));
     BAD(pico_station_controller_imu((unsigned)-1, true, frame));
+    BAD(pico_station_controller_motor(0, 128, 75, 200, frame));
+    BAD(pico_station_controller_motor(3, 128, 75, 200, frame));
+    BAD(pico_station_controller_motor(1, 256, 75, 200, frame));
+    BAD(pico_station_controller_motor(1, 128, 101, 200, frame));
     BAD(pico_station_camera_initialize(5, false, frame));
     BAD(pico_station_camera_initialize((unsigned)-1, true, frame));
     BAD(pico_station_camera_initialize_metadata(5, true, PICO_STATION_CAMERA_METADATA_EXPOSURE, frame));
@@ -69,6 +82,7 @@ int main(void)
     assert(!pico_station_camera_read_register(0xe6, 0x300a, NULL));
     assert(!pico_station_version(NULL));
     assert(!pico_station_controller_imu(1, true, NULL));
+    assert(!pico_station_controller_motor(1, 128, 75, 200, NULL));
     assert(!pico_station_acknowledge(0, NULL));
 
     const char *reply = "bb01040f0102030000000000000000000000000000000000000000000000000000000000000000dd";

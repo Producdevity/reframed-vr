@@ -12,14 +12,20 @@ static uint8_t checksum(const uint8_t *bytes, size_t size)
     return (uint8_t)result;
 }
 
-static bool encode(uint8_t command, const uint8_t *payload, size_t count, uint8_t *output)
+static bool encode_role(uint8_t role, uint8_t command, const uint8_t *payload, size_t count,
+                        uint8_t *output)
 {
     if (!output || count > 36 || (count && !payload)) return false;
-    uint8_t frame[PICO_STATION_FRAME_SIZE] = {0xaa, 1, command};
+    uint8_t frame[PICO_STATION_FRAME_SIZE] = {0xaa, role, command};
     if (count) memcpy(frame + 3, payload, count);
     frame[39] = checksum(frame, 39);
     memcpy(output, frame, sizeof(frame));
     return true;
+}
+
+static bool encode(uint8_t command, const uint8_t *payload, size_t count, uint8_t *output)
+{
+    return encode_role(1, command, payload, count, output);
 }
 
 bool pico_station_camera_initialize(unsigned camera, bool raw8, uint8_t *output)
@@ -79,6 +85,21 @@ bool pico_station_controller_imu(unsigned hand, bool enabled, uint8_t *output)
     if (hand < 1 || hand > 2) return false;
     const uint8_t data[] = {(uint8_t)hand, enabled ? 1 : 0};
     return encode(7, data, sizeof(data), output);
+}
+
+bool pico_station_controller_motor(unsigned hand, unsigned level, unsigned scale_percent,
+                                   uint16_t duration_ms, uint8_t *output)
+{
+    if (hand < 1 || hand > 2 || level > 255 || scale_percent > 100) return false;
+    uint8_t data[4] = {0};
+    if (level) {
+        unsigned amplitude = level * scale_percent / 100;
+        data[0] = 1;
+        data[1] = amplitude > 255 ? 255 : (uint8_t)amplitude;
+        data[2] = (uint8_t)duration_ms;
+        data[3] = (uint8_t)(duration_ms >> 8);
+    }
+    return encode_role((uint8_t)(hand + 1), 1, data, sizeof(data), output);
 }
 
 bool pico_station_acknowledge(uint16_t sequence, uint8_t *output)
