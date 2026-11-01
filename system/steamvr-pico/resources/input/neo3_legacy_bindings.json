@@ -185,6 +185,16 @@
             }
           }
         }
+      ],
+      "haptics": [
+        {
+          "output": "/actions/legacy/out/left_haptic",
+          "path": "/user/hand/left/output/haptic"
+        },
+        {
+          "output": "/actions/legacy/out/right_haptic",
+          "path": "/user/hand/right/output/haptic"
+        }
       ]
     }
   }

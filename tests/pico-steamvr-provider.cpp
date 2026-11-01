@@ -4,6 +4,8 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <cerrno>
 
 static std::string command_line;
 static FILE *fixture_cmdline()
@@ -120,6 +122,31 @@ int main(int argc,char **argv)
         assert(partial.host.registered_hmd && partial.host.controllers.size()==1);
         assert(partial.host.controllers.at("-left")->Activate(3)==VRInitError_None);
         provider.RunFrame();provider.Cleanup();
+    }
+    {
+        std::string fifo=std::string(argv[2])+"/haptics";
+        assert(!mkfifo(fifo.c_str(),0620));
+        assert(!setenv("PICO_STEAMVR_HAPTICS_FIFO",fifo.c_str(),1));
+        Context haptic;haptic.host.register_controllers=true;PicoProvider provider;
+        assert(provider.Init(&haptic)==VRInitError_None);
+        auto *l=haptic.host.controllers.at("-left");assert(l->Activate(3)==VRInitError_None);
+        VREvent_t event{};event.eventType=VREvent_Input_HapticVibration;
+        event.data.hapticVibration.componentHandle=haptic.input.haptics.at(13);
+        event.data.hapticVibration.fDurationSeconds=.2f;event.data.hapticVibration.fAmplitude=128/255.f;
+        haptic.host.events.push_back(event);provider.RunFrame();
+        int reader=open(fifo.c_str(),O_RDONLY|O_NONBLOCK);assert(reader>=0);
+        haptic.host.events.push_back(event);provider.RunFrame();
+        pico_controller_haptic request{};
+        assert(read(reader,&request,sizeof(request))==sizeof(request) && pico_controller_haptic_valid(&request));
+        assert(request.hand==1 && request.level==128 && request.duration_ms==200);
+        assert(read(reader,&request,sizeof(request))==-1 && errno==EAGAIN);
+        assert(!close(reader));
+        haptic.host.events.push_back(event);provider.RunFrame();
+        provider.Cleanup();
+        assert(!chmod(fifo.c_str(),0622));
+        Context open_fifo;open_fifo.host.register_controllers=true;PicoProvider rejected;
+        assert(rejected.Init(&open_fifo)==VRInitError_Driver_Failed);rejected.Cleanup();
+        assert(!unsetenv("PICO_STEAMVR_HAPTICS_FIFO") && !unlink(fifo.c_str()));
     }
     assert(!munmap(left,sizeof(*left)) && !munmap(right,sizeof(*right)) && !munmap(input,sizeof(*input)));
     puts("PICO_STEAMVR_PROVIDER_PASS rejected_controller_retains_hmd=1 duplicate_serials=2 dual_hand_bindings=4 invalid_bindings=7");

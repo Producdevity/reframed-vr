@@ -37,6 +37,8 @@ def main():
     sources = ['src/pico-steamvr-driver.cpp', 'src/pico-steamvr-display.cpp', 'src/pico-steamvr-config.cpp',
                'src/pico-steamvr-controller.cpp', 'src/pico-steamvr-controller.h',
                'src/pico-controller-channel.c', 'src/pico-controller-channel.h', 'src/pico-controller.h',
+               'src/pico-controller-haptics.c', 'src/pico-controller-haptics.h',
+               'src/pico-station-protocol.c', 'src/pico-station-protocol.h',
                'src/pico-steamvr-display.h', 'src/pico-steamvr-pose.cpp', 'src/pico-steamvr-pose.h',
                'src/pico-slam-channel.c', 'src/pico-slam-channel.h', 'src/pico-slam-pose.c',
                'src/pico-slam-pose.h', 'src/pico-slam-result.h', 'profiles/openvr.json',
@@ -67,7 +69,8 @@ def main():
                      '-I', str(ROOT / 'src'), '-isystem', str(args.sdk), '-I', str(args.cjson)]
             objects = []
             units = [(ROOT / 'src' / (name + '.c'), args.cc, 'c11')
-                     for name in ['pico-slam-channel', 'pico-slam-pose', 'pico-controller-channel']]
+                     for name in ['pico-slam-channel', 'pico-slam-pose', 'pico-controller-channel',
+                                  'pico-controller-haptics', 'pico-station-protocol']]
             units += [(args.cjson / 'cJSON.c', args.cc, 'c11')]
             units += [(ROOT / 'src' / (name + '.cpp'), args.cxx, 'c++17')
                       for name in ['pico-steamvr-driver', 'pico-steamvr-display', 'pico-steamvr-config',

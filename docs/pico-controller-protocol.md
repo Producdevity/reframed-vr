@@ -965,15 +965,17 @@ b1977 `StationService::SetMotor(hand, level, duration)` at `0x4c3e0` of the same
 `libstationopticsservice.so` builds `AA <role> 01` with role 2 for the left and 3
 for the right controller, the same role mapping as calibration. Its four-byte
 payload is `[on, min(level × scale / 100, 255), duration_ms low, high]`, where
-`scale` is the service's stored controller motor level (`SetControllerMotorLevel`)
+`scale` is the service's stored controller motor level (`SetControllerMotorLevel`,
+default 75 when unconfigured, as in the service constructor at `0x47d18`)
 and level 0 sends an all-zero payload. A duration of −999 also encodes as zero.
 The frame goes to the MCU through `MCUServer::mcuSend` with mode 1.
 
 `pico_station_controller_motor` encodes this frame. Its golden CRCs come from
 the stock `packetData` table, which also reproduces the existing version vector.
-It performs no I/O: SteamVR haptics still need a route from the driver's
-`/output/haptic` events to the process that owns `/dev/spidev0.0`, the stock
-default motor level, and a physical check that the controller vibrates.
+It performs no I/O. [`pico-controller-haptics.c`](../src/pico-controller-haptics.c)
+carries SteamVR vibration requests from the driver to the process that owns
+`/dev/spidev0.0`, which writes these frames; a physical check that the
+controller vibrates is still required.
 
 ## Verification
 

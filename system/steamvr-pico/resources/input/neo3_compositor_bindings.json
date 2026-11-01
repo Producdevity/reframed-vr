@@ -145,6 +145,16 @@
           "path": "/user/hand/right/pose/tip",
           "output": "/actions/lasermouse/in/pointer"
         }
+      ],
+      "haptics": [
+        {
+          "output": "/actions/lasermouse/out/haptic",
+          "path": "/user/hand/left/output/haptic"
+        },
+        {
+          "output": "/actions/lasermouse/out/haptic",
+          "path": "/user/hand/right/output/haptic"
+        }
       ]
     },
     "/actions/lasermouse_secondary": {

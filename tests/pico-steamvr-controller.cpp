@@ -1,11 +1,13 @@
 #include "pico-steamvr-controller.h"
 #include <cassert>
 #include <cstring>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <map>
 #include <string>
 #include <thread>
+#include <vector>
 #include <chrono>
 using namespace vr;
 struct MockIVRProperties final : IVRProperties {
@@ -90,11 +92,16 @@ struct MockIVRDriverInput final : IVRDriverInput {
         scalars[scalar_names.at(ulComponent)] = fNewValue;
         return VRInputError_None;
     }
+    std::map<uint64_t, VRInputComponentHandle_t> haptics;
     EVRInputError CreateHapticComponent(PropertyContainerHandle_t ulContainer, const char *pchName,
                                         VRInputComponentHandle_t *pHandle) override
     {
-        assert(false);
-        return VRInputError_InvalidParam;
+        if (fail_create)
+            return VRInputError_InvalidParam;
+        assert(!std::strcmp(pchName, "/output/haptic"));
+        *pHandle = 2000 + ulContainer;
+        haptics[ulContainer] = *pHandle;
+        return VRInputError_None;
     }
     EVRInputError CreateSkeletonComponent(PropertyContainerHandle_t ulContainer, const char *pchName,
                                           const char *pchSkeletonPath, const char *pchBasePosePath,
@@ -191,8 +198,14 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
         assert(false);
         return {};
     }
+    std::vector<VREvent_t> events;
     bool PollNextEvent(VREvent_t *pEvent, uint32_t uncbVREvent) override
     {
+        if (!events.empty()) {
+            assert(uncbVREvent == sizeof(VREvent_t));
+            *pEvent = events.front();events.erase(events.begin());
+            return true;
+        }
         if (reject_controller || register_controllers) return false;
         assert(false);
         return {};
@@ -272,6 +285,18 @@ int main()
         assert(context.properties.role == TrackedControllerRole_LeftHand);
         assert(context.properties.model == "{reframed_pico}neo3_left");
         assert(context.input.names.size() == 12 && context.input.scalar_names.size() == 4);
+        {
+            VREvent_HapticVibration_t vibration{};
+            vibration.componentHandle = context.input.haptics.at(13);
+            vibration.fDurationSeconds = .2f; vibration.fAmplitude = 128 / 255.f;
+            pico_controller_haptic request{};
+            assert(driver.haptic(vibration, request) && request.hand == 1 && request.level == 128 &&
+                   request.duration_ms == 200);
+            vibration.componentHandle += 1;
+            assert(!driver.haptic(vibration, request));
+            vibration.componentHandle -= 1; vibration.fAmplitude = NAN;
+            assert(!driver.haptic(vibration, request));
+        }
         assert(context.input.units.at("/input/trigger/value") == VRScalarUnits_NormalizedOneSided);
         assert(context.input.units.at("/input/grip/value") == VRScalarUnits_NormalizedOneSided);
         assert(context.input.units.at("/input/joystick/x") == VRScalarUnits_NormalizedTwoSided);
@@ -373,7 +398,14 @@ int main()
             assert(entry.second == 0);
         char debug[256];
         driver.DebugRequest("", debug, sizeof debug);
-        assert(std::strstr(debug, "failures=1") && std::strstr(debug, "pose_valid=0"));
+        assert(std::strstr(debug, "failures=1") && std::strstr(debug, "pose_valid=0") &&
+               std::strstr(debug, "haptics=1"));
+        {
+            VREvent_HapticVibration_t vibration{};
+            vibration.componentHandle = context.input.haptics.at(13); vibration.fAmplitude = 1;
+            pico_controller_haptic request{};
+            assert(!driver.haptic(vibration, request));
+        }
         unsigned before_reactivation = context.input.updates;
         assert(driver.Activate(3) == VRInitError_None);
         assert(pico_controller_channel_disconnect(&channel, 1));

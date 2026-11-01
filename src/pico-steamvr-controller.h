@@ -2,6 +2,7 @@
 #define REFRAMED_PICO_STEAMVR_CONTROLLER_H
 
 #include "pico-controller-channel.h"
+#include "pico-controller-haptics.h"
 #include "pico-slam-channel.h"
 #include <openvr_driver.h>
 #include <mutex>
@@ -24,10 +25,10 @@ class PicoSteamvrController final : public vr::ITrackedDeviceServerDriver {
     const pico_steamvr_controller_tracking tracking;
     std::mutex mutex;
     vr::TrackedDeviceIndex_t index = vr::k_unTrackedDeviceIndexInvalid;
-    vr::VRInputComponentHandle_t inputs[12]{}, scalars[4]{};
+    vr::VRInputComponentHandle_t inputs[12]{}, scalars[4]{}, haptic_component{};
     bool connected = false, values[12]{}, initialized[12]{}, scalar_initialized[4]{};
     float scalar_values[4]{};
-    uint64_t updates = 0, changes = 0, failures = 0, input_calls = 0;
+    uint64_t updates = 0, changes = 0, failures = 0, input_calls = 0, haptic_requests = 0;
     void publish(const pico_controller_sample &sample, bool active);
     vr::DriverPose_t read_pose();
     vr::DriverPose_t read_pose(bool active);
@@ -42,6 +43,8 @@ public:
     void DebugRequest(const char *, char *, uint32_t) override;
     vr::DriverPose_t GetPose() override;
     void Update();
+    /* Converts a vibration event for this controller's /output/haptic component. */
+    bool haptic(const vr::VREvent_HapticVibration_t &event, pico_controller_haptic &request);
 };
 
 #endif

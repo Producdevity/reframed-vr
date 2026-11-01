@@ -20,7 +20,8 @@ class PicoSteamvrControllerTests(unittest.TestCase):
             flags = ['-O1', '-g', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                      '-fno-sanitize-recover=all', '-I', str(ROOT / 'src')]
             objects = []
-            for name in ('pico-controller-channel', 'pico-slam-channel', 'pico-slam-pose'):
+            for name in ('pico-controller-channel', 'pico-slam-channel', 'pico-slam-pose',
+                         'pico-controller-haptics', 'pico-station-protocol'):
                 target = directory / (name + '.o')
                 subprocess.run(['cc', '-std=c11', *flags, '-c', str(ROOT / 'src' / (name + '.c')),
                                 '-o', str(target)], check=True, text=True, timeout=30)

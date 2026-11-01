@@ -5,12 +5,14 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <thread>
@@ -159,6 +161,20 @@ class PicoProvider final : public vr::IServerTrackedDeviceProvider {
     pico_slam_channel *channel=nullptr;
     pico_controller_channel *controller_channel=nullptr;
     pico_slam_channel *controller_poses[2]{};
+    std::string haptic_path;
+    int haptic_fd=-1;
+    uint64_t haptic_sent=0,haptic_dropped=0;
+    void send_haptic(const pico_controller_haptic &request) {
+        if (haptic_fd<0) {
+            haptic_fd=open(haptic_path.c_str(),O_WRONLY|O_NONBLOCK|O_CLOEXEC|O_NOFOLLOW);
+            struct stat st;
+            if (haptic_fd>=0 && (fstat(haptic_fd,&st) || !S_ISFIFO(st.st_mode))) {close(haptic_fd);haptic_fd=-1;}
+        }
+        int rc=haptic_fd<0?-ENXIO:pico_controller_haptic_send(haptic_fd,&request);
+        if (!rc) {++haptic_sent;return;}
+        ++haptic_dropped;
+        if (rc!=-EAGAIN && haptic_fd>=0) {close(haptic_fd);haptic_fd=-1;}
+    }
 public:
     vr::EVRInitError Init(vr::IVRDriverContext *context) override {
         VR_INIT_SERVER_DRIVER_CONTEXT(context);
@@ -252,6 +268,14 @@ public:
                 controllers[hand]=std::make_unique<PicoSteamvrController>(controller_channel,controller_instance,hand+1,tracking);
             }
         }
+        if (const char *haptics=std::getenv("PICO_STEAMVR_HAPTICS_FIFO")) {
+            struct stat fifo{};
+            if (!controller_file || haptics[0]!='/' || lstat(haptics,&fifo) || !S_ISFIFO(fifo.st_mode) ||
+                (fifo.st_uid!=0 && fifo.st_uid!=geteuid()) || (fifo.st_mode&0002)) {
+                Cleanup();return vr::VRInitError_Driver_Failed;
+            }
+            haptic_path=haptics;
+        }
         headset=std::make_unique<PicoHeadset>(optics,channel,instance,generation,max_age);
         if (!vr::VRServerDriverHost()->TrackedDeviceAdded(optics.serial,vr::TrackedDeviceClass_HMD,headset.get())) {
             Cleanup();return vr::VRInitError_Driver_Failed;
@@ -270,6 +294,8 @@ public:
     }
     void Cleanup() override {
         for (auto &controller:controllers) controller.reset();
+        if (haptic_fd>=0) {close(haptic_fd);haptic_fd=-1;}
+        haptic_path.clear();
         for (auto &poses:controller_poses) if (poses) {munmap(poses,sizeof(*poses));poses=nullptr;}
         if (controller_channel) {munmap(controller_channel,sizeof(*controller_channel));controller_channel=nullptr;}
         headset.reset();
@@ -280,7 +306,16 @@ public:
     void RunFrame() override {
         for (auto &controller:controllers) if (controller) controller->Update();
         vr::VREvent_t event;
-        while (vr::VRServerDriverHost()->PollNextEvent(&event,sizeof(event))) {}
+        while (vr::VRServerDriverHost()->PollNextEvent(&event,sizeof(event))) {
+            if (event.eventType!=vr::VREvent_Input_HapticVibration || haptic_path.empty()) continue;
+            /* VREvent_t is packed; copy the payload before binding a reference to it. */
+            vr::VREvent_HapticVibration_t vibration;
+            std::memcpy(&vibration,reinterpret_cast<const unsigned char *>(&event)+offsetof(vr::VREvent_t,data),
+                        sizeof(vibration));
+            pico_controller_haptic request;
+            for (auto &controller:controllers)
+                if (controller && controller->haptic(vibration,request)) {send_haptic(request);break;}
+        }
     }
     bool ShouldBlockStandbyMode() override { return false; }
     void EnterStandby() override {}

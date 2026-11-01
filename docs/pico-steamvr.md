@@ -139,7 +139,21 @@ at 0 and reach 255 when pressed; the stick rests at exactly (128, 128) and
 reaches 0 and 255 on both axes. Values map to 0–1 and −1–1 with a 0.1 radial
 dead zone rescaled to full deflection. Stick +Y is assumed to be up, as in
 PicoFrame's mapping; that sign and the dead-zone feel still need a physical
-check. Haptics remain unsupported.
+check.
+
+Each controller registers `/output/haptic`, declared as a `vibration` source.
+The legacy and laser-mouse bindings route their vibration actions to it, as
+SteamVR's Touch bindings do; the action types are checked against the runtime
+manifests. With `PICO_STEAMVR_HAPTICS_FIFO` set to an absolute FIFO owned by
+root or the driver user and not world-writable, the provider converts each
+vibration event (amplitude 0–1 to level 0–255, duration clamped to 10–5,000 ms)
+into an eight-byte request and writes it without blocking. A missing reader or
+full FIFO drops the request; a departed reader cannot raise SIGPIPE in
+`vrserver`. Without the variable no haptic writes occur. The process that owns
+the station SPI device calls `pico_controller_haptic_forward` to encode each
+request as the stock motor frame (see the
+[controller protocol](pico-controller-protocol.md#controller-motor-command)),
+using stock's default 75 % motor level. Physical vibration is unverified.
 
 Host tests exercise real adapter methods against mocked OpenVR callbacks under
 ASan/UBSan, including stale input, failed updates, disconnect/reconnect and
@@ -199,8 +213,8 @@ The legacy binding routes trigger pull, grip pull and joystick position to
 the legacy axis1, axis2 and axis0 values, following SteamVR's Touch legacy
 binding; the action types are checked against the runtime manifest. The
 compositor binding also supplies digital room-setup accept/back and
-dual-analog click/touch actions. It does not supply scrolling, haptics or
-skeleton actions. Right-hand paths reserve the corresponding A/B
+dual-analog click/touch actions and laser-mouse haptics. It does not supply
+scrolling or skeleton actions. Right-hand paths reserve the corresponding A/B
 layout; the current driver registers only the left controller, and right-hand
 hardware acceptance remains pending. Thumbrest touch remains available to
 applications through explicit bindings but has no legacy/dashboard mapping here.

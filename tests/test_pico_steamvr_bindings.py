@@ -29,7 +29,9 @@ class PicoSteamvrBindingTests(unittest.TestCase):
         for binding in self.bindings.values():
             for group in binding['bindings'].values():
                 paths = set()
-                self.assertFalse(group.get('haptics'))
+                for item in group.get('haptics', []):
+                    self.assertIn(item['path'], ('/user/hand/left/output/haptic', '/user/hand/right/output/haptic'))
+                    self.assertEqual(self.profile['input_source']['/output/haptic']['type'], 'vibration')
                 self.assertFalse(group.get('skeleton'))
                 for item in group['sources']:
                     path = item['path']
@@ -92,6 +94,8 @@ class PicoSteamvrBindingTests(unittest.TestCase):
                         self.assertEqual(actions[target['output'].lower()], expected)
                 for pose in group.get('poses', []):
                     self.assertEqual(actions[pose['output'].lower()], 'pose')
+                for haptic in group.get('haptics', []):
+                    self.assertEqual(actions[haptic['output'].lower()], 'vibration')
 
 
 if __name__ == '__main__':

@@ -75,6 +75,8 @@ vr::EVRInitError PicoSteamvrController::Activate(uint32_t id)
         ok = (vr::VRDriverInput()->CreateScalarComponent(container, analog[i], &scalars[i],
               vr::VRScalarType_Absolute, i < 2 ? vr::VRScalarUnits_NormalizedOneSided :
               vr::VRScalarUnits_NormalizedTwoSided) == vr::VRInputError_None) && ok;
+    ok = (vr::VRDriverInput()->CreateHapticComponent(container, "/output/haptic", &haptic_component)
+          == vr::VRInputError_None) && ok;
     if (!ok) return vr::VRInitError_Driver_Failed;
     for (auto &ready : initialized) ready = false;
     for (auto &ready : scalar_initialized) ready = false;
@@ -137,6 +139,17 @@ void PicoSteamvrController::Deactivate()
     index = vr::k_unTrackedDeviceIndexInvalid;
 }
 
+bool PicoSteamvrController::haptic(const vr::VREvent_HapticVibration_t &event, pico_controller_haptic &request)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (index == vr::k_unTrackedDeviceIndexInvalid || !haptic_component ||
+        event.componentHandle != haptic_component ||
+        !pico_controller_haptic_from_openvr(hand, event.fDurationSeconds, event.fAmplitude, &request))
+        return false;
+    ++haptic_requests;
+    return true;
+}
+
 vr::DriverPose_t PicoSteamvrController::GetPose()
 {
     std::lock_guard<std::mutex> lock(mutex);
@@ -168,8 +181,8 @@ void PicoSteamvrController::DebugRequest(const char *, char *response, uint32_t 
     if (!size) return;
     std::lock_guard<std::mutex> lock(mutex);
     auto pose = read_pose();
-    std::snprintf(response, size, "PICO_CONTROLLER_INPUT hand=%u connected=%d updates=%llu changes=%llu failures=%llu pose_valid=%d input_calls=%llu",
+    std::snprintf(response, size, "PICO_CONTROLLER_INPUT hand=%u connected=%d updates=%llu changes=%llu failures=%llu pose_valid=%d input_calls=%llu haptics=%llu",
         hand, connected, static_cast<unsigned long long>(updates),
         static_cast<unsigned long long>(changes), static_cast<unsigned long long>(failures), pose.poseIsValid,
-        static_cast<unsigned long long>(input_calls));
+        static_cast<unsigned long long>(input_calls), static_cast<unsigned long long>(haptic_requests));
 }
