@@ -2589,3 +2589,36 @@ controller motion are the next discriminating physical test; other candidates'
 later rejection stages remain unobserved. Debugger/logging instrumentation is
 not pacing acceptance. Exact call-chain and probe sources are retained in
 `output/pico-controller-candidate-thread-audit-20261029-v1/`.
+
+### Tracked result frame and render-model alignment (2026-11-01)
+
+An on-device CPU replay of the unchanged b1977 SDK with the saturated five-LED
+control now logs the public getter's left result. All 693 state-1 results have
+internal confidence byte `0x52 == 1`. After a convergence transient of about
+40 ms, the position settles at (−219.47, −58.87, −265.29) — the SDK's own
+world prediction (−0.2168, −0.0583, −0.2635) m in **millimetres**, not its
+head-relative optimizer value (−0.198, −0.059, −0.277) m. The quaternion is
+stored w, x, y, z at offset `0x20`, as in head results. Controller results
+therefore share the head's vendor SLAM world.
+
+The 16 factory LED coordinates of each hand were registered onto the
+attributed Neo3 render model's surface. With exactly the stock +90° Z basis
+change, the fit has 2.00/2.02 mm RMS (left/right), at most 2.95 mm, and an
+origin offset below 1 mm. The −90°, identity, 180° and flipped-ring bases fit at
+3.7–11.5 mm RMS with 6–9 cm origin shifts. The model frame is thus the tracker's
+controller frame under the same basis change stock applies to world results
+(see the oracle above), with coincident origins.
+
+[`pico-controller-pose.c`](../src/pico-controller-pose.c) publishes
+`world_from_model = world_from_slam · T_result · tracker_from_model` into the
+existing per-hand SLAM channel ABI, with `tracker_from_model` = −90° about Z and
+the head producer's `world_from_slam`. It accepts only state 1 with byte `0x52`
+set; public confidence alone is not accepted because the getter can synthesize
+it. Untracked, undecodable or stale results invalidate the pose without ending
+the generation, so reacquisition recovers it; repeated timestamps are ignored.
+The ASan/UBSan test uses the on-device getter values.
+
+The replay is synthetic and stationary; it does not establish live acquisition,
+the aim ray or grip feel. Evidence: `output/pico-controller-result-frame-20261101-v1/`
+(replay log SHA-256
+`96f6f7a125eb3e80bfe02a3b61d7e9e8b24cd1030b111a82548828c4e2b3cdfe`).
