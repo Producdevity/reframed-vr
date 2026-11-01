@@ -154,6 +154,12 @@ the station SPI device calls `pico_controller_haptic_forward` to encode each
 request as the stock motor frame (see the
 [controller protocol](pico-controller-protocol.md#controller-motor-command)),
 using stock's default 75 % motor level. Physical vibration is unverified.
+The live probe's `--left-controller`/`--right-controller` modes send one 5 ms
+legacy haptic pulse at their fourth sample when the controller is connected, so
+a session run exercises the SteamVR binding, driver and FIFO path; the probe
+prints `PICO_STEAMVR_HAPTIC_PULSE` and the controller debug response counts
+`haptics`. In the first native run both controllers were asleep, so the owner
+opened the FIFO but forwarded no frame.
 
 Host tests exercise real adapter methods against mocked OpenVR callbacks under
 ASan/UBSan, including stale input, failed updates, disconnect/reconnect and

@@ -229,6 +229,10 @@ int main(int argc,char **argv)
                 state_ok=system->GetControllerState(id,&state,sizeof(state));
                 input_debug->DriverDebugRequest(id,"input",response,sizeof(response));
             }
+            if (connected&&i/100==3) {
+                system->TriggerHapticPulse(id,0,5000);
+                std::printf("PICO_STEAMVR_HAPTIC_PULSE tick=%ld id=%u duration_us=5000\n",i/100,id);
+            }
             controller_connected+=connected;
             controller_states+=connected&&state_ok;
             controller_poses+=pose_valid;
