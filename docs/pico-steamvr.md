@@ -91,6 +91,23 @@ Provide all of:
 | `PICO_STEAMVR_GENERATION` | Nonzero estimator generation, 16 lowercase hex digits |
 | `PICO_STEAMVR_MAX_AGE_NS` | Explicit maximum pose age, at most 100 ms |
 
+## Optional pose prediction
+
+The live SLAM channel carries orientation and position only, so by default the
+head pose reports zero `vecVelocity` and `vecAngularVelocity`. SteamVR then has
+no motion model to extrapolate the pose to photon time, which leaves visible lag
+and swim while the head moves. Setting `PICO_STEAMVR_PREDICT_VELOCITY=1` enables
+an opt-in finite-difference estimator in the HMD pose adapter: consecutive
+accepted world-from-head poses of one generation are differenced into linear and
+angular velocity in the tracking frame. A generation change, a stale or invalid
+read, or a gap wider than `PICO_STEAMVR_MAX_AGE_NS` resets it to zero rather than
+differencing across a tracking hole; a repeated read of the still-committed
+sample carries the last estimate forward. The estimator adds no smoothing, head
+model or prediction of its own, and the velocity math is validated offline in
+`tests/pico-steamvr-pose.cpp`. It is disabled unless the variable is exactly `1`,
+and physical head-motion and jitter acceptance remain open (see
+[VR acceptance](pico-vr-acceptance.md)).
+
 ## Optional controller input
 
 The physical driver registers separate left and right Neo3 controllers when both

@@ -122,10 +122,86 @@ static void head_motion_convention()
     }
 }
 
+static void velocity_estimation()
+{
+    pico_slam_pose_config config{};
+    config.world_from_slam.orientation[3]=config.body_from_head.orientation[3]=1;
+    config.direction=PICO_SLAM_WORLD_FROM_BODY;config.metres_per_unit=1;config.max_age_ns=100000000;
+    const int64_t age=100000000,t0=1000000000,dt=10000000; /* 10 ms sample interval */
+    auto publish=[&](pico_slam_channel &channel,uint64_t gen,pico_slam_result &r){
+        assert(pico_slam_channel_publish_result(&channel,gen,&config,&r,1000,
+            r.timestamp_ns+1000000)==PICO_SLAM_CHANNEL_PUBLISHED);
+    };
+
+    /* Constant +x translation of 0.1 m over 10 ms differentiates to 10 m/s. */
+    {
+        pico_slam_channel channel{};
+        assert(pico_slam_channel_init(&channel,55)&&pico_slam_channel_begin(&channel,1));
+        pico_steamvr_velocity_estimator est{};est.max_gap_ns=50000000;
+        pico_slam_result r{};r.state=r.confidence=1;r.orientation[3]=1;r.timestamp_ns=t0;publish(channel,1,r);
+        auto p=pico_steamvr_pose(&channel,55,1,t0+1000000,age,true,&est);
+        assert(p.poseIsValid);
+        for (unsigned i=0;i<3;++i){near(p.vecVelocity[i],0);near(p.vecAngularVelocity[i],0);}
+        r.timestamp_ns=t0+dt;r.position[0]=.1;publish(channel,1,r);
+        p=pico_steamvr_pose(&channel,55,1,t0+dt+1000000,age,true,&est);
+        near(p.vecVelocity[0],10);near(p.vecVelocity[1],0);near(p.vecVelocity[2],0);
+        for (unsigned i=0;i<3;++i) near(p.vecAngularVelocity[i],0);
+        /* A repeated read of the still-committed sample keeps the last estimate. */
+        auto repeated=pico_steamvr_pose(&channel,55,1,t0+dt+2000000,age,true,&est);
+        near(repeated.vecVelocity[0],10);
+        /* An invalid read clears history so reacquisition cannot differentiate across it. */
+        auto dropped=pico_steamvr_pose(&channel,55,1,t0+dt+1000000,age,false,&est);
+        assert(!dropped.poseIsValid&&!est.has_previous);
+    }
+
+    /* Constant 0.1 rad yaw about world up over 10 ms differentiates to 10 rad/s. */
+    {
+        pico_slam_channel channel{};
+        assert(pico_slam_channel_init(&channel,56)&&pico_slam_channel_begin(&channel,1));
+        pico_steamvr_velocity_estimator est{};est.max_gap_ns=50000000;
+        pico_slam_result r{};r.state=r.confidence=1;r.orientation[3]=1;r.timestamp_ns=t0;publish(channel,1,r);
+        auto first=pico_steamvr_pose(&channel,56,1,t0+1000000,age,true,&est);
+        for (unsigned i=0;i<3;++i) near(first.vecAngularVelocity[i],0);
+        r.timestamp_ns=t0+dt;r.orientation[1]=std::sin(.05);r.orientation[3]=std::cos(.05);publish(channel,1,r);
+        auto p=pico_steamvr_pose(&channel,56,1,t0+dt+1000000,age,true,&est);
+        near(p.vecAngularVelocity[0],0);near(p.vecAngularVelocity[1],10);near(p.vecAngularVelocity[2],0);
+        for (unsigned i=0;i<3;++i) near(p.vecVelocity[i],0);
+    }
+
+    /* A new generation resets the estimator rather than differencing across it. */
+    {
+        pico_slam_channel channel{};
+        assert(pico_slam_channel_init(&channel,57)&&pico_slam_channel_begin(&channel,1));
+        pico_steamvr_velocity_estimator est{};est.max_gap_ns=50000000;
+        pico_slam_result r{};r.state=r.confidence=1;r.orientation[3]=1;r.timestamp_ns=t0;publish(channel,1,r);
+        (void)pico_steamvr_pose(&channel,57,1,t0+1000000,age,true,&est);
+        r.timestamp_ns=t0+dt;r.position[0]=.1;publish(channel,1,r);
+        near(pico_steamvr_pose(&channel,57,1,t0+dt+1000000,age,true,&est).vecVelocity[0],10);
+        assert(pico_slam_channel_begin(&channel,2));
+        pico_slam_result r2{};r2.state=r2.confidence=1;r2.orientation[3]=1;r2.position[0]=.5;r2.timestamp_ns=t0+2*dt;publish(channel,2,r2);
+        auto reset=pico_steamvr_pose(&channel,57,2,t0+2*dt+1000000,age,true,&est);
+        for (unsigned i=0;i<3;++i){near(reset.vecVelocity[i],0);near(reset.vecAngularVelocity[i],0);}
+    }
+
+    /* A gap wider than max_gap_ns is treated as a discontinuity, not motion. */
+    {
+        pico_slam_channel channel{};
+        assert(pico_slam_channel_init(&channel,58)&&pico_slam_channel_begin(&channel,1));
+        pico_steamvr_velocity_estimator est{};est.max_gap_ns=5000000; /* 5 ms < 10 ms gap */
+        pico_slam_result r{};r.state=r.confidence=1;r.orientation[3]=1;r.timestamp_ns=t0;publish(channel,1,r);
+        (void)pico_steamvr_pose(&channel,58,1,t0+1000000,age,true,&est);
+        r.timestamp_ns=t0+dt;r.position[0]=.1;publish(channel,1,r);
+        auto p=pico_steamvr_pose(&channel,58,1,t0+dt+1000000,age,true,&est);
+        for (unsigned i=0;i<3;++i) near(p.vecVelocity[i],0);
+        assert(est.has_previous);
+    }
+}
+
 int main(int argc, char **argv)
 {
     publication_clock_race();
     head_motion_convention();
+    velocity_estimation();
     pico_slam_channel channel{};
     assert(pico_slam_channel_init(&channel,42)&&pico_slam_channel_begin(&channel,1));
     const int64_t now=1002000000,age=100000000;

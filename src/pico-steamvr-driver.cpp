@@ -10,6 +10,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <memory>
+#include <mutex>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <thread>
@@ -33,10 +34,18 @@ class PicoHeadset final : public vr::ITrackedDeviceServerDriver {
     std::atomic<bool> running{false};
     std::thread worker;
     std::atomic<uint64_t> reads[PICO_SLAM_READ_RESULTS]{};
+    const bool predict_velocity;
+    std::mutex velocity_mutex;
+    pico_steamvr_velocity_estimator velocity{};
+    static bool predict_velocity_enabled() {
+        const char *flag=std::getenv("PICO_STEAMVR_PREDICT_VELOCITY");
+        return flag && !std::strcmp(flag,"1");
+    }
 public:
     PicoHeadset(const pico_steamvr_display_config &c, const pico_slam_channel *poses,
                 uint64_t i, uint64_t g, int64_t age)
-        : config(c), display(c), channel(poses), instance(i), generation(g), max_age(age) {}
+        : config(c), display(c), channel(poses), instance(i), generation(g), max_age(age),
+          predict_velocity(predict_velocity_enabled()) { velocity.max_gap_ns=age; }
     ~PicoHeadset() { Deactivate(); }
 
     vr::EVRInitError Activate(uint32_t id) override
@@ -118,8 +127,18 @@ public:
     }
     vr::DriverPose_t GetPose() override {
         pico_slam_read_result result;
-        auto pose=pico_steamvr_pose_now(channel,instance,generation,max_age,
-            index.load()!=vr::k_unTrackedDeviceIndexInvalid,monotonic_ns,nullptr,&result);
+        bool connected=index.load()!=vr::k_unTrackedDeviceIndexInvalid;
+        vr::DriverPose_t pose;
+        if (predict_velocity) {
+            /* GetPose can run on the worker and the runtime concurrently; the
+             * finite-difference estimator is not atomic, so serialize it. */
+            std::lock_guard<std::mutex> lock(velocity_mutex);
+            pose=pico_steamvr_pose_now(channel,instance,generation,max_age,connected,
+                                       monotonic_ns,nullptr,&result,&velocity);
+        } else {
+            pose=pico_steamvr_pose_now(channel,instance,generation,max_age,connected,
+                                       monotonic_ns,nullptr,&result,nullptr);
+        }
         reads[result].fetch_add(1,std::memory_order_relaxed);
         return pose;
     }
