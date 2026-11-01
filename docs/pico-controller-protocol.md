@@ -2622,3 +2622,18 @@ The replay is synthetic and stationary; it does not establish live acquisition,
 the aim ray or grip feel. Evidence: `output/pico-controller-result-frame-20261101-v1/`
 (replay log SHA-256
 `96f6f7a125eb3e80bfe02a3b61d7e9e8b24cd1030b111a82548828c4e2b3cdfe`).
+
+The live session in `output/pico-controller-pose-native-20261101-v2/` runs the
+publisher in the native consumer with both per-hand channels bound to the
+SteamVR driver, on the same kernel, SDK and thresholds as the previous VR
+workload; the delayed right-motion diagnostic is removed. The driver starts
+with both channels, and its head reads are all fresh (no stale, inactive or
+malformed reads). The consumer processes 4,445 controller image sets and
+10,452 SDK callbacks; every result is classified as lost and none is refused or
+published, because no result reaches state 1 with byte `0x52` set. The left
+controller delivers 9,440 IMU samples and then idles; the right delivers none.
+This matches stationary, out-of-volume controllers, not a publication fault.
+The strict compact export then refuses the run for three missing fence-dispatch
+trace windows, so these figures come from the live console (`native/console.log`,
+SHA-256 in `hashes.txt`). The Pico returns to verified quiet offline stock.
+A held, moving controller within reach remains the physical acceptance check.
