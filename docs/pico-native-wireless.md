@@ -860,6 +860,22 @@ NetworkManager unloads `wlan` cleanly. Latency was not measured: the root has no
 `ping`. The workload itself stopped early on a harness gate (both controllers
 asleep), so this is not a full-duration coexistence acceptance.
 
+Two later attended runs kept Wi-Fi associated through complete VR workloads
+with a 120 s hold. In the first, stopping NetworkManager unloaded `wlan`. In the
+second, the stop hung: NetworkManager stayed in uninterruptible sleep in
+`qdf_mutex_acquire`, under `sme_deregister_mgmt_frame` and `hdd_stop_adapter`,
+while bringing the interface down; systemd reached its final SIGKILL without
+effect. The kernel log shows the driver's disconnect handler updating the bus
+bandwidth vote at the same time. The blocked request entered the driver from
+`rtnl_newlink`, so it holds the RTNL lock. A later CDSP-owner stop also timed
+out and the console stopped responding within minutes. The unit never returned
+to stock: past the independent return timer's deadline it stayed enumerated as
+the native USB gadget with no console response, which needs a physical
+power-off. The deadlock is in the vendor driver's stop path, not the profile or
+association.
+Its frequency is unknown; until it is understood, VR sessions should keep Wi-Fi
+optional.
+
 ## Connected Wi-Fi, saved state and BLE data (2026-10-30)
 
 `output/pico-radio-e2e-20261030-v8/verification.json` verifies Wi-Fi association,
