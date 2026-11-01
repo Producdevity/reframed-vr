@@ -10,8 +10,10 @@ cycles, and a separate public GATT test passes two exact 43-byte write/read
 roundtrips with disconnect/reconnect.
 
 Bonded/encrypted pairing remains unverified: the Mac's pairing UI expires before
-confirmation. Concurrent radio traffic under SteamVR/tracking, Bluetooth audio,
-suspend/resume and complete installed-image/session integration remain open.
+confirmation. Wi-Fi now associates inside the native VR session and sustains
+about 210 Mbit/s HTTPS while SteamVR runs (see below). Full-duration radio
+coexistence, Bluetooth audio, suspend/resume and complete installed-image
+integration remain open.
 The dated records below preserve the earlier failures and narrower milestones.
 
 ## Verified boundary
@@ -836,6 +838,27 @@ harness contamination; UART shutdown itself reports restored power policy,
 detached HCI and restored rfkill. Pairing/encrypted traffic and complete installed
 network/session integration still require separate acceptance.
 
+
+## Wi-Fi inside the native VR session (2026-11-01)
+
+`output/pico-vr-cef-gpu-native-20261101-v1/native-software-v2/` runs Wi-Fi in the
+full VR workload on the fence-RT VR kernel: cameras, vendor SLAM, controller
+SDK, SteamVR, gamescope and Steam. The kernel's module CRCs match all 480
+`wlan.ko` imports. The setup installs the signed packages, restores the saved
+profile from the session's own read-only userdata mount and associates in
+16.1 s. Bluetooth stays unloaded. The VR harness previously left the Linux
+clock unset, which made Fedora's package signatures "not live yet"; the
+bootstrap now sets UTC from the host.
+
+During the 50 s window with the SteamVR server and compositor running, a
+ranged HTTPS download moved 1.30 GB at 210 Mbit/s without errors (4.8 GB at
+217 Mbit/s over the whole 300 s worker). Three frame-history windows in the same
+period observe 87.6–88.7 Hz with compositor GPU p99 at most 8.05 ms; their
+1.5-period intervals (4–13 per window) are comparable with earlier runs without
+Wi-Fi, which is a bounded comparison rather than a controlled one. Stopping
+NetworkManager unloads `wlan` cleanly. Latency was not measured: the root has no
+`ping`. The workload itself stopped early on a harness gate (both controllers
+asleep), so this is not a full-duration coexistence acceptance.
 
 ## Connected Wi-Fi, saved state and BLE data (2026-10-30)
 
