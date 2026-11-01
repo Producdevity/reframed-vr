@@ -33,19 +33,25 @@ class PicoSteamvrBindingTests(unittest.TestCase):
                 self.assertFalse(group.get('skeleton'))
                 for item in group['sources']:
                     path = item['path']
-                    self.assertNotIn(path, paths)
-                    paths.add(path)
+                    self.assertNotIn((path, item['mode']), paths)
+                    paths.add((path, item['mode']))
                     parts = path.split('/')
                     self.assertEqual(parts[:3], ['', 'user', 'hand'])
                     self.assertIn(parts[3], ('left', 'right'))
                     source = self.profile['input_source']['/' + '/'.join(parts[4:])]
-                    self.assertEqual(source['type'], 'button')
+                    self.assertIn(source['type'], ('button', 'trigger', 'joystick'))
                     self.assertIn(source.get('side'), (None, parts[3]))
-                    self.assertIn(item['mode'], ('button', 'complex_button'))
+                    self.assertIn(item['mode'], ('button', 'complex_button', 'trigger', 'joystick'))
+                    self.assertTrue(item['mode'] not in ('trigger', 'joystick') or item['mode'] == source['type'])
                     for component in item['inputs']:
                         actual = 'click' if item['mode'] == 'complex_button' and component == 'single' else component
-                        self.assertIn(actual, ('click', 'touch'))
-                        self.assertTrue(source.get(actual), path + '/' + actual)
+                        self.assertIn(actual, ('click', 'touch', 'pull', 'position'))
+                        if actual == 'pull':
+                            self.assertTrue(source.get('value'), path + '/value')
+                        elif actual == 'position':
+                            self.assertEqual(source['type'], 'joystick')
+                        else:
+                            self.assertTrue(source.get(actual), path + '/' + actual)
                 for item in group.get('poses', []):
                     self.assertIn(item['path'], ('/user/hand/left/pose/tip', '/user/hand/right/pose/tip'))
                     self.assertEqual(self.profile['input_source']['/pose/tip']['type'], 'pose')
@@ -81,8 +87,9 @@ class PicoSteamvrBindingTests(unittest.TestCase):
             actions = {action['name'].lower(): action['type'] for action in json.loads(data)['actions']}
             for group in self.bindings[name]['bindings'].values():
                 for source in group['sources']:
-                    for target in source['inputs'].values():
-                        self.assertEqual(actions[target['output'].lower()], 'boolean')
+                    for component, target in source['inputs'].items():
+                        expected = {'pull': 'vector1', 'position': 'vector2'}.get(component, 'boolean')
+                        self.assertEqual(actions[target['output'].lower()], expected)
                 for pose in group.get('poses', []):
                     self.assertEqual(actions[pose['output'].lower()], 'pose')
 

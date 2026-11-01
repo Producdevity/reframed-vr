@@ -1,7 +1,21 @@
 #include "pico-steamvr-controller.h"
 #include "pico-steamvr-pose.h"
+#include <cmath>
 #include <cstdio>
 #include <ctime>
+
+void pico_steamvr_controller_analog(const pico_controller_sample &sample, float values[4])
+{
+    constexpr float dead_zone = .1f;
+    values[0] = sample.trigger / 255.f;
+    values[1] = sample.grip / 255.f;
+    float x = std::fmax(-1.f, (sample.stick_x - 128) / 127.f);
+    float y = std::fmax(-1.f, (sample.stick_y - 128) / 127.f);
+    float radius = std::sqrt(x * x + y * y);
+    float scale = radius <= dead_zone ? 0 : std::fmin(1.f, (radius - dead_zone) / (1 - dead_zone)) / radius;
+    values[2] = x * scale;
+    values[3] = y * scale;
+}
 
 static int64_t monotonic_ns(void *)
 {
@@ -56,10 +70,16 @@ vr::EVRInitError PicoSteamvrController::Activate(uint32_t id)
     for (unsigned i = 0; i < 12; i++)
         ok = (vr::VRDriverInput()->CreateBooleanComponent(container, paths[i], &inputs[i])
               == vr::VRInputError_None) && ok;
+    const char *analog[4] = {"/input/trigger/value", "/input/grip/value", "/input/joystick/x", "/input/joystick/y"};
+    for (unsigned i = 0; i < 4; i++)
+        ok = (vr::VRDriverInput()->CreateScalarComponent(container, analog[i], &scalars[i],
+              vr::VRScalarType_Absolute, i < 2 ? vr::VRScalarUnits_NormalizedOneSided :
+              vr::VRScalarUnits_NormalizedTwoSided) == vr::VRInputError_None) && ok;
     if (!ok) return vr::VRInitError_Driver_Failed;
     for (auto &ready : initialized) ready = false;
+    for (auto &ready : scalar_initialized) ready = false;
     index = id;
-    vr::VRDriverLog()->Log("Reframed Neo3 controller: live digital inputs; pose requires a bound fresh tracking channel");
+    vr::VRDriverLog()->Log("Reframed Neo3 controller: live digital and analog inputs; pose requires a bound fresh tracking channel");
     return vr::VRInitError_None;
 }
 
@@ -78,6 +98,19 @@ void PicoSteamvrController::publish(const pico_controller_sample &sample, bool a
             changes += next != values[i];
             values[i] = next;
             initialized[i] = true;
+        }
+    }
+    float analog[4]{};
+    if (active) pico_steamvr_controller_analog(sample, analog);
+    for (unsigned i = 0; i < 4; i++) {
+        if (scalar_initialized[i] && scalar_values[i] == analog[i]) continue;
+        input_calls++;
+        if (vr::VRDriverInput()->UpdateScalarComponent(scalars[i], analog[i], 0) != vr::VRInputError_None) {
+            failures++;
+            failed = true;
+        } else {
+            scalar_values[i] = analog[i];
+            scalar_initialized[i] = true;
         }
     }
     connected = active && !failed;

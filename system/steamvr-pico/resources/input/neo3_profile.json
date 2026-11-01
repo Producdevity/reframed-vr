@@ -69,16 +69,17 @@
       "side": "right"
     },
     "/input/grip": {
-      "type": "button",
+      "type": "trigger",
       "binding_image_point": [
         0,
         0
       ],
       "order": 4,
-      "click": true
+      "click": true,
+      "value": true
     },
     "/input/joystick": {
-      "type": "button",
+      "type": "joystick",
       "binding_image_point": [
         0,
         0
@@ -88,14 +89,15 @@
       "touch": true
     },
     "/input/trigger": {
-      "type": "button",
+      "type": "trigger",
       "binding_image_point": [
         0,
         0
       ],
       "order": 6,
       "click": true,
-      "touch": true
+      "touch": true,
+      "value": true
     },
     "/input/thumbrest": {
       "type": "button",

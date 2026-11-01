@@ -57,11 +57,23 @@
           }
         },
         {
+          "path": "/user/hand/left/input/grip",
+          "mode": "trigger",
+          "inputs": {
+            "pull": {
+              "output": "/actions/legacy/in/left_axis2_value1"
+            }
+          }
+        },
+        {
           "path": "/user/hand/left/input/joystick",
-          "mode": "button",
+          "mode": "joystick",
           "inputs": {
             "click": {
               "output": "/actions/legacy/in/left_axis0_press"
+            },
+            "position": {
+              "output": "/actions/legacy/in/left_axis0_value"
             },
             "touch": {
               "output": "/actions/legacy/in/left_axis0_touch"
@@ -70,10 +82,13 @@
         },
         {
           "path": "/user/hand/left/input/trigger",
-          "mode": "button",
+          "mode": "trigger",
           "inputs": {
             "click": {
               "output": "/actions/legacy/in/left_axis1_press"
+            },
+            "pull": {
+              "output": "/actions/legacy/in/left_axis1_value"
             },
             "touch": {
               "output": "/actions/legacy/in/left_axis1_touch"
@@ -132,11 +147,23 @@
           }
         },
         {
+          "path": "/user/hand/right/input/grip",
+          "mode": "trigger",
+          "inputs": {
+            "pull": {
+              "output": "/actions/legacy/in/right_axis2_value1"
+            }
+          }
+        },
+        {
           "path": "/user/hand/right/input/joystick",
-          "mode": "button",
+          "mode": "joystick",
           "inputs": {
             "click": {
               "output": "/actions/legacy/in/right_axis0_press"
+            },
+            "position": {
+              "output": "/actions/legacy/in/right_axis0_value"
             },
             "touch": {
               "output": "/actions/legacy/in/right_axis0_touch"
@@ -145,10 +172,13 @@
         },
         {
           "path": "/user/hand/right/input/trigger",
-          "mode": "button",
+          "mode": "trigger",
           "inputs": {
             "click": {
               "output": "/actions/legacy/in/right_axis1_press"
+            },
+            "pull": {
+              "output": "/actions/legacy/in/right_axis1_value"
             },
             "touch": {
               "output": "/actions/legacy/in/right_axis1_touch"

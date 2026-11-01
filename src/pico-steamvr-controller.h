@@ -6,6 +6,11 @@
 #include <openvr_driver.h>
 #include <mutex>
 
+/* Trigger, grip, joystick x/y from raw bytes: 0 released, 255 pressed, stick
+ * centre 128. Joystick +y is assumed up; values inside the radial dead zone are
+ * zero and the remainder is rescaled to reach full deflection. */
+void pico_steamvr_controller_analog(const pico_controller_sample &sample, float values[4]);
+
 struct pico_steamvr_controller_tracking {
     const pico_slam_channel *channel = nullptr;
     uint64_t instance = 0, generation = 0, universe = 0;
@@ -19,8 +24,9 @@ class PicoSteamvrController final : public vr::ITrackedDeviceServerDriver {
     const pico_steamvr_controller_tracking tracking;
     std::mutex mutex;
     vr::TrackedDeviceIndex_t index = vr::k_unTrackedDeviceIndexInvalid;
-    vr::VRInputComponentHandle_t inputs[12]{};
-    bool connected = false, values[12]{}, initialized[12]{};
+    vr::VRInputComponentHandle_t inputs[12]{}, scalars[4]{};
+    bool connected = false, values[12]{}, initialized[12]{}, scalar_initialized[4]{};
+    float scalar_values[4]{};
     uint64_t updates = 0, changes = 0, failures = 0, input_calls = 0;
     void publish(const pico_controller_sample &sample, bool active);
     vr::DriverPose_t read_pose();

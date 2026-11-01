@@ -65,18 +65,30 @@ struct MockIVRDriverInput final : IVRDriverInput {
         values[names.at(ulComponent)] = bNewValue;
         return VRInputError_None;
     }
+    std::map<uint64_t, std::string> scalar_names;
+    std::map<std::string, float> scalars;
+    std::map<std::string, EVRScalarUnits> units;
+    unsigned scalar_updates = 0;
     EVRInputError CreateScalarComponent(PropertyContainerHandle_t ulContainer, const char *pchName,
                                         VRInputComponentHandle_t *pHandle, EVRScalarType eType,
                                         EVRScalarUnits eUnits) override
     {
-        assert(false);
-        return VRInputError_InvalidParam;
+        if (fail_create)
+            return VRInputError_InvalidParam;
+        assert(eType == VRScalarType_Absolute);
+        *pHandle = 1000 + scalar_names.size();
+        scalar_names[*pHandle] = pchName;
+        scalars[pchName] = -2;
+        units[pchName] = eUnits;
+        return VRInputError_None;
     }
     EVRInputError UpdateScalarComponent(VRInputComponentHandle_t ulComponent, float fNewValue,
                                         double fTimeOffset) override
     {
-        assert(false);
-        return VRInputError_InvalidParam;
+        assert(fTimeOffset == 0 && scalar_names.count(ulComponent));
+        scalar_updates++;
+        scalars[scalar_names.at(ulComponent)] = fNewValue;
+        return VRInputError_None;
     }
     EVRInputError CreateHapticComponent(PropertyContainerHandle_t ulContainer, const char *pchName,
                                         VRInputComponentHandle_t *pHandle) override
@@ -259,13 +271,19 @@ int main()
         assert(driver.Activate(3) == VRInitError_Driver_Failed);
         assert(context.properties.role == TrackedControllerRole_LeftHand);
         assert(context.properties.model == "{reframed_pico}neo3_left");
-        assert(context.input.names.size() == 12);
+        assert(context.input.names.size() == 12 && context.input.scalar_names.size() == 4);
+        assert(context.input.units.at("/input/trigger/value") == VRScalarUnits_NormalizedOneSided);
+        assert(context.input.units.at("/input/grip/value") == VRScalarUnits_NormalizedOneSided);
+        assert(context.input.units.at("/input/joystick/x") == VRScalarUnits_NormalizedTwoSided);
+        assert(context.input.units.at("/input/joystick/y") == VRScalarUnits_NormalizedTwoSided);
         driver.Update();
         assert(!driver.GetPose().deviceIsConnected);
         unsigned initialized = context.input.updates;
-        assert(initialized == 12);
+        assert(initialized == 12 && context.input.scalar_updates == 4);
+        for (auto &entry : context.input.scalars) assert(entry.second == 0);
         pico_controller_sample sample{};
         sample.hand = 1;
+        sample.stick_x = sample.stick_y = 128;
         sample.buttons = 4 | 128;
         sample.touches = 1 | 16;
         assert(pico_controller_channel_publish(&channel, &sample, now_ns() - 300000000));
@@ -283,6 +301,32 @@ int main()
         assert(!context.host.pose.poseIsValid &&
                context.host.pose.result == TrackingResult_Uninitialized);
         assert(context.input.updates == initialized + 4);
+        assert(context.input.scalar_updates == 4);
+        sample.trigger = 255; sample.grip = 51; sample.stick_x = 128; sample.stick_y = 255;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update();
+        assert(context.input.updates == initialized + 4 && context.input.scalar_updates == 7);
+        assert(context.input.scalars.at("/input/trigger/value") == 1);
+        assert(context.input.scalars.at("/input/grip/value") == .2f);
+        assert(context.input.scalars.at("/input/joystick/x") == 0);
+        assert(context.input.scalars.at("/input/joystick/y") == 1);
+        sample.stick_x = 0; sample.stick_y = 128;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update();
+        assert(context.input.scalars.at("/input/joystick/x") == -1);
+        assert(context.input.scalars.at("/input/joystick/y") == 0);
+        sample.stick_x = 135; sample.stick_y = 121;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update();
+        assert(context.input.scalars.at("/input/joystick/x") == 0);
+        assert(context.input.scalars.at("/input/joystick/y") == 0);
+        sample.trigger = sample.grip = 0; sample.stick_x = sample.stick_y = 128;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update();
         unsigned unchanged = context.input.updates;
         unsigned poses_before = context.host.calls;
         for (unsigned i = 0; i < 100; i++) driver.Update();
@@ -316,10 +360,17 @@ int main()
         assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
         driver.Update();
         assert(driver.GetPose().deviceIsConnected);
+        sample.trigger = 200;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(pico_controller_channel_publish(&channel, &sample, now_ns()));
+        driver.Update();
+        assert(context.input.scalars.at("/input/trigger/value") > .78f);
         driver.Deactivate();
         assert(!driver.GetPose().deviceIsConnected);
         for (auto &entry : context.input.values)
             assert(!entry.second);
+        for (auto &entry : context.input.scalars)
+            assert(entry.second == 0);
         char debug[256];
         driver.DebugRequest("", debug, sizeof debug);
         assert(std::strstr(debug, "failures=1") && std::strstr(debug, "pose_valid=0"));
@@ -333,6 +384,7 @@ int main()
     {
         context.input.names.clear();
         context.input.values.clear();
+        context.input.scalar_names.clear();
         assert(pico_controller_channel_disconnect(&channel, 1));
         PicoSteamvrController retry(&channel, 123, 1);
         assert(retry.Activate(3) == VRInitError_None);
@@ -349,6 +401,7 @@ int main()
     {
         context.input.names.clear();
         context.input.values.clear();
+        context.input.scalar_names.clear();
         PicoSteamvrController wrong(&channel, 456, 2);
         assert(wrong.Activate(3) == VRInitError_None);
         assert(context.properties.role == TrackedControllerRole_RightHand);
@@ -367,7 +420,7 @@ int main()
     }
     {
         context.input.fail_create = false;
-        context.input.names.clear(); context.input.values.clear();
+        context.input.names.clear(); context.input.values.clear(); context.input.scalar_names.clear();
         pico_slam_channel poses;
         assert(pico_slam_channel_init(&poses, 789));
         assert(pico_slam_channel_begin(&poses, 9));

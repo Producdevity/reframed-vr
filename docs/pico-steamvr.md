@@ -131,10 +131,15 @@ update also attempts to release every component and marks it disconnected;
 the debug response counts rejected calls. The timeout uses host receipt time,
 not an established controller capture-clock mapping.
 
-The controller reports `poseIsValid=false` throughout. This input-only path supplies no controller position, orientation, haptics or
-analog calibration. The bundled static render models are described below. Raw analog endpoints were captured but axis sign,
-center and dead zone still need physical calibration. Enabling this adapter
-does not yet provide a tracked dashboard pointer.
+Without a bound pose channel the controller reports `poseIsValid=false`; the
+optional tracked path is described below. The adapter also publishes
+`/input/trigger/value`, `/input/grip/value` and `/input/joystick/x|y`. The
+27,794-record physical capture fixes their raw conventions: trigger and grip rest
+at 0 and reach 255 when pressed; the stick rests at exactly (128, 128) and
+reaches 0 and 255 on both axes. Values map to 0–1 and −1–1 with a 0.1 radial
+dead zone rescaled to full deflection. Stick +Y is assumed to be up, as in
+PicoFrame's mapping; that sign and the dead-zone feel still need a physical
+check. Haptics remain unsupported.
 
 Host tests exercise real adapter methods against mocked OpenVR callbacks under
 ASan/UBSan, including stale input, failed updates, disconnect/reconnect and
@@ -190,9 +195,12 @@ and hashed by the driver builder; no SteamVR installation files are modified.
 The retained runtime also includes pressed buttons in the legacy touch mask;
 the grip touch bit in that API does not establish a physical grip-touch sensor.
 
-The compositor binding also supplies digital room-setup accept/back and
-dual-analog click/touch actions. It does not supply analog values, scrolling,
-haptics or skeleton actions. Right-hand paths reserve the corresponding A/B
+The legacy binding routes trigger pull, grip pull and joystick position to
+the legacy axis1, axis2 and axis0 values, following SteamVR's Touch legacy
+binding; the action types are checked against the runtime manifest. The
+compositor binding also supplies digital room-setup accept/back and
+dual-analog click/touch actions. It does not supply scrolling, haptics or
+skeleton actions. Right-hand paths reserve the corresponding A/B
 layout; the current driver registers only the left controller, and right-hand
 hardware acceptance remains pending. Thumbrest touch remains available to
 applications through explicit bindings but has no legacy/dashboard mapping here.
