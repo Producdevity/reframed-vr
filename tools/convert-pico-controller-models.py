@@ -9,6 +9,13 @@ from pathlib import Path
 import struct
 
 
+# The model origin and axes are the b1977 tracker's controller (aim) frame.
+# Grip is libpvrtrackingservice's default getAim2GripTrans for both hands:
+# (0.000805, 0.01341, 0.0541382) m, quaternion w=0.9563048, x=0.2923717.
+AIM = {'component_local': {'origin': [0.0, 0.0, 0.0], 'rotate_xyz': [0.0, 0.0, 0.0]}}
+GRIP = {'component_local': {'origin': [0.000805, 0.01341, 0.0541382], 'rotate_xyz': [34.0, 0.0, 0.0]}}
+
+
 def multiply(a, b):
     return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
 
@@ -114,7 +121,8 @@ def convert(source, destination, name):
     texture.save(destination / 'texture.png')
     (destination / (name + '.mtl')).write_text('newmtl controller\nKa 1 1 1\nKd 1 1 1\nKs 0 0 0\nd 1\nmap_Kd texture.png\n')
     (destination / (name + '.json')).write_text(json.dumps({'components': {
-        'body': {'filename': name + '.obj'}, 'tip': {}, 'grip': {}, 'handgrip': {}}}, indent=2) + '\n')
+        'body': {'filename': name + '.obj'}, 'tip': AIM, 'openxr_aim': AIM,
+        'grip': GRIP, 'handgrip': GRIP, 'openxr_grip': GRIP}}, indent=2) + '\n')
     return {'vertices': len(vertices), 'triangle_faces': faces, 'bounds_metres': bounds,
             'sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in destination.iterdir()}}
 
@@ -131,8 +139,8 @@ def main():
         if hashlib.sha256(source.read_bytes()).hexdigest() != profile['sha256'][source.name]:
             raise ValueError('Unrecognized model: ' + str(source))
     args.output.mkdir(parents=True, exist_ok=True)
-    record = {'upstream': profile, 'coordinates': 'glTF/OpenVR right-handed, +Y up, metres; original grip origin',
-              'modifications': 'Flattened default node transforms; static triangulated OBJ; UV V flipped for OBJ; JPEG decoded to PNG; identity pose components are not calibrated aim offsets',
+    record = {'upstream': profile, 'coordinates': 'glTF/OpenVR right-handed, +Y up, metres; tracker controller (aim) frame',
+              'modifications': 'Flattened default node transforms; static triangulated OBJ; UV V flipped for OBJ; JPEG decoded to PNG; aim/grip components from the stock aim-to-grip default',
               'models': {}}
     for hand in ('left', 'right'):
         name = 'neo3_' + hand

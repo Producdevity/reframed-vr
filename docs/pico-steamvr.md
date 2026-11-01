@@ -743,19 +743,28 @@ python3 tools/convert-pico-controller-models.py --source /path/to/pico-neo3 \
   --output /path/to/new/rendermodels
 ```
 
-The converter preserves the original right-handed, metre-scale grip origin,
+The converter preserves the original right-handed, metre-scale model origin,
 flattens the default component transforms, flips texture V for OBJ and decodes
 the embedded JPEG into PNG. Each model has 3,488 triangles and about 2,550
 vertices. Geometry, normal/index validity, mirrored bounds and provenance hashes
 pass host checks. SteamVR's native render-model API loads both meshes and their
-512×512 textures on the Pico. The loader adds two components to the four supplied
-components, so clients must enumerate names rather than require a count of four.
+512×512 textures on the Pico. The loader adds two components to the supplied
+components, so clients must enumerate names rather than require a fixed count.
 Evidence: `output/pico-ui-quality-20261023-v1/native/test-models-only-result.log`.
 
-The models have identity `tip`, `grip` and `handgrip` components. These are
-explicit placeholders for pose-offset calibration, not calibrated pointing
-directions. Registering or loading a render model does not validate a controller
-pose, enable pose publication or establish visible tracked pointing.
+The model origin and axes coincide with the b1977 tracker's controller frame
+after the stock +90° Z basis change: the 16 factory LED coordinates lie on the
+model's ring at 2.0 mm RMS (see the
+[controller protocol](pico-controller-protocol.md#tracked-result-frame-and-render-model-alignment-2026-11-01)).
+That frame is stock's aim pose: `pvr::TrackingClient::getAim2GripTransform`
+returns the tracking service's `ConfigManager::getAim2GripTrans` vector, whose
+built-in default for both hands is translation (0.805, 13.41, 54.14) mm and
+quaternion w=0.9563048, x=0.2923717 (34.0° about X). `tip` and `openxr_aim`
+are therefore identity; `grip`, `handgrip` and `openxr_grip` carry that
+transform in SteamVR's `component_local` form. The 34° tilt brings grip −Z
+toward the model's handle axis, consistent with the WebXR grip definition.
+A device-specific stock override of the default has not been read, and the
+pointing ray and grip feel still need a physical check.
 
 ## UI resolution and frame-history diagnostics
 

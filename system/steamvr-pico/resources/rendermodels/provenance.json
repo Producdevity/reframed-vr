@@ -9,8 +9,8 @@
       "right.glb": "42191f7075c61d7b338b4c9c4618c3e765519798fee12c29b8e79db4b6bab0a7"
     }
   },
-  "coordinates": "glTF/OpenVR right-handed, +Y up, metres; original grip origin",
-  "modifications": "Flattened default node transforms; static triangulated OBJ; UV V flipped for OBJ; JPEG decoded to PNG; identity pose components are not calibrated aim offsets",
+  "coordinates": "glTF/OpenVR right-handed, +Y up, metres; tracker controller (aim) frame",
+  "modifications": "Flattened default node transforms; static triangulated OBJ; UV V flipped for OBJ; JPEG decoded to PNG; aim/grip components from the stock aim-to-grip default",
   "models": {
     "left": {
       "vertices": 2550,
@@ -33,7 +33,7 @@
         "neo3_left.mtl": "bc67358cb8ddac5008e4b2e89f0a6166e7bbdc1e3107d43340d268d50cfa2ff0",
         "neo3_left.obj": "57d90760f568ae45e8a9846cd6974e15c86242f035df19cc173815dbd862c6f0",
         "texture.png": "b216c69c4066772f4117a555bf7e621e597705272ce32055f062d1930591af44",
-        "neo3_left.json": "bb155990ab8990347038f2c1c193e47181deaa955313e24beb0273bebabfa7ee"
+        "neo3_left.json": "ad1b6da452f9268051a334f7bf04b737f72be1b41b7e625e4c70767825a4d584"
       }
     },
     "right": {
@@ -54,7 +54,7 @@
         ]
       ],
       "sha256": {
-        "neo3_right.json": "b3b27ea50e41e360b60cbe599b8820bf12fb26e0b6223764be8cf3be2d99cc8b",
+        "neo3_right.json": "bb199d37eee6a2d66d2928d93dd75d4b060f8fb1e0944a4fdabc6d64802da378",
         "neo3_right.obj": "a9569fc99a48ba204fe9578567e627ad4af8d75d9945ccceec80f5601b2a9fd5",
         "neo3_right.mtl": "bc67358cb8ddac5008e4b2e89f0a6166e7bbdc1e3107d43340d268d50cfa2ff0",
         "texture.png": "b216c69c4066772f4117a555bf7e621e597705272ce32055f062d1930591af44"

@@ -3,8 +3,75 @@
     "body": {
       "filename": "neo3_left.obj"
     },
-    "tip": {},
-    "grip": {},
-    "handgrip": {}
+    "tip": {
+      "component_local": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotate_xyz": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "openxr_aim": {
+      "component_local": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotate_xyz": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "grip": {
+      "component_local": {
+        "origin": [
+          0.000805,
+          0.01341,
+          0.0541382
+        ],
+        "rotate_xyz": [
+          34.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "handgrip": {
+      "component_local": {
+        "origin": [
+          0.000805,
+          0.01341,
+          0.0541382
+        ],
+        "rotate_xyz": [
+          34.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "openxr_grip": {
+      "component_local": {
+        "origin": [
+          0.000805,
+          0.01341,
+          0.0541382
+        ],
+        "rotate_xyz": [
+          34.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
   }
 }

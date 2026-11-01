@@ -11,7 +11,7 @@ MODELS = ROOT / 'system/steamvr-pico/resources/rendermodels'
 class PicoSteamvrModelTests(unittest.TestCase):
     def test_assets_match_pinned_conversion_and_license(self):
         self.assertEqual(hashlib.sha256((MODELS / 'provenance.json').read_bytes()).hexdigest(),
-                         '1d150a427afb69f11f5ebb916876be2199b399076ae83bd47e4c1a96a24b366a')
+                         'ec69c76e54a20bc3ae2dc236c4516c728f897ea43bc4ca18b4f5b1ad1b7b6969')
         record = json.loads((MODELS / 'provenance.json').read_text())
         self.assertEqual(set(record['models']), {'left', 'right'})
         self.assertEqual(record['upstream'], json.loads((ROOT / 'profiles/pico-controller-models.json').read_text()))
@@ -22,7 +22,14 @@ class PicoSteamvrModelTests(unittest.TestCase):
             for name, digest in model['sha256'].items():
                 self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest)
             definition = json.loads((directory / ('neo3_' + hand + '.json')).read_text())
-            self.assertEqual(set(definition['components']), {'body', 'tip', 'grip', 'handgrip'})
+            components = definition['components']
+            self.assertEqual(set(components), {'body', 'tip', 'openxr_aim', 'grip', 'handgrip', 'openxr_grip'})
+            aim = {'origin': [0.0, 0.0, 0.0], 'rotate_xyz': [0.0, 0.0, 0.0]}
+            grip = {'origin': [0.000805, 0.01341, 0.0541382], 'rotate_xyz': [34.0, 0.0, 0.0]}
+            for name in ('tip', 'openxr_aim'):
+                self.assertEqual(components[name]['component_local'], aim)
+            for name in ('grip', 'handgrip', 'openxr_grip'):
+                self.assertEqual(components[name]['component_local'], grip)
 
     def test_geometry_has_valid_indices_normals_and_physical_scale(self):
         bounds = {}
