@@ -5323,3 +5323,22 @@ The coordinator still reports `natural_core_exit=false` and
 Its [CFS/RR1/CFS comparison](pico-kgsl-fence-dispatch.md) and export-recovery
 limits are documented separately. No new optical controller or physical lens
 acceptance follows.
+
+### vrmonitor never joins the runtime (2026-11-01)
+
+The retained runtime routes both quit paths through vrmonitor: it handles
+`VREvent_DriverRequestedQuit` and, unless started with `-nomaster`, registers
+itself as the master process whose disconnect makes vrserver quit every
+OpenVR process. In the native unit layout vrmonitor never connects. In the
+attended runs its log stops after PulseAudio initialization, vrserver records
+no connection from it, and its main thread waits on a futex with
+`libsteam_api.so` and `steamclient.so` mapped. This explains why the earlier
+driver-requested quit produced no runtime shutdown.
+
+Starting vrmonitor before Steam is not the cause. A run that restarted the
+monitor unit after the Steam client and dashboard were connected
+(`output/pico-attended-session-20261101-v1/software-hold120-monitor-v2/`)
+reproduced the same log stop and produced no vrserver log line within 45
+seconds, so its quit path was not exercised. Identifying the blocking call needs
+a user-space stack of the waiting thread; the retained root has no debugger.
+Bounded unit termination remains the shutdown method.
