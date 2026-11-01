@@ -42,6 +42,8 @@ export LIBGL_ALWAYS_SOFTWARE=1
 ```
 
 `REFRAMED_GAMESCOPE_BIN` can select the privately built patched gamescope binary.
+`REFRAMED_GAMESCOPE_REFRESH` (30–120, default 90) sets gamescope's nested refresh
+for the Steam UI panel only; the VR compositor's display rate is unaffected.
 The launcher defaults to the ARM64 runtime above and refuses a missing native
 `vrclient.so`. Steam receives `-gamepadui -vrgamepadui`, without `-vrdisable`.
 Gamescope uses `--vr-session-manager`, `PerAppId`, two Xwayland servers,
