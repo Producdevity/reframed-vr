@@ -128,6 +128,28 @@ def restore(directory, destination, serial, identity_sha, *, uid=0, expected_add
     return record
 
 
+def existing_mount(mountinfo, number, writable):
+    """Return a whole-filesystem f2fs mount of device number, or None if unmounted."""
+    found = []
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        if len(fields) < 10 or fields[2] != number:
+            continue
+        separator = fields.index('-')
+        if fields[3] != '/' or fields[separator + 1] != 'f2fs':
+            continue
+        point = fields[4].replace('\\040', ' ').replace('\\011', '\t').replace('\\012', '\n').replace('\\134', '\\')
+        found.append((Path(point), 'rw' in fields[5].split(',')))
+    if not found and any(line.split()[2:3] == [number] for line in mountinfo.splitlines()):
+        raise ValueError('Userdata is mounted only as a subtree or another filesystem type')
+    if not found:
+        return None
+    for point, is_writable in found:
+        if is_writable or not writable:
+            return point
+    raise ValueError('Userdata is mounted read-only; saving needs a writable mount')
+
+
 @contextmanager
 def userdata_mount(expected_uuid, writable):
     device = Path('/dev/disk/by-partlabel/userdata')
@@ -135,11 +157,14 @@ def userdata_mount(expected_uuid, writable):
     if not stat.S_ISBLK(info.st_mode) or str(uuid.UUID(expected_uuid)) != expected_uuid:
         raise ValueError('Expected the selected userdata block device and UUID')
     number = str(os.major(info.st_rdev)) + ':' + str(os.minor(info.st_rdev))
-    if any(line.split()[2] == number for line in Path('/proc/self/mountinfo').read_text().splitlines()):
-        raise ValueError('Userdata is already mounted; refusing a second owner')
     actual = subprocess.check_output(['blkid', '-s', 'UUID', '-o', 'value', str(device)], text=True).strip()
     if actual != expected_uuid:
         raise ValueError('Userdata UUID differs')
+    # A session that already owns userdata is reused; f2fs is never mounted twice.
+    current = existing_mount(Path('/proc/self/mountinfo').read_text(), number, writable)
+    if current:
+        yield current
+        return
     mount = Path('/run') / ('pico-wifi-state-' + uuid.uuid4().hex)
     mount.mkdir(mode=0o700)
     options = 'rw,nodev,nosuid,noexec' if writable else 'ro,norecovery,nodev,nosuid,noexec'

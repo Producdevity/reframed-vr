@@ -855,7 +855,11 @@ and an atomic state marker preserve the previous saved state if an update is
 interrupted. A lock prevents competing invocations. Installation does not enable
 an automatic save/restore service.
 
-The native `save`/`restore` invocations require `--boot-serial`, `--boot-id`,
+When a session already owns the userdata filesystem, as the native VR session
+does read-only at `/run/pico-session-userdata`, the tool reuses that
+whole-filesystem f2fs mount instead of refusing; it never mounts f2fs twice.
+Saving still needs a writable mount, and a subtree-only or non-f2fs mount is
+refused. The native `save`/`restore` invocations require `--boot-serial`, `--boot-id`,
 `--userdata-uuid` and `--profile`; identity defaults to the existing private
 `/etc/reframed-vr/pico-radio-identities.json`. Save after configuring the desired
 NetworkManager connection; restore before starting NetworkManager. `--replace`

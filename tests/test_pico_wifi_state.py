@@ -113,5 +113,21 @@ class WifiStateTests(unittest.TestCase):
                 state.validate_profile(PROFILE.replace(b'0' * 64, key))
 
 
+    def test_existing_session_mount_is_reused_without_a_second_mount(self):
+        info = ('22 1 259:9 / /data rw,nosuid,nodev,noatime shared:5 - f2fs /dev/sda9 rw,lazytime\n'
+                '30 22 259:9 /media /media rw - f2fs /dev/sda9 rw\n'
+                '31 22 259:7 / /mnt/with\\040space ro - f2fs /dev/sda7 ro\n'
+                '32 22 259:6 /sub /sub rw - f2fs /dev/sda6 rw\n'
+                '33 22 259:5 / /other rw - ext4 /dev/sda5 rw\n')
+        self.assertEqual(state.existing_mount(info, '259:9', True), Path('/data'))
+        self.assertEqual(state.existing_mount(info, '259:9', False), Path('/data'))
+        self.assertIsNone(state.existing_mount(info, '259:8', False))
+        self.assertEqual(state.existing_mount(info, '259:7', False), Path('/mnt/with space'))
+        with self.assertRaisesRegex(ValueError, 'read-only'):
+            state.existing_mount(info, '259:7', True)
+        for number in ('259:6', '259:5'):
+            with self.assertRaisesRegex(ValueError, 'subtree or another'):
+                state.existing_mount(info, number, False)
+
 if __name__ == '__main__':
     unittest.main()
