@@ -136,3 +136,25 @@ in both eyes at two later stable readbacks. Its early capture precedes overlay
 visibility. It also exercises the final waiting/untriggered resume-timer guard.
 This establishes stored UI pixels for that run; it does not explain the previous
 run's missing panel or establish through-lens sharpness and stereo comfort.
+
+## Browser rendering: software cost and the Zink attempt (2026-11-01)
+
+The session's browser runs with `LIBGL_ALWAYS_SOFTWARE=1` and `-cef-disable-gpu`.
+A per-process CPU sampler in `output/pico-vr-cef-gpu-native-20261101-v1/native-software-v2/`
+measures it while SteamVR, the compositor and tracking run (seven 5 s intervals,
+Wi-Fi traffic concurrent): `steamwebhelper` has a median of 175 % of one core
+(peak 382 %), against 13 % for vrcompositor, 8 % for vrserver, 34 % for tracking
+and 490 % for the whole system. The software browser is the largest CPU consumer
+in the session.
+
+Fedora 44's Mesa on the root ships Zink, so two arms selected it for Steam's
+process only (`MESA_LOADER_DRIVER_OVERRIDE=zink`, `LIBGL_KOPPER_DRI2=true`,
+browser GPU enabled), leaving gamescope and Xwayland unchanged. Without Kopper,
+Zink needs DRI3, which gamescope's Xwayland cannot offer on this KGSL system; the
+session's `steamwebhelper.sh` defaults `LIBGL_KOPPER_DISABLE` to true, so the
+second arm set it to false. In both arms the webhelper loads Zink on the Turnip
+ICD and its GPU process starts, the browser restarts about 10 s later with crash
+asserts, and Steam's main and toolbar overlays are never created; head tracking
+stays at 500/500 valid poses per window. The software path therefore remains the
+default. The GPU process's own failure is not logged by the current flags; a
+next attempt needs GPU-process logging before changing launch settings again.
