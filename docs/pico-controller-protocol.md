@@ -2655,3 +2655,17 @@ The strict compact export then refuses the run for three missing fence-dispatch
 trace windows, so these figures come from the live console (`native/console.log`,
 SHA-256 in `hashes.txt`). The Pico returns to verified quiet offline stock.
 A held, moving controller within reach remains the physical acceptance check.
+
+### Input worker crash during release (2026-11-01)
+
+In one of two otherwise identical attended runs
+(`output/pico-attended-session-20261101-v1/software-hold120-monitor-v2/`), the
+input worker died with SIGSEGV after acknowledging RPC shutdown and before
+reporting `PICO_CONTROLLER_RELEASED_DSP_OFFLINE`. In that window it only waits
+for the CDSP to go offline and then frees its two `rpcmem` buffers, so the fault
+is in that wait-and-free sequence or in a FastRPC library thread reacting to the
+CDSP shutdown. The session correctly refused the missing acknowledgment, which
+failed the run. The worker's own logs were not exported; the attended harness
+now exports them on every path. The same run later wedged on a held kernel
+bus-scaling lock (see [wireless evidence](pico-native-wireless.md)), so the two
+may share a cause in the CDSP shutdown. Neither is understood yet.
