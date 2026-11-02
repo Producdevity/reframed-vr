@@ -34,8 +34,8 @@ Options:
 - `--predict-velocity` enables the opt-in head-velocity prediction for an A/B
   comparison.
 - `--refresh N` (30–120, default 90) sets the nested Steam UI compositor rate.
-- `--no-wifi` skips Wi-Fi. Use it when network access is not needed: the vendor
-  `wlan` driver has deadlocked once while stopping (see
+- `--no-wifi` skips Wi-Fi. Use it when network access is not needed: one Wi-Fi
+  stop has hung on a wedged kernel bus-scaling lock (see
   [wireless evidence](pico-native-wireless.md#wi-fi-inside-the-native-vr-session-2026-11-01)).
 - `--monitor-quit` is a shutdown experiment; leave it off for normal use.
 
@@ -66,11 +66,12 @@ command in flight.
 After the hold the harness stops SteamVR, the controller and camera owners and
 Wi-Fi, releases the DSPs and MCU reference, exports the session logs to
 `my-session/export/`, reboots, verifies quiet offline stock and ends the USB
-helper. The export includes `run/hold-power.json`: battery state and every
-thermal zone, sampled every 10 seconds during the hold.
+helper. The export includes `run/hold-power.json`: battery state, every thermal
+zone and the CPU and GPU clocks, sampled every 10 seconds during the hold, plus
+the CPU and GPU trip points.
 
-If stopping NetworkManager times out, the harness skips the DSP quiesce,
-exports what it can and restarts through SysRq, which bypasses the driver
+If stopping NetworkManager times out, the harness records a blocked-task dump,
+skips the DSP quiesce, exports what it can and restarts through SysRq, which bypasses the driver
 shutdown callbacks that an orderly reboot blocks on. An independent timer also
 restarts through SysRq 25 minutes plus the hold after boot, even if the Mac side
 fails, and falls back to `systemctl reboot` only if SysRq is unavailable.
