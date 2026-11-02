@@ -93,6 +93,12 @@ patches. [ROCKNIX](https://github.com/ROCKNIX) also provides upstream work used
 through those projects. Their handheld boot layout and updater are not a
 headset installer.
 
+Feli collaborates on the Pico work through [PicoFrame](https://github.com/TheReal-Flo/PicoFrame),
+a native SteamVR bring-up for the Pico 4 on the same XR2 platform. Its research
+on PICO's tracking libraries, display timing and SteamVR's compositor informs
+this project's Neo3 work, and its code may be reused here with permission; see
+[PicoFrame cross-reference](docs/picoframe.md).
+
 The project also depends on Fedora, Linux, Mesa/Turnip, Monado, Basalt, OpenXR, FEX,
 Proton, and Valve's published runtimes, with Meta and Pico vendor sources for
 board support. Upstream names, licenses, copyright notices, source URLs, and
