@@ -889,6 +889,11 @@ blocked-task dump when the NetworkManager stop times out, keeps Wi-Fi off unless
 asked, and recovers a wedged unit with a SysRq emergency restart (see
 [attended sessions](pico-native-session.md#stop-and-recovery)).
 
+On 2026-11-02 five further attended VR sessions with Wi-Fi associated in
+16.2–16.3 s from the saved profile, reached Valve's servers and stopped
+NetworkManager cleanly with `wlan` unloaded. The hang has not recurred, but
+five clean stops do not rule it out; the recovery paths above stay in place.
+
 ## Connected Wi-Fi, saved state and BLE data (2026-10-30)
 
 `output/pico-radio-e2e-20261030-v8/verification.json` verifies Wi-Fi association,

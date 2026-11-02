@@ -34,9 +34,13 @@ Options:
 - `--predict-velocity` enables the opt-in head-velocity prediction for an A/B
   comparison.
 - `--refresh N` (30–120, default 90) sets the nested Steam UI compositor rate.
-- `--wifi` brings up Wi-Fi in the session. It is off by default: one Wi-Fi stop
-  has hung on a wedged kernel bus-scaling lock (see
+- `--wifi` brings up Wi-Fi in the session from the saved profile. It is off by
+  default: one Wi-Fi stop has hung on a wedged kernel bus-scaling lock (see
   [wireless evidence](pico-native-wireless.md#wi-fi-inside-the-native-vr-session-2026-11-01)).
+- `--steam-persist` keeps the Steam user's home across sessions; see
+  [Steam online](#steam-online). It mounts userdata read-write.
+- `--steam-update` lets Steam update its own client and relaunches it after an
+  update; it needs `--steam-persist`.
 - `--monitor-quit` is a shutdown experiment; leave it off for normal use.
 - `--driver DIR` replaces the payload's SteamVR driver with a bundle from
   `tools/build-pico-steamvr.py`. The bundle must contain the same files and
@@ -88,14 +92,19 @@ bus-scaling lock wedged. A SysRq `b` emergency restart skips those callbacks.
 The session therefore has three ways back to stock:
 
 - The harness's normal finish reboots after export. Just before that, it arms a
-  three-minute SysRq guard in case the reboot itself hangs.
+  three-minute SysRq guard in case the reboot itself hangs, then syncs.
 - If stopping NetworkManager times out, the harness records a blocked-task dump,
   skips the DSP quiesce, exports what it can and restarts through SysRq at once.
 - Independently of the Mac, the bootstrap arms an orderly reboot 25 minutes plus
-  the hold after boot, and a resident SysRq guard five minutes after that. The
+  the hold after boot (it syncs first), and a resident SysRq guard five minutes
+  after that. The
   guard is a process that holds `/proc/sysrq-trigger` open from the start, so
   firing needs no new process or file; it runs outside the shutdown
   transaction, and its `@` name exempts it from systemd's final kill.
+
+Because the forced reboot unmounts nothing, every path flushes storage first:
+the reboots sync, and each SysRq restart is preceded by SysRq `s` (sync) and
+`u` (remount read-only), five seconds apart.
 
 On 2026-11-02 a guard armed for 45 s on an otherwise idle live session reset the
 headset 43 s after it was armed; stock `adb` returned and the quiet-offline stock
@@ -118,3 +127,45 @@ second 120-second hold, on USB power with a full battery, the hottest CPU
 sensor read about 88 °C at the start and 95 °C at the end. SteamVR is stopped
 by bounded service termination; an in-runtime graceful quit is not yet
 available (see [SteamVR verification](pico-steamvr-verification.md#shutdown-diagnostics-2026-10-30)).
+
+## Steam online
+
+Build with `--wifi --steam-persist --steam-update` to sign in to Steam and
+download games:
+
+```sh
+python3 -B output/pico-attended-session-20261101-v1/prepare.py \
+  output/pico-vr-cef-gpu-native-20261101-v1/native-software-v4 \
+  --hold 2400 --wifi --steam-persist --steam-update \
+  --driver output/pico-steamvr-driver-20261102-v1/bundle --photons-ns 12750000 \
+  --name my-steam-session
+```
+
+The Linux root lives in RAM, so without `--steam-persist` Steam's sign-in,
+settings, client updates and downloads vanish at the next reboot. With it, the
+session mounts userdata read-write and lays an overlay over `/home/vr` whose
+writable layer is
+`/data/reframed-vr-stage-c980c8d4/steam-home-<client>/upper` on the headset.
+`<client>` is derived from the Steam client binaries in the root image, so a
+different root image starts a separate home instead of mixing client files.
+The setup log prints `PICO_STEAM_PERSIST` with the path, whether it was created
+and how many files it kept. Deleting that directory from a native session
+resets Steam to the root image's state. Android user data is not preserved
+by this project, so writing to userdata is acceptable, but storage is only
+consistent if the session ends through one of the flushing paths above.
+
+The root image's client was assembled from Valve's packages without Steam's
+own install records, so it reports `Client version: 0`. With `--steam-update`
+the client's updater installed the current stable ARM64 client (`1792618285`)
+into the persistent home on 2026-11-02, then exited. The launcher now restarts
+Steam up to three times if it exits within ten minutes of starting; no update
+has exercised that restart yet. The installed client then starts normally and
+shows the Steam UI dashboard.
+
+Verified on 2026-11-02, without anyone wearing the headset: five Wi-Fi sessions
+connected in about 16 s from the saved profile, reached Valve's servers and
+stopped NetworkManager cleanly. Consecutive sessions found and reused the
+persistent home; each returned to verified stock. Signing in, downloading and
+installing a game have not been tried. Before signing in, Steam's servers close
+the idle connection about every 70 s and the client reconnects; this continued
+with the updated client.
