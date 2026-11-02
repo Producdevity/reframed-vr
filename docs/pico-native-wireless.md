@@ -862,19 +862,31 @@ asleep), so this is not a full-duration coexistence acceptance.
 
 Two later attended runs kept Wi-Fi associated through complete VR workloads
 with a 120 s hold. In the first, stopping NetworkManager unloaded `wlan`. In the
-second, the stop hung: NetworkManager stayed in uninterruptible sleep in
-`qdf_mutex_acquire`, under `sme_deregister_mgmt_frame` and `hdd_stop_adapter`,
-while bringing the interface down; systemd reached its final SIGKILL without
-effect. The kernel log shows the driver's disconnect handler updating the bus
-bandwidth vote at the same time. The blocked request entered the driver from
-`rtnl_newlink`, so it holds the RTNL lock. A later CDSP-owner stop also timed
-out and the console stopped responding within minutes. The unit never returned
-to stock: past the independent return timer's deadline it stayed enumerated as
-the native USB gadget with no console response, which needs a physical
-power-off. The deadlock is in the vendor driver's stop path, not the profile or
-association.
-Its frequency is unknown; until it is understood, VR sessions should keep Wi-Fi
-optional.
+second, the stop hung and the unit never returned to stock.
+
+A kernel stack trace of the `wlan` scheduler thread shows why. The disconnect
+that NetworkManager's stop triggered ran on that thread, which blocked in
+`update_request_adhoc+0x24` while lowering its bus-bandwidth vote. In the booted
+`Image` that is the return address of the function's `bl rt_mutex_lock`, which
+the
+[pinned source](https://github.com/bytedance/neo3-kernel/blob/9cacc1c1356dd32a048f4cb13bc84af402bd3326/drivers/soc/qcom/msm_bus/msm_bus_arb_adhoc.c)
+shows taking the global `msm_bus_adhoc_lock` as its first statement. Another
+task held that bus-scaling lock and never released it.
+NetworkManager then waited behind the scheduler thread in
+`sme_deregister_mgmt_frame` while bringing the interface down, holding the RTNL
+lock, and the supplicant's disconnect timed out. A later CDSP-owner stop also
+timed out and the console stopped responding within minutes. Past the
+independent return timer's deadline the unit was still enumerated as the native
+USB gadget with no console response, which needs a physical power-off.
+
+Bus votes from DSP shutdown, USB and the reboot path's device callbacks all take
+the same lock, so the wedged lock explains every later symptom; Wi-Fi was the
+first visible victim, not established as the cause. The lock holder was not
+captured. In the same run the controller worker crashed while waiting for and
+releasing around the CDSP shutdown, which the successful run did not do, so the
+CDSP shutdown path is the first suspect. The attended harness now records a
+blocked-task dump when the NetworkManager stop times out. Until the holder is
+known, VR sessions should keep Wi-Fi optional.
 
 ## Connected Wi-Fi, saved state and BLE data (2026-10-30)
 
