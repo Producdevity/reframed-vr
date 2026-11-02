@@ -12,8 +12,8 @@ nothing below was copied verbatim.
 
 | Item | PicoFrame source | Here |
 | --- | --- | --- |
-| Distortion mesh resolution | `research/vrtiming/distortpass-notes.md`: the compositor's mesh defaults to 49×49 unless the driver sets `Prop_DistortionMeshResolution_Int32` | The driver requests 193×193, measured to keep the Neo3 lens model under 0.5 render pixels ([details](pico-steamvr.md#distortion-mesh-resolution)) |
-| Vsync-to-photons time | `research/display-timing/notes.md`: PICO predicts to vsync plus a per-panel `TimeToHalfExposure` | Optional `screen.vsync_to_photons_ns` profile field; the Neo3 value still has to be read from stock ([details](pico-steamvr.md#vsync-to-photons-time)) |
+| Distortion mesh resolution | `research/vrtiming/distortpass-notes.md`: the compositor's mesh defaults to 49×49 unless the driver sets `Prop_DistortionMeshResolution_Int32` | The driver requests 193×193, measured to keep the Neo3 lens model under 0.5 render pixels for about 0.65 ms more compositor GPU time per frame ([details](pico-steamvr.md#distortion-mesh-resolution)) |
+| Vsync-to-photons time | `research/display-timing/notes.md`: PICO predicts to vsync plus a per-panel `TimeToHalfExposure` | Optional `screen.vsync_to_photons_ns` profile field; the Neo3 stock tables give 12.75 ms at 90 Hz ([details](pico-steamvr.md#vsync-to-photons-time)) |
 
 ## Confirmed by both projects
 
@@ -40,8 +40,12 @@ nothing below was copied verbatim.
   PicoFrame's ratio of reported velocity to position difference.
 - **Steam Frame UI settings.** The Frame's own `frame_hmd_additional.vrsettings`
   sets `steamMatchesHMDFramerate: false` and `omitDesktopWebhelpers: true`, which
-  bear on the Steam UI's CPU cost here, and `overlayMips`/`overlayMipbias` and
-  sharpening, which bear on text readability. Each needs a measured A/B.
+  bear on the Steam UI's CPU cost here. One run with both kept the dashboard
+  working and measured `steamwebhelper` at 165 % of a core against 173–198 %
+  without them, which is inside run-to-run spread
+  ([measurement](pico-steamvr-verification.md#distortion-mesh-cost-and-steam-frame-ui-settings-2026-11-02)).
+  `overlayMips`/`overlayMipbias` and sharpening bear on text readability and
+  need a comparison in the headset.
 - **Room setup.** Without a chaperone, SteamVR reports it uninitialized and
   OpenXR games misplace the floor. PicoFrame publishes a driver-provided
   chaperone and verified SteamVR's sign convention for its translations. This

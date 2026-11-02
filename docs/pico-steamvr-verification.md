@@ -5342,3 +5342,39 @@ reproduced the same log stop and produced no vrserver log line within 45
 seconds, so its quit path was not exercised. Identifying the blocking call needs
 a user-space stack of the waiting thread; the retained root has no debugger.
 Bounded unit termination remains the shutdown method.
+
+## Distortion mesh cost and Steam Frame UI settings (2026-11-02)
+
+Four attended runs under `output/pico-attended-session-20261101-v1/` used the
+same payload and a fresh driver bundle, varying one setting each. All ran
+without Wi-Fi and ended in verified stock returns. Each recorded three
+compositor frame-history windows at the same session phases (about 1,050
+frames).
+
+| Run | Mesh | Compositor GPU median | GPU p99 | Rate | Late frames | `steamwebhelper` CPU |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mesh49-control-v1` (previous driver) | 49×49 | 7.18–7.28 ms | 7.73–7.99 ms | 88.2–89.2 Hz | 16 | 173 % |
+| `mesh129-v1` | 129×129 | 7.62–7.68 ms | 8.16–8.44 ms | 86.5–89.0 Hz | 26 | 193 % |
+| `mesh129-frame-ui-v1` | 129×129 | 7.62–7.67 ms | 8.22–8.40 ms | 88.2–88.7 Hz | 16 | 165 % |
+| `driver-check-v2` (60 s hold) | 193×193 | 7.82–7.88 ms | 8.43–8.63 ms | 87.0–88.7 Hz | 24 | not recorded |
+
+CPU is the median share of one core over the sampler's window, which is
+written only with holds of at least 120 s. The control ran last, after the
+others had warmed the headset, and two runs from 2026-11-01 with the same
+driver gave the same GPU figures (7.13–7.19 ms). Heat therefore does not explain
+the difference; the GPU clock read 587 MHz in every run's power samples. The
+compositor logs the mesh size it built (`mesh resolution 49/129/193`), so the
+denser mesh costs about 0.45 ms (129×129) and 0.65 ms (193×193) per frame. The
+driver keeps 193×193.
+
+The same runs load an optics profile with `screen.vsync_to_photons_ns`
+12,750,000; the HMD activates, so the driver accepts and publishes it. Its
+effect on head motion has not been observed.
+
+`mesh129-frame-ui-v1` adds the Steam Frame's `steamMatchesHMDFramerate: false`
+and `omitDesktopWebhelpers: true`. The Steam gamepad UI still becomes the
+active, visible dashboard and its bar overlay appears, as in the plain run.
+`steamwebhelper` used 165 % of one core against 173–198 % in three runs
+without the settings (including the 2026-11-01 `software-hold120-monitor-v2`).
+One sample inside that spread does not establish a saving, so the settings
+remain opt-in (`--frame-ui`).

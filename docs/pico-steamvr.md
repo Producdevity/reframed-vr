@@ -823,6 +823,13 @@ room under the compositor's 16-bit mesh index limit. This is a software model
 comparison: it shows the mesh no longer distorts the lens model. It does not
 validate the lens model itself or establish physical clarity through the lenses.
 
+On the headset the compositor logs the requested size (`mesh resolution 193`).
+It costs GPU time: compositor GPU time per frame rose by about 0.65 ms at
+193×193 and 0.45 ms at 129×129 compared with 49×49, with frame rate and late
+frames within run-to-run variation
+([measurement](pico-steamvr-verification.md#distortion-mesh-cost-and-steam-frame-ui-settings-2026-11-02)).
+129×129 is the measured cheaper alternative if GPU time becomes the limit.
+
 ## Vsync-to-photons time
 
 SteamVR predicts head poses to vsync plus `Prop_SecondsFromVsyncToPhotons_Float`.
@@ -833,13 +840,26 @@ values reject the profile).
 PicoFrame traced PICO's compositor, which predicts each eye to vsync plus a
 per-panel `TimeToHalfExposure` and adds one frame period for the right eye
 because both eyes are lit after the full scan. The Neo3's stock
-`libpxrcompositor.so` compiles in 14.83 ms (left) and 5.31 ms (right), which at
-90 Hz would put photons about 14.8 ms and 16.4 ms after vsync. Stock
-configuration files can override those defaults, and this unit's files have not
-been read yet, so no profile sets the field. Read the stock display
-configuration before choosing a value, and check the result for head motion
-against the [prediction comparison](#optional-pose-prediction) rather than
-assuming it.
+`libpxrcompositor.so` compiles in 14.83 ms (left) and 5.31 ms (right). The
+unit's `/system/etc/pxrconfig/config/SDK_Display_ConfigFile.txt` replaces them
+with 14.7 and 4.84 ms, and `rule/PXRDisplayRuleValueFile.txt` overrides both by
+refresh rate (read over stock `adb` on 2026-11-02):
+
+| Refresh | Left | Right | Right + frame period | Mean of both eyes |
+| --- | --- | --- | --- | --- |
+| 72 Hz | 10.895 ms | 1.047 ms | 14.94 ms | 12.92 ms |
+| 90 Hz | 10.67 ms | 3.719 ms | 14.83 ms | 12.75 ms |
+| 120 Hz | 7.915 ms | 3.682 ms | 12.02 ms | 9.97 ms |
+
+With the frame period added, the right eye trails the left by 4.0–4.2 ms at all
+three rates, as a scan at a fixed speed that reaches the left eye first would.
+Without it the gap ranges from 4.2 to 9.8 ms. That supports, but does not prove,
+that the Neo3's compositor uses the formula PicoFrame traced on the Pico 4; the
+Neo3 library has not been disassembled. SteamVR takes one value for both eyes,
+so 12,750,000 ns (the 90 Hz mean) is the stock-derived choice. PICO's vsync
+reference may differ from the DRM vblank timestamp: this unit's
+`vsync2bufferRead` is -1.49 ms. Check the result for head motion against the
+[prediction comparison](#optional-pose-prediction) rather than assuming it.
 
 ## UI resolution and frame-history diagnostics
 

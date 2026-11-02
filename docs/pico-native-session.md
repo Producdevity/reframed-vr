@@ -38,6 +38,15 @@ Options:
   has hung on a wedged kernel bus-scaling lock (see
   [wireless evidence](pico-native-wireless.md#wi-fi-inside-the-native-vr-session-2026-11-01)).
 - `--monitor-quit` is a shutdown experiment; leave it off for normal use.
+- `--driver DIR` replaces the payload's SteamVR driver with a bundle from
+  `tools/build-pico-steamvr.py`. The bundle must contain the same files and
+  an identical probe; the base payload carries the 2026-11-01 driver, without
+  the 193×193 distortion mesh.
+- `--photons-ns N` sets the optics profile's `screen.vsync_to_photons_ns`; it
+  needs `--driver` with a driver that accepts the field. 12750000 is the
+  [stock-derived 90 Hz value](pico-steamvr.md#vsync-to-photons-time).
+- `--frame-ui` applies the Steam Frame's `steamMatchesHMDFramerate: false` and
+  `omitDesktopWebhelpers: true` for a CPU comparison.
 
 Each name can be used once. Launch:
 
