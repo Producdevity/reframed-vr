@@ -885,8 +885,9 @@ first visible victim, not established as the cause. The lock holder was not
 captured. In the same run the controller worker crashed while waiting for and
 releasing around the CDSP shutdown, which the successful run did not do, so the
 CDSP shutdown path is the first suspect. The attended harness now records a
-blocked-task dump when the NetworkManager stop times out. Until the holder is
-known, VR sessions should keep Wi-Fi optional.
+blocked-task dump when the NetworkManager stop times out, keeps Wi-Fi off unless
+asked, and recovers a wedged unit with a SysRq emergency restart (see
+[attended sessions](pico-native-session.md#stop-and-recovery)).
 
 ## Connected Wi-Fi, saved state and BLE data (2026-10-30)
 

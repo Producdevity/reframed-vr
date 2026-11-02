@@ -34,8 +34,8 @@ Options:
 - `--predict-velocity` enables the opt-in head-velocity prediction for an A/B
   comparison.
 - `--refresh N` (30–120, default 90) sets the nested Steam UI compositor rate.
-- `--no-wifi` skips Wi-Fi. Use it when network access is not needed: one Wi-Fi
-  stop has hung on a wedged kernel bus-scaling lock (see
+- `--wifi` brings up Wi-Fi in the session. It is off by default: one Wi-Fi stop
+  has hung on a wedged kernel bus-scaling lock (see
   [wireless evidence](pico-native-wireless.md#wi-fi-inside-the-native-vr-session-2026-11-01)).
 - `--monitor-quit` is a shutdown experiment; leave it off for normal use.
 
@@ -70,17 +70,35 @@ helper. The export includes `run/hold-power.json`: battery state, every thermal
 zone and the CPU and GPU clocks, sampled every 10 seconds during the hold, plus
 the CPU and GPU trip points.
 
-If stopping NetworkManager times out, the harness records a blocked-task dump,
-skips the DSP quiesce, exports what it can and restarts through SysRq, which bypasses the driver
-shutdown callbacks that an orderly reboot blocks on. An independent timer also
-restarts through SysRq 25 minutes plus the hold after boot, even if the Mac side
-fails, and falls back to `systemctl reboot` only if SysRq is unavailable.
-Neither SysRq path has been exercised on the device yet. After any failure,
-`my-session/verify-stock-return.py` checks the result.
+Every reboot of the live image is forced: its console service's stop action
+calls `systemctl --force --force reboot`, which skips stopping services and
+enters the kernel's restart directly. That path still runs the drivers'
+shutdown callbacks, and on 2026-11-01 it never completed after a kernel
+bus-scaling lock wedged. A SysRq `b` emergency restart skips those callbacks.
 
-If the headset still shows up as `Reframed VR Pico diagnostic` on USB but has no
-console and no `adb`, hold the power button until it switches off, then start it
-normally; it boots the unchanged stock image.
+The session therefore has three ways back to stock:
+
+- The harness's normal finish reboots after export. Just before that, it arms a
+  three-minute SysRq guard in case the reboot itself hangs.
+- If stopping NetworkManager times out, the harness records a blocked-task dump,
+  skips the DSP quiesce, exports what it can and restarts through SysRq at once.
+- Independently of the Mac, the bootstrap arms an orderly reboot 25 minutes plus
+  the hold after boot, and a resident SysRq guard five minutes after that. The
+  guard is a process that holds `/proc/sysrq-trigger` open from the start, so
+  firing needs no new process or file; it runs outside the shutdown
+  transaction, and its `@` name exempts it from systemd's final kill.
+
+On 2026-11-02 a guard armed for 45 s on an otherwise idle live session reset the
+headset 43 s after it was armed; stock `adb` returned and the quiet-offline stock
+check passed. That verifies the emergency restart and its return to normal stock
+boot. The original deadlock has not been reproduced, so the guard firing during
+a hung kernel restart is inferred from the restart path, not observed. After any
+failure, `my-session/verify-stock-return.py` checks the result.
+
+If the headset still shows up as `Reframed VR Pico diagnostic` on USB with no
+console and no `adb` more than five minutes past the guard's deadline, hold the
+power button until it switches off, then start it normally; it boots the
+unchanged stock image.
 
 ## Verified behaviour
 
