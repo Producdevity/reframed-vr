@@ -54,6 +54,21 @@ class PicoSteamvrDisplayTests(unittest.TestCase):
                                capture_output=True, text=True, timeout=10)
 
             check(profile, True)
+            timed = copy.deepcopy(profile)
+            timed['screen']['vsync_to_photons_ns'] = 14830000
+            check(timed, True)
+            loaded = subprocess.run([str(binary), '--load', str(path)], check=True, capture_output=True,
+                                    text=True, timeout=10)
+            self.assertIn('PICO_STEAMVR_PHOTONS_NS 14830000', loaded.stdout)
+            check(profile, True)
+            self.assertIn('PICO_STEAMVR_PHOTONS_NS 0', subprocess.run(
+                [str(binary), '--load', str(path)], check=True, capture_output=True, text=True, timeout=10).stdout)
+            for photons in (-1, 50000001, 1.5, '14830000', None):
+                bad = copy.deepcopy(profile)
+                bad['screen']['vsync_to_photons_ns'] = photons
+                check(bad, False)
+            check(json.dumps(timed).replace('"vsync_to_photons_ns": 14830000',
+                                            '"vsync_to_photons_ns": 1, "vsync_to_photons_ns": 2'), False)
             for name in ('device','serial'):
                 nul=copy.deepcopy(profile);nul[name]+='\0suffix'
                 check(nul,False)

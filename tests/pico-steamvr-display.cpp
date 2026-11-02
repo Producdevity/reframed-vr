@@ -29,6 +29,7 @@ int main(int argc,char **argv)
         bool ok=pico_steamvr_display_load(argv[2],c);
         assert(ok==!std::strcmp(argv[1],"--load"));
         if (!ok) assert(!std::memcmp(&c,&previous,sizeof(c)));
+        else std::printf("PICO_STEAMVR_PHOTONS_NS %lld\n",static_cast<long long>(c.vsync_to_photons_ns));
         std::puts("PICO_STEAMVR_CONFIG_PASS");return 0;
     }
     auto c=config();PicoSteamvrDisplay d(c);
@@ -82,7 +83,7 @@ int main(int argc,char **argv)
     auto bad=d.ComputeDistortion(vr::Eye_Left,-.1f,.5f);assert(bad.rfRed[0]==-1);
     bad=d.ComputeDistortion(vr::Eye_Left,std::numeric_limits<float>::quiet_NaN(),.5f);assert(bad.rfGreen[1]==-1);
     vr::HmdVector2_t inverse{{42,42}};assert(!d.ComputeInverseDistortion(&inverse,vr::Eye_Left,0,.5f,.5f));assert(inverse.v[0]==42);
-    for(unsigned i=0;i<8;++i) {
+    for(unsigned i=0;i<10;++i) {
         c=config();
         switch(i) {
         case 0:c.views[1].viewport[1]=0;break;
@@ -92,6 +93,8 @@ int main(int argc,char **argv)
         case 4:c.views[0].tangent_scale[0]=0;break;
         case 5:c.views[0].radial[10]=std::numeric_limits<double>::infinity();break;
         case 6:c.views[0].viewport[0]=UINT32_MAX;break;
+        case 7:c.vsync_to_photons_ns=-1;break;
+        case 8:c.vsync_to_photons_ns=50000001;break;
         default:c.frame_interval_ns=0;break;
         }
         assert(!pico_steamvr_display_valid(c));

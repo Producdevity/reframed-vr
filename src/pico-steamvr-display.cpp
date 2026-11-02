@@ -7,7 +7,8 @@ bool pico_steamvr_display_valid(const pico_steamvr_display_config &c)
 {
     if (!c.serial[0] || !std::memchr(c.serial, 0, sizeof(c.serial)) ||
         !c.width || !c.height || c.width > 16384 || c.height > 16384 ||
-        c.frame_interval_ns < 1000000 || c.frame_interval_ns > 100000000) return false;
+        c.frame_interval_ns < 1000000 || c.frame_interval_ns > 100000000 ||
+        c.vsync_to_photons_ns < 0 || c.vsync_to_photons_ns > 50000000) return false;
     for (const auto &v : c.views) {
         if (!v.viewport[2] || !v.viewport[3] || v.viewport[2] > c.width || v.viewport[3] > c.height ||
             v.viewport[0] > c.width - v.viewport[2] || v.viewport[1] > c.height - v.viewport[3] ||

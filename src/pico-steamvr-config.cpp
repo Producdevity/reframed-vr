@@ -53,6 +53,11 @@ static bool parse(const cJSON *json, pico_steamvr_display_config &c)
         !integer(field(screen,"height"),1,16384,c.height) ||
         !integer(field(screen,"frame_interval_ns"),1000000,100000000,interval)) return false;
     c.frame_interval_ns=interval;
+    const cJSON *photons=field(screen,"vsync_to_photons_ns");
+    uint32_t photons_ns=0;
+    if ((photons || cJSON_GetObjectItemCaseSensitive(screen,"vsync_to_photons_ns")) &&
+        !integer(photons,0,50000000,photons_ns)) return false;
+    c.vsync_to_photons_ns=photons_ns;
     const cJSON *views=field(json,"views");
     if (!cJSON_IsArray(views) || cJSON_GetArraySize(views)!=2) return false;
     for (unsigned i=0; i<2; ++i) {

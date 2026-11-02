@@ -823,6 +823,24 @@ room under the compositor's 16-bit mesh index limit. This is a software model
 comparison: it shows the mesh no longer distorts the lens model. It does not
 validate the lens model itself or establish physical clarity through the lenses.
 
+## Vsync-to-photons time
+
+SteamVR predicts head poses to vsync plus `Prop_SecondsFromVsyncToPhotons_Float`.
+The driver publishes 0 unless the optics profile's `screen` object sets
+`vsync_to_photons_ns` (an integer from 0 to 50,000,000; malformed or duplicate
+values reject the profile).
+
+PicoFrame traced PICO's compositor, which predicts each eye to vsync plus a
+per-panel `TimeToHalfExposure` and adds one frame period for the right eye
+because both eyes are lit after the full scan. The Neo3's stock
+`libpxrcompositor.so` compiles in 14.83 ms (left) and 5.31 ms (right), which at
+90 Hz would put photons about 14.8 ms and 16.4 ms after vsync. Stock
+configuration files can override those defaults, and this unit's files have not
+been read yet, so no profile sets the field. Read the stock display
+configuration before choosing a value, and check the result for head motion
+against the [prediction comparison](#optional-pose-prediction) rather than
+assuming it.
+
 ## UI resolution and frame-history diagnostics
 
 The build also bundles `steamvr-ui-90hz.vrsettings`, from

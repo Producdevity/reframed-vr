@@ -13,7 +13,7 @@ struct pico_steamvr_view {
 struct pico_steamvr_display_config {
     char serial[128];
     uint32_t width, height;
-    int64_t frame_interval_ns;
+    int64_t frame_interval_ns, vsync_to_photons_ns;
     pico_steamvr_view views[2];
 };
 

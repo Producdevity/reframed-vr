@@ -12,6 +12,7 @@
 using namespace vr;
 struct MockIVRProperties final : IVRProperties {
     int32_t role = 0, mesh_resolution = 0;
+    float vsync_to_photons = -1;
     std::string model;
     ETrackedPropertyError ReadPropertyBatch(PropertyContainerHandle_t ulContainerHandle,
                                             PropertyRead_t *pBatch, uint32_t unBatchEntryCount) override
@@ -27,6 +28,8 @@ struct MockIVRProperties final : IVRProperties {
             pBatch[i].eError = TrackedProp_Success;
             if (pBatch[i].prop == Prop_ControllerRoleHint_Int32)
                 std::memcpy(&role, pBatch[i].pvBuffer, sizeof(role));
+            if (pBatch[i].prop == Prop_SecondsFromVsyncToPhotons_Float)
+                std::memcpy(&vsync_to_photons, pBatch[i].pvBuffer, sizeof(vsync_to_photons));
             if (pBatch[i].prop == Prop_DistortionMeshResolution_Int32)
                 std::memcpy(&mesh_resolution, pBatch[i].pvBuffer, sizeof(mesh_resolution));
             if (pBatch[i].prop == Prop_RenderModelName_String)

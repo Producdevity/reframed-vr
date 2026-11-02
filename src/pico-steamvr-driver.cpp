@@ -73,7 +73,8 @@ public:
                                          static_cast<float>(std::sqrt(dx*dx+dy*dy+dz*dz)))==vr::TrackedProp_Success)&&ok;
         ok=(properties->SetFloatProperty(container,vr::Prop_DisplayFrequency_Float,
                                          static_cast<float>(1e9/config.frame_interval_ns))==vr::TrackedProp_Success)&&ok;
-        ok=(properties->SetFloatProperty(container,vr::Prop_SecondsFromVsyncToPhotons_Float,0)==vr::TrackedProp_Success)&&ok;
+        ok=(properties->SetFloatProperty(container,vr::Prop_SecondsFromVsyncToPhotons_Float,
+                                         static_cast<float>(config.vsync_to_photons_ns*1e-9))==vr::TrackedProp_Success)&&ok;
         // SteamVR's default 49x49 mesh misplaces this lens model by up to 7 render pixels;
         // 193x193 keeps every visible sample under half a pixel within the 16-bit mesh limit.
         ok=(properties->SetInt32Property(container,vr::Prop_DistortionMeshResolution_Int32,193)==vr::TrackedProp_Success)&&ok;
