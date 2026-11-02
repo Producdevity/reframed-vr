@@ -794,6 +794,35 @@ toward the model's handle axis, consistent with the WebXR grip definition.
 A device-specific stock override of the default has not been read, and the
 pointing ray and grip feel still need a physical check.
 
+## Distortion mesh resolution
+
+SteamVR's compositor samples `ComputeDistortion` on a mesh and interpolates
+bilinearly between vertices. It uses 49×49 vertices unless the driver sets
+`Prop_DistortionMeshResolution_Int32`; the retained runtime reads that property
+and its `distortionMeshResolutionOverride` setting. The 49×49 default was
+identified in PicoFrame's reverse-engineering notes for the Pico 4.
+
+[`tools/pico-distortion-mesh-error.py`](../tools/pico-distortion-mesh-error.py)
+evaluates the driver's lens model exactly and on a mesh, at nine points per
+cell, keeping samples that land inside the 1832×1920 render target. For the
+deployed Neo3 profile (SHA-256
+`ed0cf1013f3a5d7991159ed670e1d921c432423d98efff0080c4a4d460f904d9`):
+
+| Mesh | Max error | p99 | Samples over 0.5 px |
+| --- | ---: | ---: | ---: |
+| 49×49 (default) | 7.41 px | 3.76 px | 29.4 % |
+| 97×97 | 1.91 px | 0.93 px | 6.4 % |
+| 129×129 | 1.07 px | 0.52 px | 1.2 % |
+| 193×193 | 0.47 px | 0.23 px | 0 % |
+| 255×255 | 0.28 px | 0.13 px | 0 % |
+
+Red, green and blue each have their own mesh, so at 49×49 the colour channels
+are also misplaced relative to each other by up to several pixels. The driver
+now requests 193×193, which keeps every visible sample under half a pixel with
+room under the compositor's 16-bit mesh index limit. This is a software model
+comparison: it shows the mesh no longer distorts the lens model. It does not
+validate the lens model itself or establish physical clarity through the lenses.
+
 ## UI resolution and frame-history diagnostics
 
 The build also bundles `steamvr-ui-90hz.vrsettings`, from

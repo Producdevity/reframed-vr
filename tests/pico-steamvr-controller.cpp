@@ -11,7 +11,7 @@
 #include <chrono>
 using namespace vr;
 struct MockIVRProperties final : IVRProperties {
-    int32_t role = 0;
+    int32_t role = 0, mesh_resolution = 0;
     std::string model;
     ETrackedPropertyError ReadPropertyBatch(PropertyContainerHandle_t ulContainerHandle,
                                             PropertyRead_t *pBatch, uint32_t unBatchEntryCount) override
@@ -27,6 +27,8 @@ struct MockIVRProperties final : IVRProperties {
             pBatch[i].eError = TrackedProp_Success;
             if (pBatch[i].prop == Prop_ControllerRoleHint_Int32)
                 std::memcpy(&role, pBatch[i].pvBuffer, sizeof(role));
+            if (pBatch[i].prop == Prop_DistortionMeshResolution_Int32)
+                std::memcpy(&mesh_resolution, pBatch[i].pvBuffer, sizeof(mesh_resolution));
             if (pBatch[i].prop == Prop_RenderModelName_String)
                 model = static_cast<const char *>(pBatch[i].pvBuffer);
         }
@@ -159,6 +161,7 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
     std::map<std::string, ITrackedDeviceServerDriver *> controllers;
     std::map<uint32_t, DriverPose_t> device_poses;
     ITrackedDeviceServerDriver *registered_hmd = nullptr;
+    uint32_t eye_to_head_device = k_unTrackedDeviceIndexInvalid;
     bool TrackedDeviceAdded(const char *pchDeviceSerialNumber, ETrackedDeviceClass eDeviceClass,
                             ITrackedDeviceServerDriver *pDriver) override
     {
@@ -229,7 +232,7 @@ struct MockIVRServerDriverHost final : IVRServerDriverHost {
     void SetDisplayEyeToHead(uint32_t unWhichDevice, const HmdMatrix34_t &eyeToHeadLeft,
                              const HmdMatrix34_t &eyeToHeadRight) override
     {
-        assert(false);
+        eye_to_head_device = unWhichDevice;
     }
     void SetDisplayProjectionRaw(uint32_t unWhichDevice, const HmdRect2_t &eyeLeft,
                                  const HmdRect2_t &eyeRight) override

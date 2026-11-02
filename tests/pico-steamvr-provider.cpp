@@ -51,6 +51,9 @@ int main(int argc,char **argv)
         assert(provider.Init(&context)==VRInitError_None);
         assert(context.host.registered_hmd);
         auto pose=context.host.registered_hmd->GetPose();assert(!pose.poseIsValid);
+        assert(context.host.registered_hmd->Activate(0)==VRInitError_None);
+        assert(context.properties.mesh_resolution==193&&context.host.eye_to_head_device==0);
+        context.host.registered_hmd->Deactivate();
         provider.RunFrame();provider.Cleanup();
     }
     auto make_poses=[&](const char *name,uint64_t instance) {
